@@ -1,0 +1,45 @@
+# Byte-compiled / optimization / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / dist artifacts
+dist/
+build/
+*.egg-info/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local Python site-packages (if present)
+Lib/
+
+# Generated run outputs
+Product_Data_File/
+
+# Do not track input or scanned PDFs
+user_inputs/EIDP_Import_Docs/**
+user_inputs/Scanned_Docs/**
+
+# Don’t track the working terms spreadsheet
+user_inputs/terms.xlsx
+
+# Optional: ignore other large artifacts
+*.pdf
+*.zip
+
+# Allow core sources and docs
+!Application/**/*.py
+!*.md
+!*.bat
+!*.ps1
+!*.csv
+!README*

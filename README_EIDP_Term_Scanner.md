@@ -14,7 +14,7 @@ Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest
   - The run scripts will auto-use `.venv` and extend PATH to these folders for the session.
 - System-wide (if allowed):
   - `py -m pip install --upgrade pip`
-  - `py -m pip install pymupdf pdfminer.six pypdf pandas xlsxwriter pytesseract pillow pdf2image`
+  - `py -m pip install pymupdf pdfminer.six pypdf pandas xlsxwriter pytesseract pillow pdf2image xlrd`
 - Install Tesseract OCR (needed for scanned/image-only PDFs):
   - Option A (Chocolatey, admin PowerShell): `choco install tesseract`
   - Option B: Use the Tesseract Windows installer and ensure `tesseract.exe` is on PATH
@@ -27,6 +27,7 @@ Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest
 Notes:
 - If your PDFs are text-based (not scans), you can skip Tesseract/Poppler. At least one text extractor (PyMuPDF or pdfminer.six) is recommended.
 - Excel output requires `pandas` and either `xlsxwriter` or `openpyxl`. If missing, CSV fallbacks are written instead.
+- Reading `.xls` terms requires `pandas` and `xlrd`. If unavailable, save as `.xlsx` or `.csv`.
 
 ---
 
@@ -52,6 +53,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
 - CSV fallbacks (written into the same `run_data` folder if Excel libs are missing):
   - `scan_results.results.csv` and `scan_results.metadata.csv`
 - `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder
+  - `by_pdf/` folder contains one JSON per PDF with just that file’s term results
 - Top-level aggregate that grows over time: `Product_Data_File\EIDP_data.csv`
 
 ---
@@ -73,6 +75,27 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
   - After scanning, PDFs are moved from `--pdf-folder` to `--scanned-folder`.
 
 ---
+
+## Terms File Schema
+
+- Supports `.csv`, `.xlsx`, and `.xls` (for `.xls`, pandas+xlrd required).
+- Required columns:
+  - `Term`: the search term name
+  - `Pages`: page ranges (e.g., `5-10; 22`)
+- Optional columns for deterministic table picks and filtering:
+  - `Line`: row header text to match (XY mode)
+  - `Column`: column header text to match (pipe `|` allowed for alternatives, e.g., `Value|Nominal`)
+  - `Range`: numeric range filter, e.g., `200..3000` (applies to matched number)
+  - `Units`: preferred units near the number (pipe `|` list, e.g., `lbf|psi`)
+
+Behavior
+- If both `Line` and `Column` are provided, the scanner uses XY mode on those pages:
+  - finds the `Column` header’s x-position, finds the row containing `Line`, then picks the number on that row closest to the column.
+  - falls back to nearest-number mode if a match is not found.
+- Otherwise, nearest-number mode is used with filters:
+  - Prefers a number on the same line, then nearby; respects `Range` and `Units` if provided.
+- Numbers support scientific notation (e.g., `8E-8`) and optional units.
+- Dates in `MM/DD/YY` or `MM/DD/YYYY` format are allowed values in matches.
 
 ## Command-Line Options
 

@@ -22,7 +22,7 @@ import os
 import re
 import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -90,10 +90,15 @@ except Exception:
 
 @dataclass
 class TermSpec:
-    """Container for a search term and the associated page constraints."""
+    """Container for a search term, page constraints, and optional XY/filters."""
     term: str               # The phrase/keyword to search for
     pages: List[int]        # Parsed list of 1-indexed page numbers
     pages_raw: str          # Original "Pages" string for reporting
+    line: Optional[str] = None       # Row header for XY extraction
+    column: Optional[str] = None     # Column header (pipe '|' allowed for fallbacks)
+    range_min: Optional[float] = None
+    range_max: Optional[float] = None
+    units_hint: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -113,16 +118,18 @@ class MatchResult:
 # Regex to detect numbers (int/float) with optional thousands separators and units
 NUMBER_REGEX = re.compile(
     r"""
-    (?<![A-Za-z0-9_.-])           # ensure we aren't inside a larger token on the left
-    [-+]?                         # optional sign
-    (?:\d{1,3}(?:,\d{3})+|\d+)    # integer with optional thousand separators OR plain digits
-    (?:\.\d+)?                    # optional decimal part
-    (?:\s?(?:%|ppm|ppb|ms|s|kg|g|mg|ug|lb|lbs|degC|degF|C|F|N|kN|mN|Ns|bar))?  # optional units incl. Newtons
-
-    (?![A-Za-z0-9_.-])            # ensure we aren't inside a larger token on the right
+    (?<![A-Za-z0-9_.-])                 # left boundary
+    [-+]?                               # optional sign
+    (?:\d{1,3}(?:,\d{3})+|\d+)        # integer (with thousands) or plain digits
+    (?:\.\d+)?                        # optional decimal
+    (?:[eE][+-]?\d+)?                  # optional exponent, e.g., 8E-8
+    (?:\s?(?:%|ppm|ppb|ms|s|sec|kg|g|mg|ug|lbm|lb|lbs|lbf|N|kN|mN|Ns|bar|mbar|Pa|kPa|MPa|psi|psia|psig|mm|cm|m|in|ft|K|degC|degF|C|F))?
+    (?![A-Za-z0-9_.-])                  # right boundary
     """,
     re.VERBOSE
 )
+
+DATE_REGEX = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 
 
 def numeric_only(value: Optional[str]) -> Optional[str]:
@@ -134,7 +141,7 @@ def numeric_only(value: Optional[str]) -> Optional[str]:
         return None
     s = value.replace(" ", " ")
     import re as _re
-    m = _re.search(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?", s)
+    m = _re.search(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?", s)
     if not m:
         return value
     return m.group(0).replace(",", "")
@@ -262,15 +269,36 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                     for row in reader:
                         term = None
                         pages_str = ""
+                        line = None
+                        column = None
+                        range_min = None
+                        range_max = None
+                        units_hint: List[str] = []
                         for k, v in row.items():
                             if k and k.strip().lower() == "term":
                                 term = (v or "").strip()
                             if k and k.strip().lower() == "pages":
                                 pages_str = (v or "").strip()
+                            if k and k.strip().lower() == "line":
+                                line = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "column":
+                                column = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "range":
+                                rng = (v or "").strip()
+                                if rng:
+                                    a, b = parse_range(rng)
+                                    range_min, range_max = a, b
+                            if k and k.strip().lower() == "units":
+                                units_hint = parse_units_hint(v)
                         if term:
-                            result.append(
-                                TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str)
-                            )
+                            result.append(TermSpec(term=term,
+                                                   pages=parse_page_ranges(pages_str),
+                                                   pages_raw=pages_str,
+                                                   line=line,
+                                                   column=column,
+                                                   range_min=range_min,
+                                                   range_max=range_max,
+                                                   units_hint=units_hint))
                     return result
 
             last_error: Optional[UnicodeDecodeError] = None
@@ -297,13 +325,23 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                 print(f"[ERROR] Could not decode CSV file using encodings: {tried}.", file=sys.stderr)
             sys.exit(2)
 
-    # Excel path: requires openpyxl
+    # Excel path: .xls via pandas if available; otherwise .xlsx via openpyxl
+    if ext == ".xls":
+        if not _HAVE_PANDAS:
+            print("[ERROR] .xls requires pandas (and xlrd). Save as .xlsx or .csv, or install pandas/xlrd.", file=sys.stderr)
+            sys.exit(2)
+        try:
+            df = pd.read_excel(str(input_path))
+        except Exception as e:
+            print(f"[ERROR] Could not read .xls: {e}", file=sys.stderr)
+            sys.exit(2)
+        return _terms_from_dataframe(df)
+
     try:
         import openpyxl  # type: ignore
     except Exception:
         print(
-            "[ERROR] Excel file given but 'openpyxl' is not available. "
-            "Install openpyxl or save your spreadsheet as CSV and re-run.",
+            "[ERROR] Excel file given but 'openpyxl' is not available. Install openpyxl or save as CSV.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -327,6 +365,10 @@ def load_terms(input_path: Path) -> List[TermSpec]:
 
     term_col = col_for("term")
     pages_col = col_for("pages")
+    line_col = col_for("line")
+    column_col = col_for("column")
+    range_col = col_for("range")
+    units_col = col_for("units")
     if not term_col:
         print("[ERROR] Could not find 'Term' header in Excel file.", file=sys.stderr)
         sys.exit(2)
@@ -335,11 +377,68 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     for row in ws.iter_rows(min_row=2):
         term_val = row[term_col - 1].value if term_col else None
         pages_val = row[pages_col - 1].value if pages_col else "" if pages_col else ""
+        line_val = row[line_col - 1].value if line_col else None
+        column_val = row[column_col - 1].value if column_col else None
+        range_val = row[range_col - 1].value if range_col else None
+        units_val = row[units_col - 1].value if units_col else None
         term = (str(term_val) if term_val is not None else "").strip()
         pages_str = (str(pages_val) if pages_val is not None else "").strip()
+        line = (str(line_val).strip() if line_val is not None and str(line_val).strip() else None)
+        column = (str(column_val).strip() if column_val is not None and str(column_val).strip() else None)
+        rmin = rmax = None
+        if range_val is not None and str(range_val).strip():
+            rmin, rmax = parse_range(str(range_val).strip())
+        units_hint = parse_units_hint(units_val)
         if term:
-            terms.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str))
+            terms.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
+                                  line=line, column=column, range_min=rmin, range_max=rmax, units_hint=units_hint))
     return terms
+
+
+def _terms_from_dataframe(df) -> List[TermSpec]:
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    def get(row, key):
+        col = cols.get(key)
+        if col is None:
+            return None
+        return row.get(col)
+    out: List[TermSpec] = []
+    for _, row in df.iterrows():
+        term = str(get(row, 'term') or '').strip()
+        if not term:
+            continue
+        pages_str = str(get(row, 'pages') or '').strip()
+        line = str(get(row, 'line') or '').strip() or None
+        column = str(get(row, 'column') or '').strip() or None
+        rng = str(get(row, 'range') or '').strip()
+        rmin = rmax = None
+        if rng:
+            rmin, rmax = parse_range(rng)
+        units_hint = parse_units_hint(get(row, 'units'))
+        out.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
+                            line=line, column=column, range_min=rmin, range_max=rmax, units_hint=units_hint))
+    return out
+
+def parse_units_hint(v) -> List[str]:
+    if v is None:
+        return []
+    s = str(v).strip()
+    if not s:
+        return []
+    parts = re.split(r"[|/,;]+", s)
+    return [p.strip() for p in parts if p.strip()]
+
+def parse_range(s: str) -> Tuple[Optional[float], Optional[float]]:
+    s = s.strip()
+    m = re.match(r"^\s*([+-]?[\d,.]+(?:[eE][+-]?\d+)?)\s*\.\.\s*([+-]?[\d,.]+(?:[eE][+-]?\d+)?)\s*$", s)
+    if m:
+        def to_f(x):
+            try:
+                return float(str(x).replace(',', ''))
+            except Exception:
+                return None
+        return to_f(m.group(1)), to_f(m.group(2))
+    return None, None
 
 
 def extract_pages_text_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
@@ -529,7 +628,10 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
     return page_text, pipeline
 
 
-def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, case_sensitive: bool = False) -> Tuple[Optional[str], Optional[str]]:
+def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, case_sensitive: bool = False,
+                                units_hint: Optional[List[str]] = None,
+                                range_filter: Optional[Tuple[Optional[float], Optional[float]]] = None,
+                                accept_dates: bool = True) -> Tuple[Optional[str], Optional[str]]:
     """
     Prefer numbers on the same line to the right of the term, then left,
     then next line, previous line, else fall back to closest in a window.
@@ -576,6 +678,8 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
 
     # Pre-compute all numeric spans in the text
     nums = [(m.group(0), m.start(), m.end()) for m in NUMBER_REGEX.finditer(src)]
+    if accept_dates:
+        nums += [(m.group(0), m.start(), m.end()) for m in DATE_REGEX.finditer(src)]
 
     def numbers_in(a: int, b: int):
         return [(n, i, j) for (n, i, j) in nums if i >= a and j <= b]
@@ -596,13 +700,40 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
         line_nums = numbers_in(lb, rb)
 
         # 1) Same line, to the right
-        right_side = [(n, i, j) for (n, i, j) in line_nums if i >= pos]
+        cand_line = line_nums
+        def _in_range(nstr: str) -> bool:
+            if not range_filter:
+                return True
+            lo, hi = range_filter
+            try:
+                raw = numeric_only(nstr)
+                val = float(raw) if raw is not None else None
+            except Exception:
+                val = None
+            if val is None:
+                return True
+            if lo is not None and val < lo:
+                return False
+            if hi is not None and val > hi:
+                return False
+            return True
+        def _units_ok(nstr: str) -> bool:
+            if not units_hint:
+                return True
+            u = extract_units(nstr)
+            if not u:
+                return False
+            return any(u.lower() == h.lower() for h in units_hint)
+        filtered = [(n,i,j) for (n,i,j) in cand_line if _in_range(n) and _units_ok(n)]
+        if filtered:
+            cand_line = filtered
+        right_side = [(n, i, j) for (n, i, j) in cand_line if i >= pos]
         if right_side:
             n, i, j = min(right_side, key=lambda t: t[1] - pos)
             return n, snippet(i, j)
 
         # 2) Same line, to the left
-        left_side = [(n, i, j) for (n, i, j) in line_nums if j <= pos]
+        left_side = [(n, i, j) for (n, i, j) in cand_line if j <= pos]
         if left_side:
             n, i, j = max(left_side, key=lambda t: t[2])
             return n, snippet(i, j)
@@ -613,6 +744,8 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
         if nrb == -1:
             nrb = len(src)
         next_nums = numbers_in(nlb, nrb)
+        if units_hint or range_filter:
+            next_nums = [(n,i,j) for (n,i,j) in next_nums if _in_range(n) and _units_ok(n)] or next_nums
         if next_nums:
             n, i, j = next_nums[0]
             return n, snippet(i, j)
@@ -625,6 +758,8 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
             plb = plb + 1
         prb = lb - 1
         prev_nums = numbers_in(plb, prb)
+        if units_hint or range_filter:
+            prev_nums = [(n,i,j) for (n,i,j) in prev_nums if _in_range(n) and _units_ok(n)] or prev_nums
         if prev_nums:
             n, i, j = prev_nums[-1]
             return n, snippet(i, j)
@@ -633,6 +768,8 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
         left = max(0, pos - window_chars)
         right = min(len(src), pos + len(term) + window_chars)
         cand = [(n, i, j) for (n, i, j) in nums if i >= left and j <= right]
+        if units_hint or range_filter:
+            cand = [(n,i,j) for (n,i,j) in cand if _in_range(n) and _units_ok(n)] or cand
         if cand:
             n, i, j = min(cand, key=lambda t: min(abs(t[1]-pos), abs(t[2]-pos)))
             d = min(abs(i - pos), abs(j - pos))
@@ -659,7 +796,9 @@ def get_serial_number_from_filename(pdf_path: Path) -> str:
     return f"SN_{name}"
 
 
-def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequence[int], window_chars: int, case_sensitive: bool) -> MatchResult:
+def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequence[int], window_chars: int, case_sensitive: bool,
+                      units_hint: Optional[List[str]] = None,
+                      range_filter: Optional[Tuple[Optional[float], Optional[float]]] = None) -> MatchResult:
     """
     Scan a single PDF for a single term (restricted to the provided pages).
     - Uses extract_pages_text(...) to build a map of pageâ†’text and a method pipeline string.
@@ -676,7 +815,8 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     # Search pages in ascending order; stop at the first page where a number is found
     for p in sorted(page_text_map.keys()):
         text = page_text_map[p]
-        number, ctx = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive)
+        number, ctx = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                 units_hint=units_hint, range_filter=range_filter, accept_dates=True)
         if number:
             chosen_page = p
             chosen_number = number
@@ -709,6 +849,121 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
         )
 
 
+def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> MatchResult:
+    """Attempt XY table extraction using PyMuPDF word coordinates.
+    Fallbacks to nearest-number scan if PyMuPDF is unavailable or matching fails.
+    """
+    if not _HAVE_PYMUPDF:
+        return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                 units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception:
+        return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                 units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    try:
+        pages = spec.pages if spec.pages else list(range(1, doc.page_count + 1))
+        col_alts = [c.strip() for c in (spec.column or '').split('|') if c.strip()]
+        row_text = spec.line or spec.term
+        def norm(t: str) -> str:
+            return t if case_sensitive else t.lower()
+
+        header_x = None
+        chosen_page = None
+        chosen_number = None
+        chosen_ctx = None
+
+        for p in pages:
+            if p < 1 or p > doc.page_count:
+                continue
+            page = doc.load_page(p - 1)
+            words = page.get_text("words") or []
+            # Determine column header x center
+            hx_list = []
+            for w in words:
+                txt = str(w[4]) if len(w) > 4 else ""
+                if not txt:
+                    continue
+                for alt in (col_alts or [spec.column] if spec.column else []):
+                    if alt and norm(alt) in norm(txt):
+                        x0,x1 = float(w[0]), float(w[2])
+                        hx_list.append((x0+x1)/2.0)
+                        break
+            if not hx_list:
+                continue
+            header_x = sum(hx_list)/len(hx_list)
+
+            # Group words by line id
+            lines_map = {}
+            for w in words:
+                ln = w[6] if len(w) >= 7 else round(float(w[1]))
+                lines_map.setdefault(ln, []).append(w)
+
+            # Find row line containing row_text
+            target_ln = None
+            for ln, ws in lines_map.items():
+                line_str = " ".join([str(x[4]) for x in sorted(ws, key=lambda k: k[0])])
+                if norm(row_text) in norm(line_str):
+                    target_ln = ln
+                    break
+            if target_ln is None:
+                continue
+
+            ws_sorted = sorted(lines_map[target_ln], key=lambda k: k[0])
+            candidates = []
+            for w in ws_sorted:
+                tok = str(w[4]) if len(w) > 4 else ""
+                if not tok:
+                    continue
+                if NUMBER_REGEX.fullmatch(tok) or DATE_REGEX.fullmatch(tok):
+                    cx = (float(w[0]) + float(w[2]))/2.0
+                    candidates.append((abs(cx - header_x), tok))
+            if candidates:
+                candidates.sort(key=lambda t: t[0])
+                chosen_number = candidates[0][1]
+                chosen_page = p
+                chosen_ctx = " ".join([str(x[4]) for x in ws_sorted])[:200]
+                break
+
+        if chosen_number:
+            # Optional post-filter
+            if (spec.range_min is not None or spec.range_max is not None) or spec.units_hint:
+                ok_rng = True
+                try:
+                    val = float((numeric_only(chosen_number) or '').replace(',', ''))
+                    if spec.range_min is not None and val < spec.range_min:
+                        ok_rng = False
+                    if spec.range_max is not None and val > spec.range_max:
+                        ok_rng = False
+                except Exception:
+                    ok_rng = True
+                ok_units = True
+                if spec.units_hint:
+                    u = extract_units(chosen_number)
+                    ok_units = bool(u and any(u.lower()==h.lower() for h in spec.units_hint))
+                if not (ok_rng and ok_units):
+                    return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=chosen_page,
+                number=chosen_number,
+                units=extract_units(chosen_number),
+                context=chosen_ctx or "",
+                method="pymupdf:xy",
+                found=True,
+            )
+
+        return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                 units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
 def move_file_safely(src: Path, dst_folder: Path) -> Path:
     """
     Move a file into a destination folder, avoiding collisions by appending (n)
@@ -867,6 +1122,8 @@ def run_scan(
     exports_dir = Path("Product_Data_File")
     run_dir = exports_dir / "run_data" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
+    by_pdf_dir = run_dir / "by_pdf"
+    by_pdf_dir.mkdir(parents=True, exist_ok=True)
 
     # Reroute output paths into the run_dir regardless of CLI-provided paths.
     output_json = run_dir / "scan_results.json"
@@ -887,9 +1144,19 @@ def run_scan(
         serial_number = get_serial_number_from_filename(pdf_path)
         print(f"[INFO] Scanning: {pdf_path.name}  ({serial_number})")
 
+        per_pdf: List[Dict] = []
+
         # Search each configured term within the allowed page ranges
         for t in terms:
-            res = scan_pdf_for_term(pdf_path, serial_number, t.term, t.pages, window_chars, case_sensitive)
+            # If both Line and Column provided, attempt XY table extraction first
+            if getattr(t, 'line', None) and getattr(t, 'column', None):
+                res = scan_pdf_for_term_xy(pdf_path, serial_number, t, window_chars, case_sensitive)
+            else:
+                res = scan_pdf_for_term(
+                    pdf_path, serial_number, t.term, t.pages, window_chars, case_sensitive,
+                    units_hint=getattr(t, 'units_hint', None),
+                    range_filter=(getattr(t, 'range_min', None), getattr(t, 'range_max', None))
+                )
             # Fill the matrix cell for this (term, serial_number)
             results_matrix.setdefault(t.term, {})[serial_number] = numeric_only(res.number)
 
@@ -903,10 +1170,18 @@ def run_scan(
                 "number": res.number,
                 "units": res.units,
                 "context": res.context,
-                "method_pipeline": res.method
+                "method_pipeline": res.method,
+                # Terms schema hints for transparency/debug
+                "mode": ("xy" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest"),
+                "pages_raw": getattr(t, 'pages_raw', ""),
+                "line": getattr(t, 'line', None),
+                "column": getattr(t, 'column', None),
+                "range": (f"{getattr(t,'range_min',None)}..{getattr(t,'range_max',None)}" if (getattr(t,'range_min',None) is not None or getattr(t,'range_max',None) is not None) else None),
+                "units_hint": getattr(t, 'units_hint', None),
             }
             metadata_rows.append(meta)
             summary.append(meta)
+            per_pdf.append(meta)
 
         # Step 4: Move the scanned PDF to the "Scanned Docs" folder
         try:
@@ -921,6 +1196,14 @@ def run_scan(
                 json.dump(summary, jf, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[WARN] Could not write JSON during loop: {e}")
+
+        # Also write a per-PDF JSON for convenience
+        try:
+            per_pdf_path = by_pdf_dir / f"{pdf_path.stem}.json"
+            with per_pdf_path.open("w", encoding="utf-8") as pf:
+                json.dump(per_pdf, pf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] Could not write per-PDF JSON for {pdf_path.name}: {e}")
 
     # Step 6: Emit Excel (or CSV fallback) and a flat CSV summary for compatibility
     csv_fallback_prefix = output_xlsx.with_suffix("")
@@ -1042,7 +1325,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Scan PDFs for terms and nearest numbers, produce a matrix by Serial Number, and move scanned PDFs."
     )
-    parser.add_argument("--input", required=True, help="Path to terms file (.csv or .xlsx). Headers: Term, Pages")
+    parser.add_argument("--input", required=True, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
     parser.add_argument("--pdf-folder", required=True, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')
     parser.add_argument("--output-csv", default="scan_results_flat.csv", help="Flat CSV summary (legacy)")
     parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")

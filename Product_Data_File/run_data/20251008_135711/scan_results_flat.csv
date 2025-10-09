@@ -1,3 +1,0 @@
-pdf_file,serial_number,term,found,page,number,units,context,method_pipeline
-sn 2348.pdf,SN 2348,Thrust Nominal,True,1,24 lbf,lbf,Thrust 24 lbf  Specific Impulse 220 sec  ,pymupdf
-sn 2348.pdf,SN 2348,Specific Impulse,True,1,220 sec,sec,Thrust 24 lbf  Specific Impulse 220 sec  ,pymupdf
