@@ -12,7 +12,16 @@ if exist "%VENV_PY%" (
   where %PY% >nul 2>nul || set "PY=python"
 )
 
-set "TERMS=%ROOT%user_inputs\terms.csv"
+rem Detect terms file: prefer XLSX, fall back to CSV
+set "TERMS_XLSX=%ROOT%user_inputs\terms.xlsx"
+set "TERMS_CSV=%ROOT%user_inputs\terms.csv"
+if exist "%TERMS_XLSX%" (
+  set "TERMS=%TERMS_XLSX%"
+) else if exist "%TERMS_CSV%" (
+  set "TERMS=%TERMS_CSV%"
+) else (
+  set "TERMS=%TERMS_XLSX%"
+)
 set "IN_DIR=%ROOT%user_inputs\EIDP_Import_Docs"
 set "SCANNED=%ROOT%user_inputs\Scanned_Docs"
 set "OUT_DIR=%ROOT%Product_Data_File"
@@ -30,6 +39,8 @@ rem Extend PATH with local tools if present (no admin PATH changes)
 if exist "%ROOT%tools\tesseract" set "PATH=%ROOT%tools\tesseract;%PATH%"
 if exist "%ROOT%tools\tesseract\bin" set "PATH=%ROOT%tools\tesseract\bin;%PATH%"
 if exist "%ROOT%tools\poppler\bin" set "PATH=%ROOT%tools\poppler\bin;%PATH%"
+if exist "%ROOT%tools\unpaper" set "PATH=%ROOT%tools\unpaper;%PATH%"
+if exist "%ROOT%tools\pngquant" set "PATH=%ROOT%tools\pngquant;%PATH%"
 
 rem Also extend PATH with common system install locations (session-only)
 rem - Tesseract (default installer path)
@@ -57,6 +68,11 @@ if exist "%ProgramFiles%\gs" (
 
 echo [RUN] Python: "%PY%"
 echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
+if not exist "%TERMS%" (
+  echo [ERROR] No terms file found. Create one at:>&2
+  echo         "%TERMS_XLSX%" or "%TERMS_CSV%".>&2
+  exit /b 1
+)
 echo [RUN] PDFs  : "%IN_DIR%"
 echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
 
