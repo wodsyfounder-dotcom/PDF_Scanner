@@ -5,6 +5,8 @@ set "ROOT=%~dp0"
 set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
+  rem Ensure local venv scripts (ocrmypdf, etc.) are accessible on PATH
+  set "PATH=%ROOT%.venv\Scripts;%PATH%"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
@@ -28,6 +30,30 @@ rem Extend PATH with local tools if present (no admin PATH changes)
 if exist "%ROOT%tools\tesseract" set "PATH=%ROOT%tools\tesseract;%PATH%"
 if exist "%ROOT%tools\tesseract\bin" set "PATH=%ROOT%tools\tesseract\bin;%PATH%"
 if exist "%ROOT%tools\poppler\bin" set "PATH=%ROOT%tools\poppler\bin;%PATH%"
+
+rem Also extend PATH with common system install locations (session-only)
+rem - Tesseract (default installer path)
+if exist "%ProgramFiles%\Tesseract-OCR\tesseract.exe" (
+  set "PATH=%ProgramFiles%\Tesseract-OCR;%PATH%"
+  set "TESSERACT_CMD=%ProgramFiles%\Tesseract-OCR\tesseract.exe"
+)
+if exist "%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe" (
+  set "PATH=%ProgramFiles(x86)%\Tesseract-OCR;%PATH%"
+  set "TESSERACT_CMD=%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe"
+)
+
+rem - Poppler (various Windows builds install under poppler-*\bin)
+if exist "%ProgramFiles%\poppler\bin" set "PATH=%ProgramFiles%\poppler\bin;%PATH%"
+for /d %%P in ("%ProgramFiles%\poppler-*") do (
+  if exist "%%P\bin" set "PATH=%%P\bin;%PATH%"
+)
+
+rem - Ghostscript (helpful for OCRmyPDF optimization)
+if exist "%ProgramFiles%\gs" (
+  for /d %%G in ("%ProgramFiles%\gs\gs*") do (
+    if exist "%%G\bin" set "PATH=%%G\bin;%PATH%"
+  )
+)
 
 echo [RUN] Python: "%PY%"
 echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)

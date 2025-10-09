@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import sys
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -77,7 +78,19 @@ except Exception:
 try:
     import pytesseract  # OCR engine wrapper (requires system Tesseract)
     from PIL import Image  # pillow: image container for OCR
-    _HAVE_TESSERACT = True
+    # Optional env-var override to point directly to tesseract.exe
+    try:
+        _tc = os.environ.get('TESSERACT_CMD') or os.environ.get('TESSERACT_PATH')
+        if _tc and os.path.exists(_tc):
+            pytesseract.pytesseract.tesseract_cmd = _tc
+    except Exception:
+        pass
+    # Verify that the native Tesseract engine is actually available on PATH or at override
+    try:
+        _ = pytesseract.get_tesseract_version()
+        _HAVE_TESSERACT = True
+    except Exception:
+        _HAVE_TESSERACT = False
 except Exception:
     pass
 
@@ -674,19 +687,31 @@ def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
         doc = fitz.open(str(pdf_path))
     except Exception as e:
         return out, f"ocr_pymupdf:open_error:{e}"
+    error_notes: List[str] = []
+    # Tunables via environment
+    try:
+        _dpi = int(os.environ.get('OCR_DPI', '400'))
+    except Exception:
+        _dpi = 400
+    _dpi = max(200, min(800, _dpi))
+    _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
                 page = doc.load_page(p - 1)
-                pix = page.get_pixmap(dpi=300)  # 300 DPI for decent OCR fidelity
+                # Increase DPI to improve OCR fidelity on small text
+                pix = page.get_pixmap(dpi=_dpi)
                 img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 try:
-                    text = pytesseract.image_to_string(img)
-                except Exception:
+                    text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+                except Exception as e:
+                    error_notes.append(type(e).__name__)
                     text = ""
                 out[p] = text or ""
     finally:
         doc.close()
+    if error_notes:
+        return out, "ocr_pymupdf:error:" + ",".join(sorted(set(error_notes)))
     return out, "ocr_pymupdf"
 
 
@@ -698,19 +723,30 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
     out: Dict[int, str] = {}
     if not (_HAVE_TESSERACT and _HAVE_PDF2IMAGE):
         return out, "ocr_pdf2image:N/A"
+    # Tunables via environment
     try:
-        images = convert_from_path(str(pdf_path), dpi=300, first_page=min(pages), last_page=max(pages))
+        _dpi = int(os.environ.get('OCR_DPI', '400'))
     except Exception:
-        return out, "ocr_pdf2image:convert_error"
+        _dpi = 400
+    _dpi = max(200, min(800, _dpi))
+    _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
+    try:
+        images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages), last_page=max(pages))
+    except Exception as e:
+        return out, f"ocr_pdf2image:convert_error:{e}"
     page_list = sorted(set(pages))
     start = page_list[0]
+    error_notes: List[str] = []
     for idx, img in enumerate(images, start=start):
         if idx in page_list:
             try:
-                text = pytesseract.image_to_string(img)
-            except Exception:
+                text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+            except Exception as e:
+                error_notes.append(type(e).__name__)
                 text = ""
             out[idx] = text or ""
+    if error_notes:
+        return out, "ocr_pdf2image:error:" + ",".join(sorted(set(error_notes)))
     return out, "ocr_pdf2image"
 
 
@@ -768,10 +804,16 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
 
     # Attempt #4: OCR as final fallback
     if empty_pages and _HAVE_TESSERACT:
-        if _HAVE_PYMUPDF:
+        prefer = os.environ.get('OCR_RENDERER', '').strip().lower()
+        if prefer in ('pdf2image', 'pdf2') and _HAVE_PDF2IMAGE:
+            pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
+        elif prefer in ('pymupdf', 'fitz') and _HAVE_PYMUPDF:
             pt4, m4 = ocr_pages_with_pymupdf(pdf_path, empty_pages)
         else:
-            pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
+            if _HAVE_PYMUPDF:
+                pt4, m4 = ocr_pages_with_pymupdf(pdf_path, empty_pages)
+            else:
+                pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
         tried.append(m4)
         for p in empty_pages:
             if (pt4.get(p) or "").strip():
@@ -829,6 +871,33 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
                     break
                 positions.append(idx)
                 start = idx + max(1, len(alt))
+
+    # Fallback: approximate match for OCR-mangled terms (e.g., "Thmst", "Trost")
+    if not positions:
+        try:
+            threshold = 0.75
+            src_lines = src.splitlines()
+            offset = 0
+            for line in src_lines:
+                hay_line = line if case_sensitive else line.lower()
+                # quick skip if no first char present
+                if needle and (needle[0] not in hay_line):
+                    pass
+                # compare against tokens in line
+                for token in re.split(r"[^A-Za-z0-9]+", hay_line):
+                    if not token:
+                        continue
+                    if len(token) >= max(4, len(needle) - 2):
+                        if difflib.SequenceMatcher(None, token, needle).ratio() >= threshold:
+                            pos_local = hay_line.find(token)
+                            if pos_local >= 0:
+                                positions.append(offset + pos_local)
+                                break
+                if positions:
+                    break
+                offset += len(line) + 1
+        except Exception:
+            pass
 
     if not positions:
         return None, None

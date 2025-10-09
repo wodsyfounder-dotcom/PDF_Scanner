@@ -33,7 +33,8 @@ echo [SETUP] Installing local Python packages...
   xlrd ^
   pytesseract ^
   pillow ^
-  pdf2image
+  pdf2image ^
+  ocrmypdf
 if errorlevel 1 (
   echo [ERROR] Package install failed.
   exit /b 1
@@ -45,6 +46,7 @@ echo   - Python venv: "%ROOT%.venv"
 echo   - Optional OCR tools (no PATH edits):
 echo       Create "%ROOT%tools\tesseract" and place tesseract.exe there
 echo       Create "%ROOT%tools\poppler\bin" and place pdftoppm.exe there
+echo   - OCRmyPDF installed inside venv. Use: ".venv\\Scripts\\ocrmypdf.exe"
 echo.
 echo The run scripts will prefer .venv and extend PATH with ^"tools^" if present.
 echo Next steps:

@@ -39,7 +39,7 @@ Notes:
 - Run one of:
   - Windows: double-click `run.bat`
   - PowerShell: `./run.ps1`
-  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs`
+  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs --window-chars 400`
 
 Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-level file updated is `Product_Data_File\EIDP_data.csv`.
 
@@ -149,6 +149,20 @@ Line mode example
   - Install `pandas` plus `xlsxwriter` or `openpyxl`; otherwise CSVs are written.
 - OCR not triggered
   - Confirm Tesseract is installed and on PATH; Poppler present for `pdf2image`.
+  - Optional: set `TESSERACT_CMD` env var to the full path to `tesseract.exe`.
+  - If using the local venv, `run.bat` adds `.venv\Scripts` to PATH so `ocrmypdf` and Python entry points are available.
+
+OCRmyPDF (optional, installed into venv by install.bat)
+- Use the venv-local command:
+  - Windows CMD: `.venv\Scripts\ocrmypdf.exe -l eng --force-ocr --rotate-pages --deskew --clean --optimize 3 --tesseract-pagesegmode 4 "user_inputs\EIDP_Import_Docs\SN 1111.pdf" "user_inputs\EIDP_Import_Docs\SN 1111.ocr.pdf"`
+  - PowerShell: `.venv/Scripts/ocrmypdf.exe ...`
+- Requires Tesseract; Ghostscript recommended (for cleanup/compression). Poppler not required for OCRmyPDF.
+
+OCR tuning (env vars)
+- `TESSERACT_CMD`: full path to `tesseract.exe` (if not on PATH)
+- `TESSERACT_ARGS`: extra args passed to Tesseract (default `--psm 6`). Examples: `--psm 4`, `--oem 1`.
+- `OCR_DPI`: rendering DPI for OCR (default `400`, range `200..800`).
+- `OCR_RENDERER`: `pymupdf` or `pdf2image` to force renderer choice (defaults to PyMuPDF when available).
 - Serial Number column missing
   - Ensure filenames include a pattern like `SN 1234` or `SN-ABC_09`.
 
