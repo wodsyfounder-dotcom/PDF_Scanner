@@ -29,6 +29,8 @@ echo [SETUP] Installing local Python packages...
   pypdf ^
   pandas ^
   xlsxwriter ^
+  openpyxl ^
+  xlrd ^
   pytesseract ^
   pillow ^
   pdf2image

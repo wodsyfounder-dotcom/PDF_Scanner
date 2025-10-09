@@ -90,12 +90,29 @@ except Exception:
 
 @dataclass
 class TermSpec:
-    """Container for a search term, page constraints, and optional XY/filters."""
-    term: str               # The phrase/keyword to search for
-    pages: List[int]        # Parsed list of 1-indexed page numbers
-    pages_raw: str          # Original "Pages" string for reporting
-    line: Optional[str] = None       # Row header for XY extraction
-    column: Optional[str] = None     # Column header (pipe '|' allowed for fallbacks)
+    """Term, page constraints, and extraction hints.
+
+    Fields:
+    - term, pages, pages_raw
+    - mode: nearest | line | table(xy)
+    - line/column: XY mode inputs (column may be pipe-separated alternatives)
+    - anchor: line mode anchor (defaults to term)
+    - field_index: 1-based index of field after anchor in line mode
+    - field_split: auto | groups | tokens
+    - return_type: number | string
+    - range_min/max: numeric filter bounds
+    - units_hint: preferred unit tokens (case-insensitive)
+    """
+    term: str
+    pages: List[int]
+    pages_raw: str
+    mode: Optional[str] = None
+    line: Optional[str] = None
+    column: Optional[str] = None
+    anchor: Optional[str] = None
+    field_index: Optional[int] = None
+    field_split: Optional[str] = None
+    return_type: Optional[str] = None
     range_min: Optional[float] = None
     range_max: Optional[float] = None
     units_hint: List[str] = field(default_factory=list)
@@ -227,6 +244,56 @@ def parse_page_ranges(s: str) -> List[int]:
     return sorted(pages)
 
 
+def _norm_mode(s: Optional[str]) -> Optional[str]:
+    if not s:
+        return None
+    v = s.strip().lower()
+    if v in ("table", "xy", "table(xy)"):
+        return "table(xy)"
+    if v in ("line",):
+        return "line"
+    if v in ("nearest", "default"):
+        return "nearest"
+    return v
+
+
+def _parse_field_index(v: Optional[str]) -> Optional[int]:
+    if v is None:
+        return None
+    s = str(v).strip().lower()
+    if not s:
+        return None
+    # strip suffixes like 1st, 2nd, 3rd, 4th
+    s = re.sub(r"(st|nd|rd|th)$", "", s)
+    try:
+        n = int(s)
+        if n >= 1:
+            return n
+    except Exception:
+        pass
+    return None
+
+
+def _norm_field_split(s: Optional[str]) -> str:
+    # Default to 'groups' so fields separated by 3+ spaces/tabs are distinct,
+    # and words separated by 1–2 spaces remain within the same field.
+    if not s:
+        return "groups"
+    v = s.strip().lower()
+    if v in ("groups", "tokens", "auto"):
+        return v
+    return "groups"
+
+
+def _norm_return_type(s: Optional[str]) -> str:
+    if not s:
+        return "number"
+    v = s.strip().lower()
+    if v in ("string", "text"):
+        return "string"
+    return "number"
+
+
 def load_terms(input_path: Path) -> List[TermSpec]:
     """
     Load the Terms + Pages table from CSV or Excel.
@@ -271,6 +338,11 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                         pages_str = ""
                         line = None
                         column = None
+                        mode = None
+                        anchor = None
+                        field_index = None
+                        field_split = None
+                        return_type = None
                         range_min = None
                         range_max = None
                         units_hint: List[str] = []
@@ -283,19 +355,44 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                 line = ((v or "").strip() or None)
                             if k and k.strip().lower() == "column":
                                 column = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "mode":
+                                mode = _norm_mode(v)
+                            if k and k.strip().lower() == "anchor":
+                                anchor = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "fieldindex":
+                                field_index = _parse_field_index(v)
+                            if k and k.strip().lower() == "fieldsplit":
+                                field_split = _norm_field_split(v)
+                            if k and k.strip().lower() == "return":
+                                return_type = _norm_return_type(v)
                             if k and k.strip().lower() == "range":
                                 rng = (v or "").strip()
                                 if rng:
                                     a, b = parse_range(rng)
                                     range_min, range_max = a, b
+                            if k and k.strip().lower() == "range (min)":
+                                try:
+                                    range_min = float(str(v).replace(',', '')) if v not in (None, "") else range_min
+                                except Exception:
+                                    pass
+                            if k and k.strip().lower() == "range (max)":
+                                try:
+                                    range_max = float(str(v).replace(',', '')) if v not in (None, "") else range_max
+                                except Exception:
+                                    pass
                             if k and k.strip().lower() == "units":
                                 units_hint = parse_units_hint(v)
                         if term:
                             result.append(TermSpec(term=term,
                                                    pages=parse_page_ranges(pages_str),
                                                    pages_raw=pages_str,
+                                                   mode=mode,
                                                    line=line,
                                                    column=column,
+                                                   anchor=anchor,
+                                                   field_index=field_index,
+                                                   field_split=field_split,
+                                                   return_type=return_type,
                                                    range_min=range_min,
                                                    range_max=range_max,
                                                    units_hint=units_hint))
@@ -357,17 +454,33 @@ def load_terms(input_path: Path) -> List[TermSpec]:
             header_map[key] = col_idx
 
     def col_for(name: str) -> Optional[int]:
-        """Return the 1-based column index for a header name, or None if absent."""
+        """Return the 1-based column index for a header name, or None if absent.
+        Tolerates headers like 'line (x)' or 'column (y)'.
+        """
+        target = name.lower()
+        # exact match
         for k, v in header_map.items():
-            if k == name.lower():
+            if k == target:
+                return v
+        # tolerant match stripping non-letters
+        for k, v in header_map.items():
+            kk = re.sub(r"[^a-z]", "", k)
+            if kk == target.replace(" ", "") or kk.startswith(target.replace(" ", "")):
                 return v
         return None
 
     term_col = col_for("term")
     pages_col = col_for("pages")
+    mode_col = col_for("mode")
     line_col = col_for("line")
     column_col = col_for("column")
+    anchor_col = col_for("anchor")
+    fieldindex_col = col_for("fieldindex")
+    fieldsplit_col = col_for("fieldsplit")
+    return_col = col_for("return")
     range_col = col_for("range")
+    range_min_col = col_for("range (min)")
+    range_max_col = col_for("range (max)")
     units_col = col_for("units")
     if not term_col:
         print("[ERROR] Could not find 'Term' header in Excel file.", file=sys.stderr)
@@ -377,21 +490,45 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     for row in ws.iter_rows(min_row=2):
         term_val = row[term_col - 1].value if term_col else None
         pages_val = row[pages_col - 1].value if pages_col else "" if pages_col else ""
+        mode_val = row[mode_col - 1].value if mode_col else None
         line_val = row[line_col - 1].value if line_col else None
         column_val = row[column_col - 1].value if column_col else None
+        anchor_val = row[anchor_col - 1].value if anchor_col else None
+        fieldindex_val = row[fieldindex_col - 1].value if fieldindex_col else None
+        fieldsplit_val = row[fieldsplit_col - 1].value if fieldsplit_col else None
+        return_val = row[return_col - 1].value if return_col else None
         range_val = row[range_col - 1].value if range_col else None
+        rmin_val = row[range_min_col - 1].value if range_min_col else None
+        rmax_val = row[range_max_col - 1].value if range_max_col else None
         units_val = row[units_col - 1].value if units_col else None
         term = (str(term_val) if term_val is not None else "").strip()
         pages_str = (str(pages_val) if pages_val is not None else "").strip()
+        mode = _norm_mode(str(mode_val) if mode_val is not None else None)
         line = (str(line_val).strip() if line_val is not None and str(line_val).strip() else None)
         column = (str(column_val).strip() if column_val is not None and str(column_val).strip() else None)
+        anchor = (str(anchor_val).strip() if anchor_val is not None and str(anchor_val).strip() else None)
+        field_index = _parse_field_index(str(fieldindex_val) if fieldindex_val is not None else None)
+        field_split = _norm_field_split(str(fieldsplit_val) if fieldsplit_val is not None else None)
+        return_type = _norm_return_type(str(return_val) if return_val is not None else None)
         rmin = rmax = None
         if range_val is not None and str(range_val).strip():
             rmin, rmax = parse_range(str(range_val).strip())
+        if rmin_val is not None and str(rmin_val).strip():
+            try:
+                rmin = float(str(rmin_val).replace(',', ''))
+            except Exception:
+                pass
+        if rmax_val is not None and str(rmax_val).strip():
+            try:
+                rmax = float(str(rmax_val).replace(',', ''))
+            except Exception:
+                pass
         units_hint = parse_units_hint(units_val)
         if term:
             terms.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
-                                  line=line, column=column, range_min=rmin, range_max=rmax, units_hint=units_hint))
+                                  mode=mode, line=line, column=column, anchor=anchor,
+                                  field_index=field_index, field_split=field_split, return_type=return_type,
+                                  range_min=rmin, range_max=rmax, units_hint=units_hint))
     return terms
 
 
@@ -408,15 +545,35 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         if not term:
             continue
         pages_str = str(get(row, 'pages') or '').strip()
+        mode = _norm_mode(str(get(row, 'mode') or '').strip() or None)
         line = str(get(row, 'line') or '').strip() or None
         column = str(get(row, 'column') or '').strip() or None
+        anchor = str(get(row, 'anchor') or '').strip() or None
+        field_index = _parse_field_index(str(get(row, 'fieldindex') or '').strip() or None)
+        field_split = _norm_field_split(str(get(row, 'fieldsplit') or '').strip() or None)
+        return_type = _norm_return_type(str(get(row, 'return') or '').strip() or None)
         rng = str(get(row, 'range') or '').strip()
         rmin = rmax = None
         if rng:
             rmin, rmax = parse_range(rng)
+        # Direct min/max override
+        _rmin = str(get(row, 'range (min)') or '').strip()
+        _rmax = str(get(row, 'range (max)') or '').strip()
+        if _rmin:
+            try:
+                rmin = float(_rmin.replace(',', ''))
+            except Exception:
+                pass
+        if _rmax:
+            try:
+                rmax = float(_rmax.replace(',', ''))
+            except Exception:
+                pass
         units_hint = parse_units_hint(get(row, 'units'))
         out.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
-                            line=line, column=column, range_min=rmin, range_max=rmax, units_hint=units_hint))
+                            mode=mode, line=line, column=column, anchor=anchor,
+                            field_index=field_index, field_split=field_split, return_type=return_type,
+                            range_min=rmin, range_max=rmax, units_hint=units_hint))
     return out
 
 def parse_units_hint(v) -> List[str]:
@@ -964,6 +1121,244 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             doc.close()
         except Exception:
             pass
+
+
+def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> MatchResult:
+    """Line-mode extraction: find a line containing an anchor, then pick the Nth field after it.
+    Field splitting: auto (groups of 2+ spaces or tabs, else tokens), groups, tokens.
+    Return type: string or number.
+    """
+    # 0) If PyMuPDF is available, try geometry-based grouping on the actual line using word gaps.
+    if _HAVE_PYMUPDF:
+        try:
+            doc = fitz.open(str(pdf_path))
+            pages = spec.pages if spec.pages else list(range(1, doc.page_count + 1))
+            anchor = (spec.anchor or spec.term or "")
+            norm = (lambda t: t) if case_sensitive else (lambda t: t.lower())
+            idx = spec.field_index or 1
+            for p in pages:
+                if p < 1 or p > doc.page_count:
+                    continue
+                page = doc.load_page(p - 1)
+                words = page.get_text("words") or []
+                # Group words by line id (w[6])
+                lines_map = {}
+                for w in words:
+                    ln = w[6] if len(w) >= 7 else round(float(w[1]))
+                    lines_map.setdefault(ln, []).append(w)
+                # find a line containing the anchor
+                target_ln = None
+                for ln, ws in lines_map.items():
+                    line_str = " ".join([str(x[4]) for x in sorted(ws, key=lambda k: k[0])])
+                    if norm(anchor) in norm(line_str):
+                        target_ln = ln
+                        break
+                if target_ln is None:
+                    continue
+                ws_sorted = sorted(lines_map[target_ln], key=lambda k: k[0])
+                # Build tail words after the anchor occurrence (to avoid counting anchor tokens)
+                line_text = " ".join([str(x[4]) for x in ws_sorted])
+                pos = norm(line_text).find(norm(anchor)) if anchor else 0
+                # Filter words whose center is to the right of the anchor occurrence
+                # Estimate anchor x by scanning characters left-to-right
+                anchor_x = None
+                if anchor:
+                    accum = 0
+                    # crude mapping: distribute line length along word widths
+                    total_len = len(line_text)
+                    if total_len > 0 and pos >= 0:
+                        running = 0
+                        for w in ws_sorted:
+                            txt = str(w[4])
+                            running_end = running + len(txt) + 1  # include a space
+                            if running_end >= pos:
+                                anchor_x = (float(w[0]) + float(w[2]))/2.0
+                                break
+                            running = running_end
+                # Build fields by geometric gaps (concatenate words until a big gap)
+                fields = []
+                current = []
+                prev_x1 = None
+                # dynamic threshold based on median character height/word width
+                gap_threshold = 18.0
+                try:
+                    # Estimate threshold from median word width if available
+                    widths = [float(w[2]) - float(w[0]) for w in ws_sorted if (float(w[2]) - float(w[0])) > 0]
+                    if widths:
+                        widths.sort()
+                        med = widths[len(widths)//2]
+                        gap_threshold = max(12.0, min(36.0, med * 0.8))
+                except Exception:
+                    pass
+                for w in ws_sorted:
+                    cx = (float(w[0]) + float(w[2]))/2.0
+                    if anchor_x is not None and cx < anchor_x:
+                        continue
+                    if prev_x1 is None:
+                        current.append(str(w[4]))
+                        prev_x1 = float(w[2])
+                        continue
+                    gap = float(w[0]) - prev_x1
+                    if gap > gap_threshold:
+                        fields.append(" ".join(current).strip())
+                        current = [str(w[4])]
+                    else:
+                        current.append(str(w[4]))
+                    prev_x1 = float(w[2])
+                if current:
+                    fields.append(" ".join(current).strip())
+                # Remove empties and ensure we have enough fields
+                fields = [f for f in fields if f]
+                if len(fields) >= idx:
+                    selected = fields[idx - 1].strip()
+                    selected = re.sub(r"\s+", " ", selected).lstrip(":-–— ")
+                    if (spec.return_type or "number").lower() == "string":
+                        try:
+                            doc.close()
+                        except Exception:
+                            pass
+                        return MatchResult(
+                            pdf_file=pdf_path.name,
+                            serial_number=serial_number,
+                            term=spec.term,
+                            page=p,
+                            number=selected,
+                            units=None,
+                            context=line_text.strip()[:200],
+                            method="pymupdf:line-geom",
+                            found=True,
+                        )
+                    # For numbers: extract from selected field
+                    nums = [m.group(0) for m in NUMBER_REGEX.finditer(selected)]
+                    nums += [m.group(0) for m in DATE_REGEX.finditer(selected)]
+                    def _ok(nstr: str) -> bool:
+                        if spec.range_min is not None or spec.range_max is not None:
+                            try:
+                                v = float((numeric_only(nstr) or '').replace(',', ''))
+                                if spec.range_min is not None and v < spec.range_min:
+                                    return False
+                                if spec.range_max is not None and v > spec.range_max:
+                                    return False
+                            except Exception:
+                                pass
+                        if spec.units_hint:
+                            u = extract_units(nstr)
+                            if not (u and any(u.lower()==h.lower() for h in spec.units_hint)):
+                                return False
+                        return True
+                    for n in nums:
+                        if _ok(n):
+                            try:
+                                doc.close()
+                            except Exception:
+                                pass
+                            return MatchResult(
+                                pdf_file=pdf_path.name,
+                                serial_number=serial_number,
+                                term=spec.term,
+                                page=p,
+                                number=n,
+                                units=extract_units(n),
+                                context=line_text.strip()[:200],
+                                method="pymupdf:line-geom",
+                                found=True,
+                            )
+            try:
+                doc.close()
+            except Exception:
+                pass
+        except Exception:
+            # fall through to text-based approach
+            pass
+
+    # 1) Text-based approach if geometry path was unavailable or failed
+    # Build text for constrained pages (or whole doc)
+    page_text_map, pipeline = extract_pages_text(pdf_path, spec.pages if spec.pages else list(range(1, 10000)))
+    anchor = (spec.anchor or spec.term or "")
+    if not case_sensitive:
+        anchor_cmp = anchor.lower()
+    else:
+        anchor_cmp = anchor
+    split_mode = (spec.field_split or "auto").lower()
+    idx = spec.field_index or 1
+
+    def _split_fields(tail: str) -> list:
+        # groups: split on 2+ spaces/tabs so single spaces remain inside a field
+        fields = re.split(r"[ \t]{2,}", tail.strip()) if split_mode in ("groups", "auto") else []
+        fields = [f for f in fields if f]
+        if split_mode == "auto" and len(fields) <= 1:
+            fields = []
+        if not fields:
+            fields = re.split(r"\s+", tail.strip())
+            fields = [f for f in fields if f]
+        return fields
+
+    for p in sorted(page_text_map.keys()):
+        text = page_text_map[p]
+        lines = text.splitlines()
+        best = None  # (fields, line)
+        for line in lines:
+            hay = line if case_sensitive else line.lower()
+            pos = hay.find(anchor_cmp) if anchor_cmp else 0
+            if pos == -1:
+                continue
+            tail = line[pos + len(anchor):] if anchor else line
+            fields = _split_fields(tail)
+            if len(fields) >= idx:
+                best = (fields, line)
+                break  # take first satisfying occurrence on page
+        if best:
+            fields, line = best
+            selected = fields[idx - 1].strip()
+            # Normalize: collapse inner whitespace to single, strip leading punctuation like ':'
+            selected = re.sub(r"\s+", " ", selected).lstrip(":-–— ")
+            if (spec.return_type or "number").lower() == "string":
+                return MatchResult(
+                    pdf_file=pdf_path.name,
+                    serial_number=serial_number,
+                    term=spec.term,
+                    page=p,
+                    number=selected,
+                    units=None,
+                    context=line.strip()[:200],
+                    method=f"text:line",
+                    found=True,
+                )
+            # Return number: search within selected field, applying filters
+            nums = [m.group(0) for m in NUMBER_REGEX.finditer(selected)]
+            nums += [m.group(0) for m in DATE_REGEX.finditer(selected)]
+            def _ok(nstr: str) -> bool:
+                if spec.range_min is not None or spec.range_max is not None:
+                    try:
+                        v = float((numeric_only(nstr) or '').replace(',', ''))
+                        if spec.range_min is not None and v < spec.range_min:
+                            return False
+                        if spec.range_max is not None and v > spec.range_max:
+                            return False
+                    except Exception:
+                        pass
+                if spec.units_hint:
+                    u = extract_units(nstr)
+                    if not (u and any(u.lower()==h.lower() for h in spec.units_hint)):
+                        return False
+                return True
+            for n in nums:
+                if _ok(n):
+                    return MatchResult(
+                        pdf_file=pdf_path.name,
+                        serial_number=serial_number,
+                        term=spec.term,
+                        page=p,
+                        number=n,
+                        units=extract_units(n),
+                        context=line.strip()[:200],
+                        method=f"text:line",
+                        found=True,
+                    )
+            # If no number matched, fall back to nearest later
+    # Fallback to nearest with filters
+    return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
 def move_file_safely(src: Path, dst_folder: Path) -> Path:
     """
     Move a file into a destination folder, avoiding collisions by appending (n)
@@ -1148,8 +1543,10 @@ def run_scan(
 
         # Search each configured term within the allowed page ranges
         for t in terms:
-            # If both Line and Column provided, attempt XY table extraction first
-            if getattr(t, 'line', None) and getattr(t, 'column', None):
+            mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
+            if mode == "line":
+                res = scan_pdf_for_term_line(pdf_path, serial_number, t, window_chars, case_sensitive)
+            elif mode in ("table(xy)", "xy", "table") or (not mode and getattr(t, 'line', None) and getattr(t, 'column', None)):
                 res = scan_pdf_for_term_xy(pdf_path, serial_number, t, window_chars, case_sensitive)
             else:
                 res = scan_pdf_for_term(
@@ -1172,12 +1569,17 @@ def run_scan(
                 "context": res.context,
                 "method_pipeline": res.method,
                 # Terms schema hints for transparency/debug
-                "mode": ("xy" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest"),
+                "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
                 "pages_raw": getattr(t, 'pages_raw', ""),
                 "line": getattr(t, 'line', None),
                 "column": getattr(t, 'column', None),
-                "range": (f"{getattr(t,'range_min',None)}..{getattr(t,'range_max',None)}" if (getattr(t,'range_min',None) is not None or getattr(t,'range_max',None) is not None) else None),
+                "range_min": getattr(t, 'range_min', None),
+                "range_max": getattr(t, 'range_max', None),
                 "units_hint": getattr(t, 'units_hint', None),
+                "anchor": getattr(t, 'anchor', None),
+                "field_index": getattr(t, 'field_index', None),
+                "field_split": getattr(t, 'field_split', None),
+                "return_type": getattr(t, 'return_type', None),
             }
             metadata_rows.append(meta)
             summary.append(meta)
@@ -1263,8 +1665,14 @@ def run_scan(
             with path.open("w", encoding="utf-8", newline="") as f:
                 w = csv.writer(f)
                 w.writerow(header)
-                for term in sorted(rows_map.keys()):
-                    w.writerow(rows_map[term])
+                # Preserve input order for known terms first
+                for term in term_order:
+                    if term in rows_map:
+                        w.writerow(rows_map[term])
+                # Then any pre-existing terms not in current order
+                for term in rows_map.keys():
+                    if term not in term_order:
+                        w.writerow(rows_map[term])
 
         header, existing = _read_csv(agg_path)
         # Ensure first two columns

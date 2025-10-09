@@ -15,13 +15,16 @@ echo [SETUP] Creating standard folders and sample files...
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" exit /b %RC%
 
+rem Generate a fresh schema template (best effort)
+"%PY%" "%ROOT%scripts\generate_terms_schema.py" >nul 2>nul
+
 echo [READY] Scaffold complete.
 echo   - Input PDFs : "%ROOT%user_inputs\EIDP_Import_Docs"
 echo   - Scanned out: "%ROOT%user_inputs\Scanned_Docs"
-echo   - Terms file : "%ROOT%user_inputs\terms.csv"
+echo   - Terms file : "%ROOT%user_inputs\terms.csv" (or .xlsx)
+echo   - Schema template: "%ROOT%user_inputs\terms.schema.xlsx"
 echo   - Data folder: "%ROOT%Product_Data_File" (per-run outputs go under run_data)
 echo.
 echo Next: double-click run.bat or execute it from a terminal.
 
 endlocal & exit /b 0
-

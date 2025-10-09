@@ -30,7 +30,7 @@ if exist "%ROOT%tools\tesseract\bin" set "PATH=%ROOT%tools\tesseract\bin;%PATH%"
 if exist "%ROOT%tools\poppler\bin" set "PATH=%ROOT%tools\poppler\bin;%PATH%"
 
 echo [RUN] Python: "%PY%"
-echo [RUN] Terms : "%TERMS%"
+echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
 echo [RUN] PDFs  : "%IN_DIR%"
 echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
 

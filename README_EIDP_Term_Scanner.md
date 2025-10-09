@@ -39,7 +39,7 @@ Notes:
 - Run one of:
   - Windows: double-click `run.bat`
   - PowerShell: `./run.ps1`
-  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.csv --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs`
+  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs`
 
 Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-level file updated is `Product_Data_File\EIDP_data.csv`.
 
@@ -82,20 +82,35 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
 - Required columns:
   - `Term`: the search term name
   - `Pages`: page ranges (e.g., `5-10; 22`)
-- Optional columns for deterministic table picks and filtering:
-  - `Line`: row header text to match (XY mode)
-  - `Column`: column header text to match (pipe `|` allowed for alternatives, e.g., `Value|Nominal`)
-  - `Range`: numeric range filter, e.g., `200..3000` (applies to matched number)
-  - `Units`: preferred units near the number (pipe `|` list, e.g., `lbf|psi`)
+- Mode and extraction options (optional):
+  - `Mode`: `nearest` | `table(xy)` | `line` (default `nearest`)
+
+  - For `table(xy)`:
+    - `Line`: row header text (data row)
+    - `Column`: column header text; supports alternatives with pipe (e.g., `Value|Nominal`)
+
+  - For `line`:
+    - `Anchor`: text that must appear on the target line (defaults to `Term`)
+    - `FieldIndex`: which field after the anchor to return (1-based; `2` or `2nd` etc.)
+    - `FieldSplit`: `auto` | `groups` | `tokens`
+      - `groups`: split by two-or-more spaces or tabs (e.g., `Ford EIDP` | `Revision A` | `Type 2`)
+      - `tokens`: split by any whitespace (single words)
+      - `auto`: try `groups`, fall back to `tokens`
+    - `Return`: `string` | `number` (default `number`)
+
+  - Filters (apply to `number` return types):
+    - `Units`: preferred units near the number (pipe `|` list, e.g., `lbf|psi`)
+    - `Range (min)`, `Range (max)`: numeric bounds; scientific notation supported (e.g., `8E-8`)
+    - Legacy `Range`: `a..b` also supported; explicit min/max take precedence
 
 Behavior
-- If both `Line` and `Column` are provided, the scanner uses XY mode on those pages:
-  - finds the `Column` header’s x-position, finds the row containing `Line`, then picks the number on that row closest to the column.
-  - falls back to nearest-number mode if a match is not found.
-- Otherwise, nearest-number mode is used with filters:
-  - Prefers a number on the same line, then nearby; respects `Range` and `Units` if provided.
-- Numbers support scientific notation (e.g., `8E-8`) and optional units.
-- Dates in `MM/DD/YY` or `MM/DD/YYYY` format are allowed values in matches.
+- `table(xy)`: locate column header x-position, find row containing `Line`, return the number on that row closest (by x) to the column.
+  - Falls back to `nearest` if not found.
+- `line`: find a line containing `Anchor` (or `Term`), split the tail into fields, pick the `FieldIndex`-th field.
+  - If `Return=string` → return that text; if `Return=number` → extract a number from that field (respects `Units` and `Range`).
+  - Falls back to `nearest` if not found.
+- `nearest` (default): prefers same-line numbers (right, then left), then adjacent lines, then by distance; respects `Units`/`Range` if provided.
+- Numbers support scientific notation (e.g., `8E-8`). Dates (`MM/DD/YY` or `MM/DD/YYYY`) are allowed values.
 
 ## Command-Line Options
 
@@ -112,8 +127,14 @@ Behavior
 
 Examples:
 ```
-py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.csv --pdf-folder .\user_inputs\EIDP_Import_Docs --window-chars 240 --case-sensitive
+py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --window-chars 240 --case-sensitive
 ```
+
+Line mode example
+- Line text: `Title: Ford EIDP   Revision A   Type 2`
+- Terms row:
+  - `Term=Title`, `Mode=line`, `Anchor=Title:`, `FieldIndex=2`, `FieldSplit=groups`, `Return=string`
+  - Result → `Revision A`
 
 ---
 
