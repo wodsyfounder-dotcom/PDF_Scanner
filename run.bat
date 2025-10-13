@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
 set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
@@ -41,6 +41,26 @@ if exist "%ROOT%tools\tesseract\bin" set "PATH=%ROOT%tools\tesseract\bin;%PATH%"
 if exist "%ROOT%tools\poppler\bin" set "PATH=%ROOT%tools\poppler\bin;%PATH%"
 if exist "%ROOT%tools\unpaper" set "PATH=%ROOT%tools\unpaper;%PATH%"
 if exist "%ROOT%tools\pngquant" set "PATH=%ROOT%tools\pngquant;%PATH%"
+if exist "%ROOT%tools\qpdf" set "PATH=%ROOT%tools\qpdf;%PATH%"
+
+rem Common system install paths
+if exist "%ProgramFiles%\qpdf\bin" set "PATH=%ProgramFiles%\qpdf\bin;%PATH%"
+if exist "%ProgramFiles(x86)%\qpdf\bin" set "PATH=%ProgramFiles(x86)%\qpdf\bin;%PATH%"
+
+rem Load optional scanner config (user_inputs\scanner.env) as KEY=VALUE pairs
+set "CFG=%ROOT%user_inputs\scanner.env"
+if exist "%CFG%" (
+  echo [RUN] Loading config: "%CFG%"
+  for /f "usebackq tokens=* delims=" %%L in ("%CFG%") do (
+    set "LINE=%%L"
+    if not "!LINE!"=="" if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" (
+      set "%%L"
+    )
+  )
+)
+
+rem Default to local venv ocrmypdf if available and not overridden by config
+if not defined OCRMYPDF_BIN if exist "%ROOT%.venv\Scripts\ocrmypdf.exe" set "OCRMYPDF_BIN=%ROOT%.venv\Scripts\ocrmypdf.exe"
 
 rem Also extend PATH with common system install locations (session-only)
 rem - Tesseract (default installer path)

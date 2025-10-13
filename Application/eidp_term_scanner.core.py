@@ -23,6 +23,8 @@ import re
 import shutil
 import sys
 import difflib
+import tempfile
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -53,6 +55,8 @@ _HAVE_PDFMINER = False
 _HAVE_PYPDF = False
 _HAVE_TESSERACT = False
 _HAVE_PDF2IMAGE = False
+_HAVE_OCRMYPDF = False
+_OCRMYPDF_BIN: Optional[str] = None
 
 try:
     import fitz  # PyMuPDF: fast, high-fidelity text extraction
@@ -99,6 +103,16 @@ try:
     _HAVE_PDF2IMAGE = True
 except Exception:
     pass
+
+try:
+    import ocrmypdf as _ocrmypdf  # OCRmyPDF python API
+    _HAVE_OCRMYPDF = True
+except Exception:
+    try:
+        _OCRMYPDF_BIN = shutil.which("ocrmypdf")
+        _HAVE_OCRMYPDF = bool(_OCRMYPDF_BIN)
+    except Exception:
+        _HAVE_OCRMYPDF = False
 
 
 @dataclass
@@ -750,6 +764,57 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
     return out, "ocr_pdf2image"
 
 
+def _run_ocrmypdf_to_temp(pdf_path: Path) -> Tuple[Optional[Path], str, Optional[Path]]:
+    """Run OCRmyPDF to create a temporary searchable PDF for the whole document.
+
+    Returns (ocr_pdf_path, label, tmp_dir). Caller may remove tmp_dir unless KEEP is set.
+    """
+    lang = os.environ.get('OCRMYPDF_LANG', 'eng')
+    try:
+        optimize = int(os.environ.get('OCRMYPDF_OPTIMIZE', '1'))
+    except Exception:
+        optimize = 1
+    keep = os.environ.get('OCRMYPDF_KEEP', '').strip().lower() in ('1', 'true', 'yes', 'keep')
+    force = os.environ.get('OCRMYPDF_FORCE', '').strip().lower() in ('1','true','yes','force')
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ocrmypdf_"))
+    out_path = tmp_dir / (pdf_path.stem + ".ocr.pdf")
+
+    # Prefer Python API
+    try:
+        try:
+            _ocr_fn = _ocrmypdf.ocr  # type: ignore[attr-defined]
+        except Exception:
+            from ocrmypdf import api as _ocr_api  # type: ignore
+            _ocr_fn = _ocr_api.ocr
+        _ocr_fn(
+            str(pdf_path),
+            str(out_path),
+            language=lang,
+            force_ocr=force,
+            rotate_pages=True,
+            deskew=True,
+            optimize=optimize,
+            progress_bar=False,
+        )
+        return out_path, f"ocrmypdf(opt={optimize})", (tmp_dir if keep else tmp_dir)
+    except Exception as e:
+        # Try CLI if API failed or is unavailable
+        try:
+            bin_path = os.environ.get('OCRMYPDF_BIN') or shutil.which('ocrmypdf') or 'ocrmypdf'
+            args = [bin_path, '-l', lang]
+            if force:
+                args.append('--force-ocr')
+            args += ['--rotate-pages', '--deskew', '--optimize', str(optimize), str(pdf_path), str(out_path)]
+            proc = subprocess.run(args, capture_output=True, text=True)
+            if proc.returncode == 0 and out_path.exists():
+                return out_path, f"ocrmypdf(opt={optimize})", (tmp_dir if keep else tmp_dir)
+            else:
+                return None, f"ocrmypdf:cli_error:{proc.returncode}", (tmp_dir if keep else tmp_dir)
+        except Exception as e2:
+            return None, f"ocrmypdf:error:{e2}", (tmp_dir if keep else tmp_dir)
+
+
 def _normalize_text_for_search(s: str) -> str:
     """Normalize text to improve matching across table/spacing artifacts.
     - Replace non-breaking spaces with regular spaces
@@ -776,9 +841,20 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
     Return a consolidated {page: text} mapping and a pipeline summary string.
     """
     tried = []
+    # Optional pre-processing with OCRmyPDF (primary mode)
+    use_ocrmypdf = (os.environ.get('USE_OCRMYPDF', '') or '').strip().lower()
+    prefer_ocrmypdf = _HAVE_OCRMYPDF and use_ocrmypdf in ('1','true','yes','always','primary','prefer')
+    source_pdf = pdf_path
+    _tmpdir: Optional[Path] = None
+    if prefer_ocrmypdf:
+        ocr_pdf, m_ocr, tmpd = _run_ocrmypdf_to_temp(pdf_path)
+        tried.append(m_ocr)
+        if ocr_pdf and ocr_pdf.exists():
+            source_pdf = ocr_pdf
+            _tmpdir = tmpd
 
     # Attempt #1: PyMuPDF
-    page_text, m = extract_pages_text_pymupdf(pdf_path, pages)
+    page_text, m = extract_pages_text_pymupdf(source_pdf, pages)
     tried.append(m)
 
     # Identify which pages are still empty after the first extractor
@@ -786,7 +862,7 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
 
     # Attempt #2: pdfminer on empty pages
     if empty_pages:
-        pt2, m2 = extract_pages_text_pdfminer(pdf_path, empty_pages)
+        pt2, m2 = extract_pages_text_pdfminer(source_pdf, empty_pages)
         tried.append(m2)
         for p in empty_pages:
             if (pt2.get(p) or "").strip():
@@ -795,11 +871,26 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
 
     # Attempt #3: pypdf/PyPDF2 on remaining pages
     if empty_pages:
-        pt3, m3 = extract_pages_text_pypdf(pdf_path, empty_pages)
+        pt3, m3 = extract_pages_text_pypdf(source_pdf, empty_pages)
         tried.append(m3)
         for p in empty_pages:
             if (pt3.get(p) or "").strip():
                 page_text[p] = pt3[p]
+        empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+
+    # Attempt #3b: OCRmyPDF fallback for remaining empties (if not already used)
+    if empty_pages and _HAVE_OCRMYPDF and not prefer_ocrmypdf and use_ocrmypdf not in ('off','0','no','false'):
+        ocr_pdf2, m_ocr2, tmpd2 = _run_ocrmypdf_to_temp(pdf_path)
+        tried.append(m_ocr2)
+        if ocr_pdf2 and ocr_pdf2.exists():
+            pt1b, _ = extract_pages_text_pymupdf(ocr_pdf2, empty_pages)
+            pt2b, _ = extract_pages_text_pdfminer(ocr_pdf2, empty_pages)
+            pt3b, _ = extract_pages_text_pypdf(ocr_pdf2, empty_pages)
+            for p in empty_pages:
+                textp = (pt1b.get(p) or '').strip() or (pt2b.get(p) or '').strip() or (pt3b.get(p) or '').strip()
+                if textp:
+                    page_text[p] = textp
+            _tmpdir = tmpd2 or _tmpdir
         empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
 
     # Attempt #4: OCR as final fallback
@@ -822,6 +913,13 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
     # Normalize text per page to make downstream term matching more robust
     for _p in list(page_text.keys()):
         page_text[_p] = _normalize_text_for_search(page_text.get(_p, ""))
+
+    # Cleanup temporary OCRmyPDF outputs unless requested to keep
+    try:
+        if _tmpdir and os.environ.get('OCRMYPDF_KEEP','').strip().lower() not in ('1','true','yes','keep'):
+            shutil.rmtree(str(_tmpdir), ignore_errors=True)
+    except Exception:
+        pass
 
     pipeline = " > ".join(tried)
     return page_text, pipeline

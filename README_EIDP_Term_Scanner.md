@@ -35,7 +35,8 @@ Notes:
 
 - One-time setup: run `auto-scaffold.bat` (creates folders and a sample `terms.csv`).
 - Put PDFs in `user_inputs\EIDP_Import_Docs`.
-- Edit `user_inputs\terms.csv` (headers: `Term, Pages`).
+- Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv` (headers: `Term, Pages`).
+- Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines)
 - Run one of:
   - Windows: double-click `run.bat`
   - PowerShell: `./run.ps1`
@@ -70,7 +71,10 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
   - For each occurrence, the nearest number (by characters) is selected.
   - Numbers include formats like `1,234`, `12.5`, optional units, and signs.
 - Robust extraction pipeline
-  - Tries PyMuPDF, pdfminer.six, pypdf; falls back to OCR via Tesseract if needed (when installed).
+  - Tries PyMuPDF, pdfminer.six, pypdf.
+  - Optional OCR paths:
+    - OCRmyPDF (searchable PDF pre-processing) as primary or fallback (recommended for scanned tables)
+    - Direct OCR via Tesseract (PyMuPDF/pdf2image renderers)
 - Auto-move scanned PDFs
   - After scanning, PDFs are moved from `--pdf-folder` to `--scanned-folder`.
 
@@ -158,11 +162,27 @@ OCRmyPDF (optional, installed into venv by install.bat)
   - PowerShell: `.venv/Scripts/ocrmypdf.exe ...`
 - Requires Tesseract; Ghostscript recommended (for cleanup/compression). Poppler not required for OCRmyPDF.
 
+Config file
+- `user_inputs\scanner.env` supports KEY=VALUE lines to set environment without editing your shell:
+  - `USE_OCRMYPDF=primary` to pre-OCR all docs; or `USE_OCRMYPDF=1` to enable fallback.
+  - `OCRMYPDF_FORCE=0` to avoid forcing OCR on pages that already contain text.
+  - `OCRMYPDF_LANG=eng`, `OCRMYPDF_OPTIMIZE=1` for language/opt level.
+  - `OCR_RENDERER=pymupdf|pdf2image`, `OCR_DPI=600`, `TESSERACT_ARGS=--psm 4` to tune direct OCR when used.
+  - `TESSERACT_CMD` or `OCRMYPDF_BIN` to point to tool executables if not on PATH.
+  - Lines starting with `#` or `;` and blank lines are ignored.
+
 OCR tuning (env vars)
 - `TESSERACT_CMD`: full path to `tesseract.exe` (if not on PATH)
 - `TESSERACT_ARGS`: extra args passed to Tesseract (default `--psm 6`). Examples: `--psm 4`, `--oem 1`.
 - `OCR_DPI`: rendering DPI for OCR (default `400`, range `200..800`).
 - `OCR_RENDERER`: `pymupdf` or `pdf2image` to force renderer choice (defaults to PyMuPDF when available).
+  
+OCRmyPDF integration (env vars)
+- `USE_OCRMYPDF`: `always|primary|prefer` to pre-OCR the whole doc, or any truthy value to enable fallback when pages are empty. `off|0|no|false` disables.
+- `OCRMYPDF_LANG`: language (default `eng`).
+- `OCRMYPDF_OPTIMIZE`: 0–3 (default `1`). Higher values may require external tools like `pngquant`.
+- `OCRMYPDF_BIN`: path to the `ocrmypdf` executable (if Python API import isn’t available).
+- `OCRMYPDF_KEEP`: `1/true` to keep temporary OCR outputs.
 - Serial Number column missing
   - Ensure filenames include a pattern like `SN 1234` or `SN-ABC_09`.
 
