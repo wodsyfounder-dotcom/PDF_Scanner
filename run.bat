@@ -68,6 +68,9 @@ if exist "%CFG%" (
   echo [RUN] Config parsed.
 )
 
+rem Ensure vendored packages path is prepended even if PYTHONPATH was overridden in scanner.env
+set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+
 rem If a custom VENV_DIR was provided via env or scanner.env, prefer it and bootstrap if missing
 if defined VENV_DIR (
   set "VENV_PY=%VENV_DIR%\Scripts\python.exe"

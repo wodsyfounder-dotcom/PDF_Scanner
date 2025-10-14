@@ -57,6 +57,7 @@ _HAVE_TESSERACT = False
 _HAVE_PDF2IMAGE = False
 _HAVE_OCRMYPDF = False
 _OCRMYPDF_BIN: Optional[str] = None
+_HAVE_PADDLE_OCR = False
 
 try:
     import fitz  # PyMuPDF: fast, high-fidelity text extraction
@@ -113,6 +114,12 @@ except Exception:
         _HAVE_OCRMYPDF = bool(_OCRMYPDF_BIN)
     except Exception:
         _HAVE_OCRMYPDF = False
+
+try:
+    from paddleocr import PaddleOCR  # type: ignore
+    _HAVE_PADDLE_OCR = True
+except Exception:
+    _HAVE_PADDLE_OCR = False
 
 
 @dataclass
@@ -175,19 +182,30 @@ NUMBER_REGEX = re.compile(
 
 DATE_REGEX = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 
-
+
+
 def numeric_only(value: Optional[str]) -> Optional[str]:
-    """Return just the numeric part of a matched value (e.g., "1 N" -> "1").
-    Preserves sign and decimals, strips thousands separators.
-    If no number is present, returns the original value unchanged.
-    """
-    if value is None:
-        return None
-    s = value.replace(" ", " ")
-    import re as _re
+    """Return just the numeric part of a matched value (e.g., "1 N" -> "1").
+
+    Preserves sign and decimals, strips thousands separators.
+
+    If no number is present, returns the original value unchanged.
+
+    """
+
+    if value is None:
+
+        return None
+
+    s = value.replace(" ", " ")
+
+    import re as _re
+
     m = _re.search(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?", s)
-    if not m:
-        return value
+    if not m:
+
+        return value
+
     return m.group(0).replace(",", "")
 
 
@@ -206,7 +224,8 @@ def extract_units(value: Optional[str]) -> Optional[str]:
     if m:
         return m.group(1)
     return None
-
+
+
 # Regex to capture serial numbers like "... SN 1234", "... SN-ABC_09", etc.
 SN_REGEX = re.compile(
     r"""\bSN\W*([A-Za-z0-9][A-Za-z0-9_\-]*)""",  # capture the SN id after the "SN" prefix
@@ -764,6 +783,67 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
     return out, "ocr_pdf2image"
 
 
+def ocr_pages_with_paddle(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """OCR selected pages using PyMuPDF render + PaddleOCR (pure-Python path).
+
+    Writes each page image to a temporary PNG and runs PaddleOCR on it.
+    """
+    out: Dict[int, str] = {}
+    if not (_HAVE_PYMUPDF and _HAVE_PADDLE_OCR):
+        return out, "ocr_paddle:N/A"
+    try:
+        ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)  # type: ignore
+    except Exception as e:
+        return out, f"ocr_paddle:init_error:{type(e).__name__}"
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception as e:
+        return out, f"ocr_paddle:open_error:{e}"
+    try:
+        dpi = int(os.environ.get('OCR_DPI', '400'))
+    except Exception:
+        dpi = 400
+    dpi = max(200, min(800, dpi))
+    zoom = dpi / 72.0
+    mat = fitz.Matrix(zoom, zoom)  # type: ignore[name-defined]
+    tmp_dir = Path(tempfile.mkdtemp(prefix="paddle_ocr_"))
+    try:
+        for p in pages:
+            if 1 <= p <= doc.page_count:
+                try:
+                    page = doc.load_page(p - 1)
+                    pix = page.get_pixmap(matrix=mat)
+                    img_path = tmp_dir / f"page_{p}.png"
+                    pix.save(str(img_path))
+                except Exception:
+                    out[p] = ""
+                    continue
+                try:
+                    result = ocr.ocr(str(img_path), cls=True)  # type: ignore[attr-defined]
+                    lines: list[str] = []
+                    for block in result or []:
+                        for item in block or []:
+                            try:
+                                txt = item[1][0]
+                                if isinstance(txt, str):
+                                    lines.append(txt)
+                            except Exception:
+                                pass
+                    out[p] = "\n".join(lines)
+                except Exception:
+                    out[p] = ""
+    finally:
+        try:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return out, "ocr_paddle"
+
+
 def _run_ocrmypdf_to_temp(pdf_path: Path) -> Tuple[Optional[Path], str, Optional[Path]]:
     """Run OCRmyPDF to create a temporary searchable PDF for the whole document.
 
@@ -893,7 +973,16 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             _tmpdir = tmpd2 or _tmpdir
         empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
 
-    # Attempt #4: OCR as final fallback
+    # Attempt #4a: PaddleOCR fallback (pure-Python), opt-in via OCR_RENDERER=padde|paddleocr or if Tesseract missing
+    prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
+    if empty_pages and _HAVE_PADDLE_OCR and prefer_engine in ('paddle', 'paddleocr'):
+        pt4, m4 = ocr_pages_with_paddle(pdf_path, empty_pages)
+        tried.append(m4)
+        for p in empty_pages:
+            if (pt4.get(p) or "").strip():
+                page_text[p] = pt4[p]
+
+    # Attempt #4b: Tesseract OCR as final fallback
     if empty_pages and _HAVE_TESSERACT:
         prefer = os.environ.get('OCR_RENDERER', '').strip().lower()
         if prefer in ('pdf2image', 'pdf2') and _HAVE_PDF2IMAGE:
@@ -905,6 +994,14 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
                 pt4, m4 = ocr_pages_with_pymupdf(pdf_path, empty_pages)
             else:
                 pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
+        tried.append(m4)
+        for p in empty_pages:
+            if (pt4.get(p) or "").strip():
+                page_text[p] = pt4[p]
+
+    # Attempt #4c: If still empty and PaddleOCR available (and not forced otherwise), try Paddle as general fallback
+    if empty_pages and _HAVE_PADDLE_OCR and prefer_engine in ('', 'auto', 'paddle', 'paddleocr'):
+        pt4, m4 = ocr_pages_with_paddle(pdf_path, empty_pages)
         tried.append(m4)
         for p in empty_pages:
             if (pt4.get(p) or "").strip():

@@ -43,6 +43,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Optional: PaddleOCR stack (pure-Python OCR) when enabled via env var PADDLE_OCR=1
+if /I "%PADDLE_OCR%"=="1" (
+  echo [SETUP] Installing PaddleOCR stack into venv...
+  "%VPY%" -m pip install paddleocr paddlepaddle
+  if errorlevel 1 echo [WARN] PaddleOCR install had warnings.
+)
+
 rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv runs)
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
@@ -52,6 +59,11 @@ echo         pymupdf, pdfminer.six, pypdf, pillow, pytesseract, pdf2image, panda
   pymupdf pdfminer.six pypdf pillow pytesseract pdf2image pandas xlsxwriter openpyxl xlrd ocrmypdf
 if errorlevel 1 (
   echo [WARN] Vendoring had warnings/failures. Non-venv runs may miss some features.
+)
+
+if /I "%PADDLE_OCR%"=="1" (
+  echo [SETUP] Vendoring PaddleOCR into Lib\site-packages...
+  "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" paddleocr paddlepaddle
 )
 
 rem --- Scaffold expected folders and sample terms file ---
