@@ -2,26 +2,34 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
+
+rem Default Python/venv selection (may be overridden after config load if VENV_DIR is set)
 set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
-  rem Ensure local venv scripts (ocrmypdf, etc.) are accessible on PATH
   set "PATH=%ROOT%.venv\Scripts;%PATH%"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
 )
 
-rem Detect terms file: prefer XLSX, fall back to CSV
+rem Make vendored packages available when not installed system-wide
+set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+
+rem Detect terms file and scaffold if missing
 set "TERMS_XLSX=%ROOT%user_inputs\terms.xlsx"
 set "TERMS_CSV=%ROOT%user_inputs\terms.csv"
-if exist "%TERMS_XLSX%" (
-  set "TERMS=%TERMS_XLSX%"
-) else if exist "%TERMS_CSV%" (
-  set "TERMS=%TERMS_CSV%"
-) else (
-  set "TERMS=%TERMS_XLSX%"
+if exist "%TERMS_XLSX%" set "TERMS=%TERMS_XLSX%" & goto has_terms
+if exist "%TERMS_CSV%" set "TERMS=%TERMS_CSV%" & goto has_terms
+echo [WARN] No terms file found.
+if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
+  echo [SETUP] Creating Excel terms template (user_inputs\terms.schema.xlsx)
+  "%PY%" "%ROOT%scripts\generate_terms_schema.py"
 )
+echo Open and edit: "%ROOT%user_inputs\terms.schema.xlsx" (save as terms.xlsx when ready)
+exit /b 1
+
+:has_terms
 set "IN_DIR=%ROOT%user_inputs\EIDP_Import_Docs"
 set "SCANNED=%ROOT%user_inputs\Scanned_Docs"
 set "OUT_DIR=%ROOT%Product_Data_File"
@@ -53,14 +61,37 @@ if exist "%CFG%" (
   echo [RUN] Loading config: "%CFG%"
   for /f "usebackq tokens=* delims=" %%L in ("%CFG%") do (
     set "LINE=%%L"
-    if not "!LINE!"=="" if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" (
+    if not "!LINE!"=="" if not "!LINE:~0,1!"==" " if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" if not "!LINE!"=="!LINE:=!" (
       set "%%L"
     )
   )
+  echo [RUN] Config parsed.
 )
 
-rem Default to local venv ocrmypdf if available and not overridden by config
-if not defined OCRMYPDF_BIN if exist "%ROOT%.venv\Scripts\ocrmypdf.exe" set "OCRMYPDF_BIN=%ROOT%.venv\Scripts\ocrmypdf.exe"
+rem If a custom VENV_DIR was provided via env or scanner.env, prefer it and bootstrap if missing
+if defined VENV_DIR (
+  set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+  if not exist "%VENV_PY%" (
+    echo [SETUP] No venv at "%VENV_DIR%". Bootstrapping...
+    call "%ROOT%install.bat" "%VENV_DIR%"
+  )
+  if exist "%VENV_PY%" (
+    set "PY=%VENV_PY%"
+    set "PATH=%VENV_DIR%\Scripts;%PATH%"
+  ) else (
+    echo [ERROR] Failed to create venv at "%VENV_DIR%".>&2
+    exit /b 1
+  )
+)
+
+rem Default to venv-local ocrmypdf if available and not overridden by config
+if not defined OCRMYPDF_BIN (
+  if defined VENV_DIR (
+    if exist "%VENV_DIR%\Scripts\ocrmypdf.exe" set "OCRMYPDF_BIN=%VENV_DIR%\Scripts\ocrmypdf.exe"
+  ) else (
+    if exist "%ROOT%.venv\Scripts\ocrmypdf.exe" set "OCRMYPDF_BIN=%ROOT%.venv\Scripts\ocrmypdf.exe"
+  )
+)
 
 rem Also extend PATH with common system install locations (session-only)
 rem - Tesseract (default installer path)
@@ -71,6 +102,13 @@ if exist "%ProgramFiles%\Tesseract-OCR\tesseract.exe" (
 if exist "%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe" (
   set "PATH=%ProgramFiles(x86)%\Tesseract-OCR;%PATH%"
   set "TESSERACT_CMD=%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe"
+)
+
+rem Report Tesseract status so users know whether OCR can run (simplified)
+if defined TESSERACT_CMD (
+  echo [RUN] Tesseract: "%TESSERACT_CMD%"
+) else (
+  echo [RUN] Tesseract: not detected on default paths; proceeding.
 )
 
 rem - Poppler (various Windows builds install under poppler-*\bin)
@@ -88,11 +126,6 @@ if exist "%ProgramFiles%\gs" (
 
 echo [RUN] Python: "%PY%"
 echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
-if not exist "%TERMS%" (
-  echo [ERROR] No terms file found. Create one at:>&2
-  echo         "%TERMS_XLSX%" or "%TERMS_CSV%".>&2
-  exit /b 1
-)
 echo [RUN] PDFs  : "%IN_DIR%"
 echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
 

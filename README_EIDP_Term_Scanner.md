@@ -12,6 +12,8 @@ Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest
     - `tools\tesseract` (folder containing `tesseract.exe`)
     - `tools\poppler\bin` (folder containing `pdftoppm.exe`)
   - The run scripts will auto-use `.venv` and extend PATH to these folders for the session.
+  - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
+  - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
 - System-wide (if allowed):
   - `py -m pip install --upgrade pip`
   - `py -m pip install pymupdf pdfminer.six pypdf pandas xlsxwriter pytesseract pillow pdf2image xlrd`
@@ -33,15 +35,17 @@ Notes:
 
 ## Super Simple Run
 
-- One-time setup: run `auto-scaffold.bat` (creates folders and a sample `terms.csv`).
+- One-time setup: install.bat scaffolds folders and drops a sample terms CSV if none exists:
+  - `user_inputs\\EIDP_Import_Docs`, `user_inputs\\Scanned_Docs`
+  - `user_inputs\\terms.xlsx` or `user_inputs\\terms.csv` (headers: `Term, Pages`)
 - Put PDFs in `user_inputs\EIDP_Import_Docs`.
 - Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv` (headers: `Term, Pages`).
 - Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines)
 - Run one of:
   - Windows: double-click `run.bat`
-  - PowerShell: `./run.ps1`
   - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs --window-chars 400`
 
+Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Create `user_inputs\EIDP_Import_Docs` and `user_inputs\Scanned_Docs` on first run. Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
 Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-level file updated is `Product_Data_File\EIDP_data.csv`.
 
 ---
@@ -54,7 +58,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
 - CSV fallbacks (written into the same `run_data` folder if Excel libs are missing):
   - `scan_results.results.csv` and `scan_results.metadata.csv`
 - `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder
-  - `by_pdf/` folder contains one JSON per PDF with just that file’s term results
+  - `by_pdf/` folder contains one JSON per PDF with just that fileâ€™s term results
 - Top-level aggregate that grows over time: `Product_Data_File\EIDP_data.csv`
 
 ---
@@ -111,7 +115,7 @@ Behavior
 - `table(xy)`: locate column header x-position, find row containing `Line`, return the number on that row closest (by x) to the column.
   - Falls back to `nearest` if not found.
 - `line`: find a line containing `Anchor` (or `Term`), split the tail into fields, pick the `FieldIndex`-th field.
-  - If `Return=string` → return that text; if `Return=number` → extract a number from that field (respects `Units` and `Range`).
+  - If `Return=string` â†’ return that text; if `Return=number` â†’ extract a number from that field (respects `Units` and `Range`).
   - Falls back to `nearest` if not found.
 - `nearest` (default): prefers same-line numbers (right, then left), then adjacent lines, then by distance; respects `Units`/`Range` if provided.
 - Numbers support scientific notation (e.g., `8E-8`). Dates (`MM/DD/YY` or `MM/DD/YYYY`) are allowed values.
@@ -138,7 +142,7 @@ Line mode example
 - Line text: `Title: Ford EIDP   Revision A   Type 2`
 - Terms row:
   - `Term=Title`, `Mode=line`, `Anchor=Title:`, `FieldIndex=2`, `FieldSplit=groups`, `Return=string`
-  - Result → `Revision A`
+  - Result â†’ `Revision A`
 
 ---
 
@@ -169,6 +173,7 @@ Config file
   - `OCRMYPDF_LANG=eng`, `OCRMYPDF_OPTIMIZE=1` for language/opt level.
   - `OCR_RENDERER=pymupdf|pdf2image`, `OCR_DPI=600`, `TESSERACT_ARGS=--psm 4` to tune direct OCR when used.
   - `TESSERACT_CMD` or `OCRMYPDF_BIN` to point to tool executables if not on PATH.
+  - `VENV_DIR` to choose a custom virtual environment path; `run.bat` will create it if missing.
   - Lines starting with `#` or `;` and blank lines are ignored.
 
 OCR tuning (env vars)
@@ -180,8 +185,8 @@ OCR tuning (env vars)
 OCRmyPDF integration (env vars)
 - `USE_OCRMYPDF`: `always|primary|prefer` to pre-OCR the whole doc, or any truthy value to enable fallback when pages are empty. `off|0|no|false` disables.
 - `OCRMYPDF_LANG`: language (default `eng`).
-- `OCRMYPDF_OPTIMIZE`: 0–3 (default `1`). Higher values may require external tools like `pngquant`.
-- `OCRMYPDF_BIN`: path to the `ocrmypdf` executable (if Python API import isn’t available).
+- `OCRMYPDF_OPTIMIZE`: 0â€“3 (default `1`). Higher values may require external tools like `pngquant`.
+- `OCRMYPDF_BIN`: path to the `ocrmypdf` executable (if Python API import isnâ€™t available).
 - `OCRMYPDF_KEEP`: `1/true` to keep temporary OCR outputs.
 - Serial Number column missing
   - Ensure filenames include a pattern like `SN 1234` or `SN-ABC_09`.
@@ -197,7 +202,7 @@ OCRmyPDF integration (env vars)
 
 ## Changelog
 
-- v2: Serial-number columns, Excel results/metadata sheets, auto-move scanned PDFs, per-run outputs under run_data only.
+- v2: Serial-number columns, Excel results/metadata sheets, auto-move scanned PDFs, per-run outputs under run_data only, plus `VENV_DIR` support and automatic venv bootstrap in `run.bat`.
 - v1: CSV/JSON summary per PDF-term, multi-extractor pipeline with optional OCR.
 
 ---
