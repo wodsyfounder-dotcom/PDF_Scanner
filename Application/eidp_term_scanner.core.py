@@ -58,6 +58,7 @@ _HAVE_PDF2IMAGE = False
 _HAVE_OCRMYPDF = False
 _OCRMYPDF_BIN: Optional[str] = None
 _HAVE_PADDLE_OCR = False
+_HAVE_EASYOCR = False
 
 try:
     import fitz  # PyMuPDF: fast, high-fidelity text extraction
@@ -120,6 +121,13 @@ try:
     _HAVE_PADDLE_OCR = True
 except Exception:
     _HAVE_PADDLE_OCR = False
+
+# EasyOCR (pure-Python OCR)
+try:
+    import easyocr  # type: ignore
+    _HAVE_EASYOCR = True
+except Exception:
+    _HAVE_EASYOCR = False
 
 
 @dataclass
@@ -783,6 +791,78 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
     return out, "ocr_pdf2image"
 
 
+def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """OCR selected pages using EasyOCR (CPU) with PyMuPDF rendering.
+
+    Returns page->concatenated text and a pipeline label.
+    """
+    out: Dict[int, str] = {}
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return out, "ocr_easyocr:N/A"
+    # Reader languages from env; comma/semicolon separated
+    langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+    langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    try:
+        reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+    except Exception as e:
+        return out, f"ocr_easyocr:init_error:{type(e).__name__}"
+
+    try:
+        dpi = int(os.environ.get('OCR_DPI', '600'))
+    except Exception:
+        dpi = 600
+    dpi = max(200, min(900, dpi))
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception as e:
+        return out, f"ocr_easyocr:open_error:{e}"
+
+    try:
+        for p in pages:
+            if 1 <= p <= doc.page_count:
+                try:
+                    page = doc.load_page(p - 1)
+                    pix = page.get_pixmap(dpi=dpi)
+                except Exception:
+                    out[p] = ""
+                    continue
+                # Save to a temp PNG to feed reader
+                try:
+                    import tempfile
+                    import os as _os
+                    tmp_dir = tempfile.mkdtemp(prefix="easyocr_")
+                    img_path = Path(tmp_dir) / f"page_{p}.png"
+                    pix.save(str(img_path))
+                    # Run OCR
+                    try:
+                        results = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
+                    except Exception:
+                        results = []
+                    # Join text lines in reading order
+                    lines: List[str] = []
+                    for item in results:
+                        try:
+                            _, t, c = item
+                            if isinstance(t, str) and t.strip():
+                                lines.append(t)
+                        except Exception:
+                            pass
+                    out[p] = "\n".join(lines)
+                finally:
+                    try:
+                        import shutil as _sh
+                        _sh.rmtree(tmp_dir, ignore_errors=True)  # type: ignore
+                    except Exception:
+                        pass
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+    return out, "ocr_easyocr"
+
 def ocr_pages_with_paddle(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
     """OCR selected pages using PyMuPDF render + PaddleOCR (pure-Python path).
 
@@ -792,7 +872,8 @@ def ocr_pages_with_paddle(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[in
     if not (_HAVE_PYMUPDF and _HAVE_PADDLE_OCR):
         return out, "ocr_paddle:N/A"
     try:
-        ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)  # type: ignore
+        # Avoid deprecated/unsupported args like show_log in newer releases
+        ocr = PaddleOCR(use_angle_cls=True, lang='en')  # type: ignore
     except Exception as e:
         return out, f"ocr_paddle:init_error:{type(e).__name__}"
     try:
@@ -939,6 +1020,10 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
 
     # Identify which pages are still empty after the first extractor
     empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+    # Optional override: force OCR regardless of extracted text
+    _force_ocr = (os.environ.get('FORCE_OCR', '') or '').strip().lower() in ('1','true','yes','force','always')
+    if _force_ocr:
+        empty_pages = list(pages)
 
     # Attempt #2: pdfminer on empty pages
     if empty_pages:
@@ -948,6 +1033,8 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             if (pt2.get(p) or "").strip():
                 page_text[p] = pt2[p]
         empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+        if _force_ocr:
+            empty_pages = list(pages)
 
     # Attempt #3: pypdf/PyPDF2 on remaining pages
     if empty_pages:
@@ -957,6 +1044,8 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             if (pt3.get(p) or "").strip():
                 page_text[p] = pt3[p]
         empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+        if _force_ocr:
+            empty_pages = list(pages)
 
     # Attempt #3b: OCRmyPDF fallback for remaining empties (if not already used)
     if empty_pages and _HAVE_OCRMYPDF and not prefer_ocrmypdf and use_ocrmypdf not in ('off','0','no','false'):
@@ -982,6 +1071,14 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             if (pt4.get(p) or "").strip():
                 page_text[p] = pt4[p]
 
+    # Attempt #4a-easy: EasyOCR fallback (pure-Python) when requested
+    if empty_pages and _HAVE_EASYOCR and prefer_engine in ('easy', 'easyocr'):
+        pt4e, m4e = ocr_pages_with_easyocr(pdf_path, empty_pages)
+        tried.append(m4e)
+        for p in empty_pages:
+            if (pt4e.get(p) or "").strip():
+                page_text[p] = pt4e[p]
+
     # Attempt #4b: Tesseract OCR as final fallback
     if empty_pages and _HAVE_TESSERACT:
         prefer = os.environ.get('OCR_RENDERER', '').strip().lower()
@@ -1006,6 +1103,14 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
         for p in empty_pages:
             if (pt4.get(p) or "").strip():
                 page_text[p] = pt4[p]
+
+    # Attempt #4d: If still empty and EasyOCR available, try EasyOCR as general fallback
+    if empty_pages and _HAVE_EASYOCR and prefer_engine in ('', 'auto', 'easy', 'easyocr'):
+        pt4e, m4e = ocr_pages_with_easyocr(pdf_path, empty_pages)
+        tried.append(m4e)
+        for p in empty_pages:
+            if (pt4e.get(p) or "").strip():
+                page_text[p] = pt4e[p]
 
     # Normalize text per page to make downstream term matching more robust
     for _p in list(page_text.keys()):
@@ -2037,4 +2142,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
