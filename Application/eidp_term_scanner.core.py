@@ -890,6 +890,94 @@ def get_pdf_page_count(pdf_path: Path) -> int:
             pass
     return 0
 
+
+def _update_run_registry(run_dir: Path, serial_numbers: List[str]) -> None:
+    """Update a persistent Excel registry of EIDPs (serial_numbers) and their latest run date.
+
+    - File path: Product_Data_File/run_registry.xlsx (CSV fallback if Excel writer unavailable)
+    - Columns: serial_number, run_date, run_folder
+    - On re-run, replaces the row for a serial number with the latest date and folder
+    """
+    try:
+        exports_dir = Path("Product_Data_File")
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        registry_xlsx = exports_dir / "run_registry.xlsx"
+        registry_csv = exports_dir / "run_registry.csv"
+
+        # Build rows to merge
+        from datetime import datetime
+        run_folder = run_dir
+        run_date = None
+        try:
+            # Prefer timestamp parsed from folder name
+            stamp = run_dir.name
+            dt = datetime.strptime(stamp, "%Y%m%d_%H%M%S")
+            run_date = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        new_rows = {sn: {"serial_number": sn, "run_date": run_date, "run_folder": str(run_folder)} for sn in serial_numbers}
+
+        # If pandas + writer are available, maintain Excel; else maintain CSV
+        if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
+            try:
+                import pandas as _pd
+                if registry_xlsx.exists():
+                    try:
+                        df = _pd.read_excel(registry_xlsx)
+                    except Exception:
+                        df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
+                else:
+                    df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
+                # Index by serial_number and update
+                if "serial_number" not in df.columns:
+                    df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
+                df = df.set_index("serial_number", drop=False)
+                for sn, row in new_rows.items():
+                    df.loc[sn] = row
+                # Sort by run_date desc for convenience (optional)
+                try:
+                    df_sorted = df.sort_values(by=["run_date", "serial_number"], ascending=[False, True])
+                except Exception:
+                    df_sorted = df
+                with _pd.ExcelWriter(registry_xlsx, engine="xlsxwriter") as writer:
+                    df_sorted.to_excel(writer, sheet_name="runs", index=False)
+                    ws = writer.sheets["runs"]
+                    ws.freeze_panes(1, 0)
+                    for i, col in enumerate(df_sorted.columns):
+                        try:
+                            max_len = int(df_sorted[col].astype(str).map(len).max()) if not df_sorted.empty else len(col)
+                        except Exception:
+                            max_len = len(col)
+                        ws.set_column(i, i, min(80, max(12, max_len + 2)))
+                return
+            except Exception:
+                # Fall back to CSV path
+                pass
+
+        # CSV fallback path
+        try:
+            rows_map: Dict[str, Dict[str, str]] = {}
+            if registry_csv.exists():
+                with registry_csv.open("r", encoding="utf-8", newline="") as f:
+                    r = csv.DictReader(f)
+                    for row in r:
+                        sn = (row.get("serial_number") or "").strip()
+                        if sn:
+                            rows_map[sn] = row
+            for sn, row in new_rows.items():
+                rows_map[sn] = row
+            with registry_csv.open("w", encoding="utf-8", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=["serial_number", "run_date", "run_folder"])
+                w.writeheader()
+                for sn in sorted(rows_map.keys()):
+                    w.writerow(rows_map[sn])
+        except Exception:
+            pass
+    except Exception:
+        # Never block the main run on registry updates
+        pass
+
 def _get_easyocr_reader(langs: List[str]):
     key = ",".join(langs or ['en'])
     rdr = _EASYOCR_READER_CACHE.get(key)
@@ -2478,6 +2566,20 @@ def run_scan(
             print(f"[CLEANUP] Removed legacy aggregate -> {agg_path}")
     except Exception:
         pass
+
+    # Update the persistent run registry with all serial numbers in this run
+    try:
+        run_sns: List[str] = []
+        # Prefer keys discovered in results_matrix
+        for term, sn_map in results_matrix.items():
+            for sn in sn_map.keys():
+                if sn not in run_sns:
+                    run_sns.append(sn)
+        if run_sns:
+            _update_run_registry(run_dir, run_sns)
+            print("[DONE] Run registry updated (run_registry.xlsx)")
+    except Exception as e:
+        print(f"[WARN] Could not update run registry: {e}")
 
     # --- Per-run snapshot note ---
     # No copy needed; all artifacts were written directly under run_dir.

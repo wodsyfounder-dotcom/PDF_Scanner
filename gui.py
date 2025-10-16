@@ -175,6 +175,9 @@ class App(tk.Tk):
         self.btn_stop = ttk.Button(btns, text="Stop", command=self._stop, state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(btns, text="Open Last Run Folder", command=self._open_last_run).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(btns, text="Open Run Registry", command=self._open_registry).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Compile Master", command=self._compile_master).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Open Master", command=self._open_master).pack(side=tk.LEFT, padx=(8, 0))
 
         # Log area
         self.txt = tk.Text(self, wrap="word", height=24)
@@ -245,6 +248,70 @@ class App(tk.Tk):
                 subprocess.Popen(["open", str(latest)])
             else:
                 subprocess.Popen(["xdg-open", str(latest)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _open_registry(self):
+        try:
+            reg_xlsx = ROOT / "Product_Data_File" / "run_registry.xlsx"
+            reg_csv = ROOT / "Product_Data_File" / "run_registry.csv"
+            target = None
+            if reg_xlsx.exists():
+                target = reg_xlsx
+            elif reg_csv.exists():
+                target = reg_csv
+            else:
+                messagebox.showinfo("No registry", "No run_registry.xlsx found yet. Run once to create it.")
+                return
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _compile_master(self):
+        try:
+            self.status.set("Compiling master...")
+            # Launch compile script; stream output to log
+            cmd = [sys.executable, str(ROOT / "scripts" / "compile_master.py")]
+            env = os.environ.copy()
+            # Ensure vendored packages (openpyxl/xlsxwriter/pandas) are visible
+            env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+            proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.append_log("[GUI] Compiling master...\n")
+            def _pump():
+                try:
+                    for line in proc.stdout:  # type: ignore[arg-type]
+                        self.append_log(line)
+                except Exception as e:
+                    self.append_log(f"[WARN] Master compile reader error: {e}\n")
+                finally:
+                    try:
+                        proc.wait(timeout=1)
+                    except Exception:
+                        pass
+                    self.status.set("Master compile finished.")
+            threading.Thread(target=_pump, daemon=True).start()
+        except Exception as e:
+            messagebox.showerror("Compile failed", str(e))
+
+    def _open_master(self):
+        try:
+            xlsx = ROOT / "Product_Data_File" / "master.xlsx"
+            csv = ROOT / "Product_Data_File" / "master.csv"
+            target = xlsx if xlsx.exists() else (csv if csv.exists() else None)
+            if not target:
+                messagebox.showinfo("No master", "No master workbook found yet. Compile it first.")
+                return
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
 
