@@ -864,59 +864,83 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     return out, "ocr_easyocr"
 
 
-def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, langs: List[str]) -> Dict[int, List[Dict[str, float]]]:
-    boxes: Dict[int, List[Dict[str, float]]] = {}
-    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
-        return boxes
+_EASYOCR_CACHE: Dict[Tuple[str, int, str, int], List[Dict[str, float]]] = {}
+_EASYOCR_READER_CACHE: Dict[str, object] = {}
+
+def _get_easyocr_reader(langs: List[str]):
+    key = ",".join(langs or ['en'])
+    rdr = _EASYOCR_READER_CACHE.get(key)
+    if rdr is not None:
+        return rdr
     try:
-        reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+        rdr = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+        _EASYOCR_READER_CACHE[key] = rdr
+        return rdr
     except Exception:
-        return boxes
+        return None
+
+def _get_easyocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: List[str]) -> List[Dict[str, float]]:
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return []
+    cache_key = (str(pdf_path), dpi, ",".join(langs or ['en']), page)
+    if cache_key in _EASYOCR_CACHE:
+        return _EASYOCR_CACHE[cache_key]
+    reader = _get_easyocr_reader(langs)
+    if reader is None:
+        return []
     try:
         doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
     except Exception:
-        return boxes
+        return []
     try:
-        for p in pages:
-            if 1 <= p <= doc.page_count:
+        if 1 <= page <= doc.page_count:
+            try:
+                pg = doc.load_page(page - 1)
+                pix = pg.get_pixmap(dpi=dpi)
+            except Exception:
+                return []
+            import tempfile, shutil
+            tmp_dir = Path(tempfile.mkdtemp(prefix='easyocr_xy_'))
+            img_path = tmp_dir / ('page_%d.png' % page)
+            try:
+                pix.save(str(img_path))
                 try:
-                    page = doc.load_page(p - 1)
-                    pix = page.get_pixmap(dpi=dpi)
+                    res = reader.readtext(str(img_path), detail=1)  # type: ignore[attr-defined]
                 except Exception:
-                    continue
-                import tempfile, shutil
-                tmp_dir = Path(tempfile.mkdtemp(prefix='easyocr_xy_'))
-                img_path = tmp_dir / ('page_%d.png' % p)
-                try:
-                    pix.save(str(img_path))
+                    res = []
+                items: List[Dict[str, float]] = []
+                for it in res:
                     try:
-                        res = reader.readtext(str(img_path), detail=1)
-                    except Exception:
-                        res = []
-                    items: List[Dict[str, float]] = []
-                    for it in res:
-                        try:
-                            bbox, text, conf = it
-                            xs = [float(pt[0]) for pt in bbox]
-                            ys = [float(pt[1]) for pt in bbox]
-                            x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
-                            cx = (x0 + x1) / 2.0
-                            cy = (y0 + y1) / 2.0
-                            if isinstance(text, str) and text.strip():
-                                items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': text.strip(), 'conf': float(conf) if conf is not None else 0.0})
-                        except Exception:
-                            pass
-                    boxes[p] = items
-                finally:
-                    try:
-                        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+                        bbox, text, conf = it
+                        xs = [float(pt[0]) for pt in bbox]
+                        ys = [float(pt[1]) for pt in bbox]
+                        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                        cx = (x0 + x1) / 2.0
+                        cy = (y0 + y1) / 2.0
+                        if isinstance(text, str) and text.strip():
+                            items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': text.strip(), 'conf': float(conf) if conf is not None else 0.0})
                     except Exception:
                         pass
+                _EASYOCR_CACHE[cache_key] = items
+                return items
+            finally:
+                try:
+                    shutil.rmtree(str(tmp_dir), ignore_errors=True)
+                except Exception:
+                    pass
+        return []
     finally:
         try:
             doc.close()
         except Exception:
             pass
+
+def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, langs: List[str]) -> Dict[int, List[Dict[str, float]]]:
+    boxes: Dict[int, List[Dict[str, float]]] = {}
+    for p in pages:
+        items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
+        if items:
+            boxes[p] = items
     return boxes
 
 
@@ -954,21 +978,21 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
     except Exception:
         col_tol = 0.6
 
-    pages = spec.pages if spec.pages else list(range(1, 10000))
-    boxes_map = _easyocr_boxes_for_pages(pdf_path, pages, dpi=dpi, langs=langs)
-    if not boxes_map:
-        return None
-
     row_name = (spec.line or spec.term or '').strip()
     col_raw = (spec.column or '').strip()
     col_alts = [s.strip() for s in re.split(r'[|/]', col_raw) if s.strip()] or [(spec.column or '').strip()]
 
+    # Process pages sequentially; stop at first success to avoid unnecessary OCR
     try:
         doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
     except Exception:
         doc = None
 
-    for p, items in boxes_map.items():
+    pages = spec.pages if spec.pages else ([] if doc is None else list(range(1, doc.page_count + 1)))
+    for p in pages:
+        items = _easyocr_boxes_for_pages(pdf_path, [p], dpi=dpi, langs=langs).get(p, [])
+        if not items:
+            continue
         sx = sy = 1.0
         try:
             if doc:
@@ -987,13 +1011,25 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
 
         best_col = None
         best_score = 0.0
+        above_cands = []
         for alt in col_alts:
-            cand = [(it, _fuzzy_ratio(it['text'], alt)) for it in items]
-            cand = [t for t in cand if t[1] >= fuzz]
-            if cand:
-                itc, sc = max(cand, key=lambda t: t[1])
-                if sc > best_score:
-                    best_col, best_score = itc, sc
+            for it in items:
+                sc = _fuzzy_ratio(it['text'], alt)
+                if sc >= fuzz and it.get('cy', 0) < row_it.get('cy', 0):
+                    dy = row_it['cy'] - it['cy']
+                    above_cands.append((dy, sc, it))
+        if above_cands:
+            above_cands.sort(key=lambda t: (t[0], -t[1]))
+            best_col = above_cands[0][2]
+            best_score = above_cands[0][1]
+        else:
+            for alt in col_alts:
+                cand = [(it, _fuzzy_ratio(it['text'], alt)) for it in items]
+                cand = [t for t in cand if t[1] >= fuzz]
+                if cand:
+                    itc, sc = max(cand, key=lambda t: t[1])
+                    if sc > best_score:
+                        best_col, best_score = itc, sc
         if not best_col:
             continue
 
@@ -1567,13 +1603,14 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
     """Attempt XY table extraction using PyMuPDF word coordinates.
     Fallbacks to nearest-number scan if PyMuPDF is unavailable or matching fails.
     """
-    # EasyOCR XY path if enabled
-    _use_ez_xy = ((os.environ.get("USE_EASYOCR_XY","") or "").strip().lower() in ("1","true","yes","on"))
-    if _use_ez_xy and _HAVE_EASYOCR:
-        _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-        if _res is not None:
-            return _res
+    # First, try PyMuPDF XY. If not found, fall back to EasyOCR XY on-demand.
     if not _HAVE_PYMUPDF:
+        # No PyMuPDF XY match: attempt EasyOCR XY as on-demand fallback
+        if _HAVE_EASYOCR:
+            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+            if _res is not None:
+                return _res
+        # Last resort: nearest-number scan
         return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
                                  units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
     try:
@@ -1598,21 +1635,6 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                 continue
             page = doc.load_page(p - 1)
             words = page.get_text("words") or []
-            # Determine column header x center
-            hx_list = []
-            for w in words:
-                txt = str(w[4]) if len(w) > 4 else ""
-                if not txt:
-                    continue
-                for alt in (col_alts or [spec.column] if spec.column else []):
-                    if alt and norm(alt) in norm(txt):
-                        x0,x1 = float(w[0]), float(w[2])
-                        hx_list.append((x0+x1)/2.0)
-                        break
-            if not hx_list:
-                continue
-            header_x = sum(hx_list)/len(hx_list)
-
             # Group words by line id
             lines_map = {}
             for w in words:
@@ -1629,7 +1651,42 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             if target_ln is None:
                 continue
 
-            ws_sorted = sorted(lines_map[target_ln], key=lambda k: k[0])
+            # Compute row center y
+            row_words = lines_map[target_ln]
+            row_cys = [ (float(w[1]) + float(w[3]))/2.0 for w in row_words ]
+            row_cy = sum(row_cys)/len(row_cys)
+
+            # Pick header token directly above the row (nearest-above); fallback to page-average if none above
+            best_header_x = None
+            best_dy = None
+            for w in words:
+                txt = str(w[4]) if len(w) > 4 else ""
+                if not txt:
+                    continue
+                for alt in (col_alts or [spec.column] if spec.column else []):
+                    if alt and norm(alt) in norm(txt):
+                        hy = (float(w[1]) + float(w[3]))/2.0
+                        if hy < row_cy:
+                            dy = row_cy - hy
+                            if best_dy is None or dy < best_dy:
+                                best_dy = dy
+                                best_header_x = (float(w[0]) + float(w[2]))/2.0
+                        break
+            if best_header_x is None:
+                hx_list = []
+                for w in words:
+                    txt = str(w[4]) if len(w) > 4 else ""
+                    if not txt:
+                        continue
+                    for alt in (col_alts or [spec.column] if spec.column else []):
+                        if alt and norm(alt) in norm(txt):
+                            hx_list.append((float(w[0]) + float(w[2]))/2.0)
+                            break
+                if not hx_list:
+                    continue
+                best_header_x = sum(hx_list)/len(hx_list)
+
+            ws_sorted = sorted(row_words, key=lambda k: k[0])
             candidates = []
             for w in ws_sorted:
                 tok = str(w[4]) if len(w) > 4 else ""
@@ -1637,7 +1694,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                     continue
                 if NUMBER_REGEX.fullmatch(tok) or DATE_REGEX.fullmatch(tok):
                     cx = (float(w[0]) + float(w[2]))/2.0
-                    candidates.append((abs(cx - header_x), tok))
+                    candidates.append((abs(cx - best_header_x), tok))
             if candidates:
                 candidates.sort(key=lambda t: t[0])
                 chosen_number = candidates[0][1]

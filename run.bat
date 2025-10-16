@@ -132,8 +132,8 @@ echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
 echo [RUN] PDFs  : "%IN_DIR%"
 echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
 
-rem Default: use table-based scan from EasyOCR tables (user request)
-if not defined SCAN_FROM_TABLES set "SCAN_FROM_TABLES=1"
+rem Default: on-demand OCR via core scanner (table-first is opt-in)
+if not defined SCAN_FROM_TABLES set "SCAN_FROM_TABLES=0"
 
 if "%SCAN_FROM_TABLES%"=="1" (
   rem Prebuild spatial/table for all PDFs
@@ -187,7 +187,7 @@ if "%SCAN_FROM_TABLES%"=="1" (
   rem Force OCR settings to EasyOCR-only fallback; disable OCRmyPDF
   if not defined USE_OCRMYPDF set "USE_OCRMYPDF=off"
   if not defined OCR_RENDERER set "OCR_RENDERER=easyocr"
-  if not defined USE_EASYOCR_XY set "USE_EASYOCR_XY=1"
+  if not defined USE_EASYOCR_XY set "USE_EASYOCR_XY=0"
 
   "%PY%" "%ROOT%Application\eidp_term_scanner.py" ^
     --input "%TERMS%" ^
@@ -205,12 +205,12 @@ if "%SCAN_FROM_TABLES%"=="1" (
 rem ---------------------------------------------------------------------------
 rem Post-scan spatial build (only for PDFs with missing/empty results)
 rem Controlled by scanner.env (KEY=VALUE):
-rem   SPATIAL_ON_MISSING=1 (default) | 0
+rem   SPATIAL_ON_MISSING=0 (default) | 1
 rem   SPATIAL_DPI=800, SPATIAL_LANGS=en, SPATIAL_MIN_CONF=0.0
 rem   SPATIAL_ROW_FACTOR=0.6, SPATIAL_GAP_MULT=2.5, SPATIAL_CENTER_THRESH_MULT=2.0
 rem   SPATIAL_BUILD_TABLE=1 (build per-page .table.csv/.xlsx/.svg)
 rem ---------------------------------------------------------------------------
-if not defined SPATIAL_ON_MISSING set "SPATIAL_ON_MISSING=1"
+if not defined SPATIAL_ON_MISSING set "SPATIAL_ON_MISSING=0"
 if not defined SPATIAL_DPI set "SPATIAL_DPI=800"
 if not defined SPATIAL_LANGS set "SPATIAL_LANGS=en"
 if not defined SPATIAL_MIN_CONF set "SPATIAL_MIN_CONF=0.0"
