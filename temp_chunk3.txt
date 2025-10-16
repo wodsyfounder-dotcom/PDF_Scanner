@@ -1,0 +1,260 @@
+    """
+    lang = os.environ.get('OCRMYPDF_LANG', 'eng')
+    try:
+        optimize = int(os.environ.get('OCRMYPDF_OPTIMIZE', '1'))
+    except Exception:
+        optimize = 1
+    keep = os.environ.get('OCRMYPDF_KEEP', '').strip().lower() in ('1', 'true', 'yes', 'keep')
+    force = os.environ.get('OCRMYPDF_FORCE', '').strip().lower() in ('1','true','yes','force')
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ocrmypdf_"))
+    out_path = tmp_dir / (pdf_path.stem + ".ocr.pdf")
+
+    # Prefer Python API
+    try:
+        try:
+            _ocr_fn = _ocrmypdf.ocr  # type: ignore[attr-defined]
+        except Exception:
+            from ocrmypdf import api as _ocr_api  # type: ignore
+            _ocr_fn = _ocr_api.ocr
+        _ocr_fn(
+            str(pdf_path),
+            str(out_path),
+            language=lang,
+            force_ocr=force,
+            rotate_pages=True,
+            deskew=True,
+            optimize=optimize,
+            progress_bar=False,
+        )
+        return out_path, f"ocrmypdf(opt={optimize})", (tmp_dir if keep else tmp_dir)
+    except Exception as e:
+        # Try CLI if API failed or is unavailable
+        try:
+            bin_path = os.environ.get('OCRMYPDF_BIN') or shutil.which('ocrmypdf') or 'ocrmypdf'
+            args = [bin_path, '-l', lang]
+            if force:
+                args.append('--force-ocr')
+            args += ['--rotate-pages', '--deskew', '--optimize', str(optimize), str(pdf_path), str(out_path)]
+            proc = subprocess.run(args, capture_output=True, text=True)
+            if proc.returncode == 0 and out_path.exists():
+                return out_path, f"ocrmypdf(opt={optimize})", (tmp_dir if keep else tmp_dir)
+            else:
+                return None, f"ocrmypdf:cli_error:{proc.returncode}", (tmp_dir if keep else tmp_dir)
+        except Exception as e2:
+            return None, f"ocrmypdf:error:{e2}", (tmp_dir if keep else tmp_dir)
+
+
+def _normalize_text_for_search(s: str) -> str:
+    """Normalize text to improve matching across table/spacing artifacts.
+    - Replace non-breaking spaces with regular spaces
+    - Convert en/em dashes to hyphen
+    - Replace vertical bars with spaces (common in extracted tables)
+    - Collapse runs of spaces/tabs while preserving newlines
+    """
+    if not s:
+        return ""
+    s = s.replace("\u00A0", " ")
+    s = s.replace("Ã¢â‚¬â€œ", "-").replace("Ã¢â‚¬â€", "-")
+    s = s.replace("|", " ")
+    s = re.sub(r"[ \t\f\r]+", " ", s)
+    return s
+
+
+def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """
+    Try multiple extraction methods in a fixed order and fill in what we can:
+      1) PyMuPDF
+      2) pdfminer.six (for empty pages)
+      3) pypdf/PyPDF2 (for remaining empties)
+      4) OCR (as a last resort if Tesseract is available)
+    Return a consolidated {page: text} mapping and a pipeline summary string.
+    """
+    tried = []
+    prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
+    source_pdf = pdf_path
+
+    # Attempt #1: PyMuPDF
+    page_text, m = extract_pages_text_pymupdf(source_pdf, pages)
+    tried.append(m)
+
+    # Identify which pages are still empty after the first extractor
+    empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+    # Optional override: force OCR regardless of extracted text
+    _force_ocr = (os.environ.get('FORCE_OCR', '') or '').strip().lower() in ('1','true','yes','force','always')
+    if _force_ocr:
+        empty_pages = list(pages)
+
+    # Attempt #2: pdfminer on empty pages
+    if empty_pages:
+        pt2, m2 = extract_pages_text_pdfminer(source_pdf, empty_pages)
+        tried.append(m2)
+        for p in empty_pages:
+            if (pt2.get(p) or "").strip():
+                page_text[p] = pt2[p]
+        empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+        if _force_ocr:
+            empty_pages = list(pages)
+
+    # Attempt #3: pypdf/PyPDF2 on remaining pages
+    if empty_pages:
+        pt3, m3 = extract_pages_text_pypdf(source_pdf, empty_pages)
+        tried.append(m3)
+        for p in empty_pages:
+            if (pt3.get(p) or "").strip():
+                page_text[p] = pt3[p]
+        empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
+        if _force_ocr:
+            empty_pages = list(pages)
+
+    # (Cleanup) No generic OCR fallback here; EasyOCR is used on-demand in table(xy) path only.
+
+    # Normalize text per page to make downstream term matching more robust
+    for _p in list(page_text.keys()):
+        page_text[_p] = _normalize_text_for_search(page_text.get(_p, ""))
+
+    # (Cleanup) No temporary OCR artifacts to cleanup here
+
+    pipeline = " > ".join(tried)
+    return page_text, pipeline
+
+
+def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, case_sensitive: bool = False,
+                                units_hint: Optional[List[str]] = None,
+                                range_filter: Optional[Tuple[Optional[float], Optional[float]]] = None,
+                                accept_dates: bool = True) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Prefer numbers on the same line to the right of the term, then left,
+    then next line, previous line, else fall back to closest in a window.
+    Returns (number_string or None, context_snippet or None).
+    """
+    if not text:
+        return None, None
+
+    src = text
+    # Normalize case if needed
+    hay = src if case_sensitive else src.lower()
+    needle = term if case_sensitive else term.lower()
+
+    def _simplify(t: str) -> str:
+        t = t.lower()
+        t = re.sub(r"\b(nominal|minimum|min|maximum|max|range|typical|average|avg|target|req(?:uirement)?)\b", " ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
+    # Find positions of the full term
+    positions: List[int] = []
+    start = 0
+    while True:
+        idx = hay.find(needle, start)
+        if idx == -1:
+            break
+        positions.append(idx)
+        start = idx + max(1, len(needle))
+
+    # Fallback: simplified needle (e.g., "Thrust Nominal" -> "Thrust")
+    if not positions:
+        alt = _simplify(needle)
+        if alt and alt != needle:
+            start = 0
+            while True:
+                idx = hay.find(alt, start)
+                if idx == -1:
+                    break
+                positions.append(idx)
+                start = idx + max(1, len(alt))
+
+    # Fallback: approximate match for OCR-mangled terms (e.g., "Thmst", "Trost")
+    if not positions:
+        try:
+            threshold = 0.75
+            src_lines = src.splitlines()
+            offset = 0
+            for line in src_lines:
+                hay_line = line if case_sensitive else line.lower()
+                # quick skip if no first char present
+                if needle and (needle[0] not in hay_line):
+                    pass
+                # compare against tokens in line
+                for token in re.split(r"[^A-Za-z0-9]+", hay_line):
+                    if not token:
+                        continue
+                    if len(token) >= max(4, len(needle) - 2):
+                        if difflib.SequenceMatcher(None, token, needle).ratio() >= threshold:
+                            pos_local = hay_line.find(token)
+                            if pos_local >= 0:
+                                positions.append(offset + pos_local)
+                                break
+                if positions:
+                    break
+                offset += len(line) + 1
+        except Exception:
+            pass
+
+    if not positions:
+        return None, None
+
+    # Pre-compute all numeric spans in the text
+    nums = [(m.group(0), m.start(), m.end()) for m in NUMBER_REGEX.finditer(src)]
+    if accept_dates:
+        nums += [(m.group(0), m.start(), m.end()) for m in DATE_REGEX.finditer(src)]
+
+    def numbers_in(a: int, b: int):
+        return [(n, i, j) for (n, i, j) in nums if i >= a and j <= b]
+
+    def snippet(a: int, b: int) -> str:
+        return src[max(0, a - 60): min(len(src), b + 60)].replace("\n", " ")
+
+    best_num = None
+    best_ctx = None
+    best_dist = 10**9
+
+    for pos in positions:
+        # Determine line bounds
+        lb = src.rfind("\n", 0, pos) + 1
+        rb = src.find("\n", pos)
+        if rb == -1:
+            rb = len(src)
+        line_nums = numbers_in(lb, rb)
+
+        # 1) Same line, to the right
+        cand_line = line_nums
+        def _in_range(nstr: str) -> bool:
+            if not range_filter:
+                return True
+            lo, hi = range_filter
+            try:
+                raw = numeric_only(nstr)
+                val = float(raw) if raw is not None else None
+            except Exception:
+                val = None
+            if val is None:
+                return True
+            if lo is not None and val < lo:
+                return False
+            if hi is not None and val > hi:
+                return False
+            return True
+        def _units_ok(nstr: str) -> bool:
+            if not units_hint:
+                return True
+            u = extract_units(nstr)
+            if not u:
+                return False
+            return any(u.lower() == h.lower() for h in units_hint)
+        filtered = [(n,i,j) for (n,i,j) in cand_line if _in_range(n) and _units_ok(n)]
+        if filtered:
+            cand_line = filtered
+        right_side = [(n, i, j) for (n, i, j) in cand_line if i >= pos]
+        if right_side:
+            n, i, j = min(right_side, key=lambda t: t[1] - pos)
+            return n, snippet(i, j)
+
+        # 2) Same line, to the left
+        left_side = [(n, i, j) for (n, i, j) in cand_line if j <= pos]
+        if left_side:
+            n, i, j = max(left_side, key=lambda t: t[2])
+            return n, snippet(i, j)
+
+        # 3) Next line
+        nlb = rb + 1

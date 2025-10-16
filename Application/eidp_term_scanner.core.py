@@ -762,6 +762,8 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     """OCR selected pages using EasyOCR (CPU) with PyMuPDF rendering.
 
     Returns page->concatenated text and a pipeline label.
+    - Tries env-configured languages (EASYOCR_LANGS/OCR_LANGS), then falls back to ['en'] on init errors.
+    - Includes error message in pipeline if initialization ultimately fails.
     """
     out: Dict[int, str] = {}
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
@@ -769,10 +771,19 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     # Reader languages from env; comma/semicolon separated
     langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
     langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    used_langs_label = ",".join(langs or ['en'])
+    reader = None
     try:
         reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
     except Exception as e:
-        return out, f"ocr_easyocr:init_error:{type(e).__name__}"
+        # Retry with a safe default language set to avoid env/config errors
+        err_msg = f"{type(e).__name__}:{e}".replace("\n", " ")
+        try:
+            reader = easyocr.Reader(['en'], gpu=False, verbose=False)  # type: ignore
+            used_langs_label = "en"
+        except Exception as e2:
+            err2 = f"{type(e2).__name__}:{e2}".replace("\n", " ")
+            return out, f"ocr_easyocr:init_error:{err_msg}"
 
     try:
         dpi = int(os.environ.get('OCR_DPI', '600'))
@@ -828,7 +839,7 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
         except Exception:
             pass
 
-    return out, "ocr_easyocr"
+    return out, f"ocr_easyocr({used_langs_label})"
 
 
 _EASYOCR_CACHE: Dict[Tuple[str, int, str, int], List[Dict[str, float]]] = {}
@@ -844,7 +855,13 @@ def _get_easyocr_reader(langs: List[str]):
         _EASYOCR_READER_CACHE[key] = rdr
         return rdr
     except Exception:
-        return None
+        # Fallback to a safe default language set
+        try:
+            rdr = easyocr.Reader(['en'], gpu=False, verbose=False)  # type: ignore
+            _EASYOCR_READER_CACHE['en'] = rdr
+            return rdr
+        except Exception:
+            return None
 
 def _get_easyocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: List[str]) -> List[Dict[str, float]]:
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
@@ -1227,13 +1244,20 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
         if _force_ocr:
             empty_pages = list(pages)
 
-    # (Cleanup) No generic OCR fallback here; EasyOCR is used on-demand in table(xy) path only.
+    # Attempt #4: EasyOCR fallback for remaining empty pages (or all if forced)
+    # Only performs OCR if EasyOCR is available; otherwise records N/A in the pipeline.
+    if empty_pages:
+        pt4, m4 = ocr_pages_with_easyocr(source_pdf, empty_pages)
+        tried.append(m4)
+        for p in empty_pages:
+            if (pt4.get(p) or "").strip():
+                page_text[p] = pt4[p]
+        # No further fallback stages; recompute empties for completeness but proceed to normalize
+        empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
 
     # Normalize text per page to make downstream term matching more robust
     for _p in list(page_text.keys()):
         page_text[_p] = _normalize_text_for_search(page_text.get(_p, ""))
-
-    # (Cleanup) No temporary OCR artifacts to cleanup here
 
     pipeline = " > ".join(tried)
     return page_text, pipeline

@@ -1,0 +1,324 @@
+    serial_cols = sorted(serials)
+
+    # Write "results" CSV
+    with results_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Term", "Pages"] + serial_cols)
+        for term in term_order:
+            row = [term, term_pages_raw.get(term, "")]
+            for sn in serial_cols:
+                row.append(results_matrix.get(term, {}).get(sn))
+            writer.writerow(row)
+
+    # Write "metadata" CSV
+    meta_cols = ["pdf_file", "serial_number", "term", "found", "page", "number", "context", "method_pipeline"]
+    with metadata_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(meta_cols)
+        for r in metadata_rows:
+            writer.writerow([
+                r.get("pdf_file"),
+                r.get("serial_number"),
+                r.get("term"),
+                r.get("found"),
+                r.get("page"),
+                r.get("number"),
+                r.get("context"),
+                r.get("method_pipeline"),
+            ])
+    print(f"[DONE] CSV fallback written -> {results_csv} and {metadata_csv}")
+
+
+def run_scan(
+    input_path: Path,
+    pdf_folder: Path,
+    output_csv: Path,
+    output_json: Path,
+    output_xlsx: Path,
+    scanned_folder: Path,
+    window_chars: int,
+    case_sensitive: bool
+) -> None:
+    """
+    Orchestrate the entire scan:
+      1) Load terms from input file
+      2) Iterate through PDFs in the import folder
+      3) For each (pdf, term) pair, collect the best match and record metadata
+      4) Write progress JSON as we go (crash resilience)
+      5) Move scanned PDFs to the Scanned Docs folder
+      6) Produce the final Excel (or CSVs) and a flat CSV summary
+    """
+    # Step 1: Load the term specs
+    terms = load_terms(input_path)
+    if not terms:
+        print("[WARN] No terms found in input. Ensure headers 'Term' and 'Pages' exist.")
+        return
+
+    # Step 2: Enumerate PDFs to scan
+    pdfs = [p for p in pdf_folder.glob("*.pdf")]
+    if not pdfs:
+        print(f"[WARN] No PDFs found in folder: {pdf_folder}")
+        return
+
+    # Decide output location: always write artifacts into Product_Data_File/run_data/<timestamp>
+    # Only the aggregate EIDP_data.csv is kept at the top level.
+    from datetime import datetime
+    exports_dir = Path("Product_Data_File")
+    run_dir = exports_dir / "run_data" / datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    by_pdf_dir = run_dir / "by_pdf"
+    by_pdf_dir.mkdir(parents=True, exist_ok=True)
+
+    # Reroute output paths into the run_dir regardless of CLI-provided paths.
+    output_json = run_dir / "scan_results.json"
+    output_csv = run_dir / "scan_results_flat.csv"
+    output_xlsx = run_dir / "scan_results.xlsx"
+    print(f"[INFO] Outputs will be saved under: {run_dir}")
+
+    # Prepare structures for the wide "results" sheet and the "metadata" sheet
+    term_order = [t.term for t in terms]                  # preserve input order
+    term_pages_raw = {t.term: t.pages_raw for t in terms} # map term ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ original "Pages" string
+    results_matrix: Dict[str, Dict[str, Optional[str]]] = {t.term: {} for t in terms}  # term ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {SN ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ number}
+    metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
+    summary: List[Dict] = []        # JSON audit entries
+
+    # Step 3: For each PDF, scan for each term
+    for pdf_path in sorted(pdfs):
+        # Derive the serial number from the filename
+        serial_number = get_serial_number_from_filename(pdf_path)
+        print(f"[INFO] Scanning: {pdf_path.name}  ({serial_number})")
+
+        per_pdf: List[Dict] = []
+
+        # Search each configured term within the allowed page ranges
+        for t in terms:
+            mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
+            if mode == "line":
+                res = scan_pdf_for_term_line(pdf_path, serial_number, t, window_chars, case_sensitive)
+            elif mode in ("table(xy)", "xy", "table") or (not mode and getattr(t, 'line', None) and getattr(t, 'column', None)):
+                res = scan_pdf_for_term_xy(pdf_path, serial_number, t, window_chars, case_sensitive)
+            else:
+                res = scan_pdf_for_term(
+                    pdf_path, serial_number, t.term, t.pages, window_chars, case_sensitive,
+                    units_hint=getattr(t, 'units_hint', None),
+                    range_filter=(getattr(t, 'range_min', None), getattr(t, 'range_max', None))
+                )
+            # Fill the matrix cell for this (term, serial_number)
+            results_matrix.setdefault(t.term, {})[serial_number] = numeric_only(res.number)
+
+            # Build metadata record
+            meta = {
+                "pdf_file": res.pdf_file,
+                "serial_number": res.serial_number,
+                "term": res.term,
+                "found": res.found,
+                "page": res.page,
+                "number": res.number,
+                "units": res.units,
+                "context": res.context,
+                "method_pipeline": res.method,
+                # Terms schema hints for transparency/debug
+                "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
+                "pages_raw": getattr(t, 'pages_raw', ""),
+                "line": getattr(t, 'line', None),
+                "column": getattr(t, 'column', None),
+                "range_min": getattr(t, 'range_min', None),
+                "range_max": getattr(t, 'range_max', None),
+                "units_hint": getattr(t, 'units_hint', None),
+                "anchor": getattr(t, 'anchor', None),
+                "field_index": getattr(t, 'field_index', None),
+                "field_split": getattr(t, 'field_split', None),
+                "return_type": getattr(t, 'return_type', None),
+            }
+            metadata_rows.append(meta)
+            summary.append(meta)
+            per_pdf.append(meta)
+
+        # Step 4: Move the scanned PDF to the "Scanned Docs" folder
+        try:
+            moved_to = move_file_safely(pdf_path, scanned_folder)
+            print(f"[INFO] Moved scanned PDF -> {moved_to}")
+        except Exception as e:
+            print(f"[WARN] Could not move {pdf_path.name} to '{scanned_folder}': {e}")
+
+        # Step 5: Persist JSON progress incrementally (so partial work isn't lost)
+        try:
+            with output_json.open("w", encoding="utf-8") as jf:
+                json.dump(summary, jf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] Could not write JSON during loop: {e}")
+
+        # Also write a per-PDF JSON for convenience
+        try:
+            per_pdf_path = by_pdf_dir / f"{pdf_path.stem}.json"
+            with per_pdf_path.open("w", encoding="utf-8") as pf:
+                json.dump(per_pdf, pf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] Could not write per-PDF JSON for {pdf_path.name}: {e}")
+
+    # Step 6: Emit Excel (or CSV fallback) and a flat CSV summary for compatibility
+    csv_fallback_prefix = output_xlsx.with_suffix("")
+    write_outputs_excel_or_csv(output_xlsx, results_matrix, term_order, term_pages_raw, metadata_rows, csv_fallback_prefix)
+
+    # Legacy flat CSV (one row per (pdf, term))
+    try:
+        with output_csv.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["pdf_file", "serial_number", "term", "found", "page", "number", "units", "context", "method_pipeline"])
+            for row in summary:
+                writer.writerow([
+                    row["pdf_file"], row["serial_number"], row["term"], row["found"],
+                    row["page"], row["number"], row.get("units"), row["context"], row["method_pipeline"]
+                ])
+        print(f"[DONE] Flat CSV summary -> {output_csv}")
+    except Exception as e:
+        print(f"[WARN] Could not write flat CSV summary: {e}")
+
+    print(f"[DONE] Details JSON -> {output_json}")
+
+    # Ensure metadata CSV has units column regardless of writer backend
+    try:
+        meta_csv = output_xlsx.with_suffix('.metadata.csv')
+        with meta_csv.open('w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["pdf_file","serial_number","term","found","page","number","units","context","method_pipeline"])
+            for row in metadata_rows:
+                writer.writerow([
+                    row.get("pdf_file"), row.get("serial_number"), row.get("term"), row.get("found"),
+                    row.get("page"), row.get("number"), row.get("units"), row.get("context"), row.get("method_pipeline")
+                ])
+    except Exception as e:
+        print(f"[WARN] Could not rewrite metadata CSV with units: {e}")
+
+    # --- Aggregate export: Product_Data_File/EIDP_data.csv ---
+    try:
+        exports_dir = Path("Product_Data_File")
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        agg_path = exports_dir / "EIDP_data.csv"
+
+        def _read_csv(path: Path):
+            if not path.exists():
+                return ["Term", "Pages"], {}
+            rows = {}
+            with path.open("r", encoding="utf-8", newline="") as f:
+                r = csv.reader(f)
+                header = next(r, [])
+                for row in r:
+                    if not row:
+                        continue
+                    term = row[0]
+                    rows[term] = row
+            return header, rows
+
+        def _write_csv(path: Path, header, rows_map):
+            with path.open("w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                # Preserve input order for known terms first
+                for term in term_order:
+                    if term in rows_map:
+                        w.writerow(rows_map[term])
+                # Then any pre-existing terms not in current order
+                for term in rows_map.keys():
+                    if term not in term_order:
+                        w.writerow(rows_map[term])
+
+        header, existing = _read_csv(agg_path)
+        # Ensure first two columns
+        if not header or header[:2] != ["Term", "Pages"]:
+            header = ["Term", "Pages"] + [h for h in header if h not in ("Term", "Pages")]
+
+        # Add new SN columns at the end in discovered order
+        new_sns = []
+        for term, sn_map in results_matrix.items():
+            for sn in sn_map.keys():
+                if sn not in header and sn not in new_sns:
+                    new_sns.append(sn)
+        header = header + new_sns
+
+        # Build a lookup for column index
+        col_index = {name: i for i, name in enumerate(header)}
+
+        # Seed rows from existing
+        rows_map = {}
+        for term, row in existing.items():
+            # Pad or trim row to header length
+            out = [""] * len(header)
+            for i, val in enumerate(row[:len(header)]):
+                out[i] = val
+            # Fill missing mandatory fields
+            if not out[0]:
+                out[0] = term
+            rows_map[term] = out
+
+        # Merge current results
+        for term in term_order:
+            if term not in rows_map:
+                rows_map[term] = [""] * len(header)
+                rows_map[term][col_index["Term"]] = term
+                rows_map[term][col_index["Pages"]] = term_pages_raw.get(term, "")
+            for sn, val in (results_matrix.get(term) or {}).items():
+                if sn in col_index:
+                    rows_map[term][col_index[sn]] = val or ""
+
+        _write_csv(agg_path, header, rows_map)
+        print(f"[DONE] Aggregate CSV -> {agg_path}")
+    except Exception as e:
+        print(f"[WARN] Could not update aggregate CSV: {e}")
+
+    # --- Per-run snapshot note ---
+    # No copy needed; all artifacts were written directly under run_dir.
+    try:
+        print(f"[DONE] Run saved under: {run_dir}")
+    except Exception:
+        pass
+
+
+def main() -> None:
+    """
+    CLI entry point.
+    Parses arguments and calls run_scan(...).
+    """
+    parser = argparse.ArgumentParser(
+        description="Scan PDFs for terms and nearest numbers, produce a matrix by Serial Number, and move scanned PDFs."
+    )
+    parser.add_argument("--input", required=True, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
+    parser.add_argument("--pdf-folder", required=True, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')
+    parser.add_argument("--output-csv", default="scan_results_flat.csv", help="Flat CSV summary (legacy)")
+    parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")
+    parser.add_argument("--output-xlsx", default="scan_results.xlsx", help="Excel workbook with 'results' and 'metadata' sheets")
+    parser.add_argument("--scanned-folder", default="Scanned Docs", help="Folder to move scanned PDFs into")
+    parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (Ãƒâ€šÃ‚Â± chars)")
+    parser.add_argument("--case-sensitive", action="store_true", help="Enable case-sensitive term matching")
+    args = parser.parse_args()
+
+    # Normalize and validate file/folder paths
+    input_path = Path(args.input)
+    pdf_folder = Path(args.pdf_folder)
+    output_csv = Path(args.output_csv)
+    output_json = Path(args.output_json)
+    output_xlsx = Path(args.output_xlsx)
+    scanned_folder = Path(args.scanned_folder)
+
+    if not input_path.exists():
+        print(f"[ERROR] Input file not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+    if not pdf_folder.exists():
+        print(f"[ERROR] PDF folder not found: {pdf_folder}", file=sys.stderr)
+        sys.exit(1)
+
+    # Kick off the pipeline
+    run_scan(
+        input_path=input_path,
+        pdf_folder=pdf_folder,
+        output_csv=output_csv,
+        output_json=output_json,
+        output_xlsx=output_xlsx,
+        scanned_folder=scanned_folder,
+        window_chars=args.window_chars,
+        case_sensitive=args.case_sensitive
+    )
+
+
+if __name__ == "__main__":
+    main()

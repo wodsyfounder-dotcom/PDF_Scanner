@@ -1,0 +1,220 @@
+    except Exception:
+        pass
+    return out, "pypdf"
+
+
+def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """
+    OCR selected pages using PyMuPDF to render pages to images,
+    then pytesseract to extract text. Requires Tesseract and PIL.
+    """
+    out: Dict[int, str] = {}
+    if not (_HAVE_TESSERACT and _HAVE_PYMUPDF):
+        return out, "ocr_pymupdf:N/A"
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception as e:
+        return out, f"ocr_pymupdf:open_error:{e}"
+    error_notes: List[str] = []
+    # Tunables via environment
+    try:
+        _dpi = int(os.environ.get('OCR_DPI', '400'))
+    except Exception:
+        _dpi = 400
+    _dpi = max(200, min(800, _dpi))
+    _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
+    try:
+        for p in pages:
+            if 1 <= p <= doc.page_count:
+                page = doc.load_page(p - 1)
+                # Increase DPI to improve OCR fidelity on small text
+                pix = page.get_pixmap(dpi=_dpi)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                try:
+                    text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+                except Exception as e:
+                    error_notes.append(type(e).__name__)
+                    text = ""
+                out[p] = text or ""
+    finally:
+        doc.close()
+    if error_notes:
+        return out, "ocr_pymupdf:error:" + ",".join(sorted(set(error_notes)))
+    return out, "ocr_pymupdf"
+
+
+def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """
+    OCR selected pages by rendering them via pdf2image (Poppler required),
+    then pytesseract for text recognition. Requires Tesseract and PIL.
+    """
+    out: Dict[int, str] = {}
+    if not (_HAVE_TESSERACT and _HAVE_PDF2IMAGE):
+        return out, "ocr_pdf2image:N/A"
+    # Tunables via environment
+    try:
+        _dpi = int(os.environ.get('OCR_DPI', '400'))
+    except Exception:
+        _dpi = 400
+    _dpi = max(200, min(800, _dpi))
+    _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
+    try:
+        images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages), last_page=max(pages))
+    except Exception as e:
+        return out, f"ocr_pdf2image:convert_error:{e}"
+    page_list = sorted(set(pages))
+    start = page_list[0]
+    error_notes: List[str] = []
+    for idx, img in enumerate(images, start=start):
+        if idx in page_list:
+            try:
+                text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+            except Exception as e:
+                error_notes.append(type(e).__name__)
+                text = ""
+            out[idx] = text or ""
+    if error_notes:
+        return out, "ocr_pdf2image:error:" + ",".join(sorted(set(error_notes)))
+    return out, "ocr_pdf2image"
+
+
+def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """OCR selected pages using EasyOCR (CPU) with PyMuPDF rendering.
+
+    Returns page->concatenated text and a pipeline label.
+    """
+    out: Dict[int, str] = {}
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return out, "ocr_easyocr:N/A"
+    # Reader languages from env; comma/semicolon separated
+    langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+    langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    try:
+        reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+    except Exception as e:
+        return out, f"ocr_easyocr:init_error:{type(e).__name__}"
+
+    try:
+        dpi = int(os.environ.get('OCR_DPI', '600'))
+    except Exception:
+        dpi = 600
+    dpi = max(200, min(900, dpi))
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception as e:
+        return out, f"ocr_easyocr:open_error:{e}"
+
+    try:
+        for p in pages:
+            if 1 <= p <= doc.page_count:
+                try:
+                    page = doc.load_page(p - 1)
+                    pix = page.get_pixmap(dpi=dpi)
+                except Exception:
+                    out[p] = ""
+                    continue
+                # Save to a temp PNG to feed reader
+                try:
+                    import tempfile
+                    import os as _os
+                    tmp_dir = tempfile.mkdtemp(prefix="easyocr_")
+                    img_path = Path(tmp_dir) / f"page_{p}.png"
+                    pix.save(str(img_path))
+                    # Run OCR
+                    try:
+                        results = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
+                    except Exception:
+                        results = []
+                    # Join text lines in reading order
+                    lines: List[str] = []
+                    for item in results:
+                        try:
+                            _, t, c = item
+                            if isinstance(t, str) and t.strip():
+                                lines.append(t)
+                        except Exception:
+                            pass
+                    out[p] = "\n".join(lines)
+                finally:
+                    try:
+                        import shutil as _sh
+                        _sh.rmtree(tmp_dir, ignore_errors=True)  # type: ignore
+                    except Exception:
+                        pass
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+    return out, "ocr_easyocr"
+
+
+_EASYOCR_CACHE: Dict[Tuple[str, int, str, int], List[Dict[str, float]]] = {}
+_EASYOCR_READER_CACHE: Dict[str, object] = {}
+
+def _get_easyocr_reader(langs: List[str]):
+    key = ",".join(langs or ['en'])
+    rdr = _EASYOCR_READER_CACHE.get(key)
+    if rdr is not None:
+        return rdr
+    try:
+        rdr = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+        _EASYOCR_READER_CACHE[key] = rdr
+        return rdr
+    except Exception:
+        return None
+
+def _get_easyocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: List[str]) -> List[Dict[str, float]]:
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return []
+    cache_key = (str(pdf_path), dpi, ",".join(langs or ['en']), page)
+    if cache_key in _EASYOCR_CACHE:
+        return _EASYOCR_CACHE[cache_key]
+    reader = _get_easyocr_reader(langs)
+    if reader is None:
+        return []
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        return []
+    try:
+        if 1 <= page <= doc.page_count:
+            try:
+                pg = doc.load_page(page - 1)
+                pix = pg.get_pixmap(dpi=dpi)
+            except Exception:
+                return []
+            import tempfile, shutil
+            tmp_dir = Path(tempfile.mkdtemp(prefix='easyocr_xy_'))
+            img_path = tmp_dir / ('page_%d.png' % page)
+            try:
+                pix.save(str(img_path))
+                try:
+                    res = reader.readtext(str(img_path), detail=1)  # type: ignore[attr-defined]
+                except Exception:
+                    res = []
+                items: List[Dict[str, float]] = []
+                for it in res:
+                    try:
+                        bbox, text, conf = it
+                        xs = [float(pt[0]) for pt in bbox]
+                        ys = [float(pt[1]) for pt in bbox]
+                        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                        cx = (x0 + x1) / 2.0
+                        cy = (y0 + y1) / 2.0
+                        if isinstance(text, str) and text.strip():
+                            items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': text.strip(), 'conf': float(conf) if conf is not None else 0.0})
+                    except Exception:
+                        pass
+                _EASYOCR_CACHE[cache_key] = items
+                return items
+            finally:
+                try:
+                    shutil.rmtree(str(tmp_dir), ignore_errors=True)
+                except Exception:
+                    pass
+        return []
+    finally:
+        try:

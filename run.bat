@@ -80,6 +80,12 @@ echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
 echo [RUN] PDFs  : "%IN_DIR%"
 echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
 
+rem Show effective OCR-related settings for debug/traceability
+echo [RUN] OCR    : USE_OCRMYPDF=%USE_OCRMYPDF%, OCR_RENDERER=%OCR_RENDERER%, USE_EASYOCR_XY=%USE_EASYOCR_XY%
+if defined FORCE_OCR echo [RUN] OCR    : FORCE_OCR=%FORCE_OCR%
+if defined OCR_DPI echo [RUN] OCR    : OCR_DPI=%OCR_DPI%
+if defined EASYOCR_LANGS echo [RUN] OCR    : EASYOCR_LANGS=%EASYOCR_LANGS%
+
 rem Enforce EasyOCR-only OCR behavior (no external OCR engines)
 if not defined USE_OCRMYPDF set "USE_OCRMYPDF=off"
 if not defined OCR_RENDERER set "OCR_RENDERER=easyocr"
@@ -109,4 +115,3 @@ if defined LAST_RUN (
 )
 echo [DONE] Top-level aggregate updated (if enabled): "%OUT_DIR%\EIDP_data.csv"
 endlocal & exit /b 0
-
