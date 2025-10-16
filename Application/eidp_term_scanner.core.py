@@ -262,21 +262,21 @@ NUMBER_REGEX = re.compile(
 
 def parse_page_ranges(s: str) -> List[int]:
     """
-    Convert a human-friendly page range string (e.g., "5-10, 12; 15â€“18")
+    Convert a human-friendly page range string (e.g., "5-10, 12; 15ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ18")
     into a sorted list of unique 1-indexed page numbers.
 
     Supported separators: comma, space, semicolon; supports en-dash and em-dash.
     """
     if not s:
         return []
-    s_norm = s.strip().replace("â€“", "-").replace("â€”", "-")
+    s_norm = s.strip().replace("ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ", "-").replace("ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â", "-")
     parts = re.split(r"[,\s;]+", s_norm)
     pages = set()
     for part in parts:
         if not part:
             continue
         if "-" in part:
-            # Range "a-b" â†’ expand into all pages between a and b inclusive
+            # Range "a-b" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ expand into all pages between a and b inclusive
             try:
                 a, b = part.split("-", 1)
                 a = int(re.sub(r"\D", "", a))
@@ -330,7 +330,7 @@ def _parse_field_index(v: Optional[str]) -> Optional[int]:
 
 def _norm_field_split(s: Optional[str]) -> str:
     # Default to 'groups' so fields separated by 3+ spaces/tabs are distinct,
-    # and words separated by 1–2 spaces remain within the same field.
+    # and words separated by 1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“2 spaces remain within the same field.
     if not s:
         return "groups"
     v = s.strip().lower()
@@ -500,7 +500,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     wb = openpyxl.load_workbook(str(input_path), data_only=True)
     ws = wb.active
 
-    # Build a map of header name â†’ column index
+    # Build a map of header name ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ column index
     header_map: Dict[str, int] = {}
     for col_idx, cell in enumerate(ws[1], start=1):
         key = (str(cell.value) if cell.value is not None else "").strip().lower()
@@ -863,6 +863,192 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
 
     return out, "ocr_easyocr"
 
+
+def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, langs: List[str]) -> Dict[int, List[Dict[str, float]]]:
+    boxes: Dict[int, List[Dict[str, float]]] = {}
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return boxes
+    try:
+        reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
+    except Exception:
+        return boxes
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        return boxes
+    try:
+        for p in pages:
+            if 1 <= p <= doc.page_count:
+                try:
+                    page = doc.load_page(p - 1)
+                    pix = page.get_pixmap(dpi=dpi)
+                except Exception:
+                    continue
+                import tempfile, shutil
+                tmp_dir = Path(tempfile.mkdtemp(prefix='easyocr_xy_'))
+                img_path = tmp_dir / ('page_%d.png' % p)
+                try:
+                    pix.save(str(img_path))
+                    try:
+                        res = reader.readtext(str(img_path), detail=1)
+                    except Exception:
+                        res = []
+                    items: List[Dict[str, float]] = []
+                    for it in res:
+                        try:
+                            bbox, text, conf = it
+                            xs = [float(pt[0]) for pt in bbox]
+                            ys = [float(pt[1]) for pt in bbox]
+                            x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                            cx = (x0 + x1) / 2.0
+                            cy = (y0 + y1) / 2.0
+                            if isinstance(text, str) and text.strip():
+                                items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': text.strip(), 'conf': float(conf) if conf is not None else 0.0})
+                        except Exception:
+                            pass
+                    boxes[p] = items
+                finally:
+                    try:
+                        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+                    except Exception:
+                        pass
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return boxes
+
+
+def _fuzzy_ratio(a: str, b: str) -> float:
+    a2 = re.sub(r"\s+", " ", a or '').strip().lower()
+    b2 = re.sub(r"\s+", " ", b or '').strip().lower()
+    return difflib.SequenceMatcher(None, a2, b2).ratio()
+
+
+def _first_numeric(text: str) -> Optional[str]:
+    nums = [m.group(0) for m in NUMBER_REGEX.finditer(text)]
+    nums += [m.group(0) for m in DATE_REGEX.finditer(text)]
+    return nums[0] if nums else None
+
+
+def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> Optional[MatchResult]:
+    if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+        return None
+    try:
+        dpi = int(os.environ.get('OCR_DPI', '700'))
+    except Exception:
+        dpi = 700
+    langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+    langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    try:
+        fuzz = float(os.environ.get('XY_FUZZ', '0.75'))
+    except Exception:
+        fuzz = 0.75
+    try:
+        row_band = float(os.environ.get('ROW_BAND', '0.6'))
+    except Exception:
+        row_band = 0.6
+    try:
+        col_tol = float(os.environ.get('COL_TOL', '0.6'))
+    except Exception:
+        col_tol = 0.6
+
+    pages = spec.pages if spec.pages else list(range(1, 10000))
+    boxes_map = _easyocr_boxes_for_pages(pdf_path, pages, dpi=dpi, langs=langs)
+    if not boxes_map:
+        return None
+
+    row_name = (spec.line or spec.term or '').strip()
+    col_raw = (spec.column or '').strip()
+    col_alts = [s.strip() for s in re.split(r'[|/]', col_raw) if s.strip()] or [(spec.column or '').strip()]
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        doc = None
+
+    for p, items in boxes_map.items():
+        sx = sy = 1.0
+        try:
+            if doc:
+                page = doc.load_page(p - 1)
+                pix = page.get_pixmap(dpi=dpi)
+                sx = page.rect.width / float(pix.width or 1)
+                sy = page.rect.height / float(pix.height or 1)
+        except Exception:
+            pass
+
+        row_candidates = [(it, _fuzzy_ratio(it['text'], row_name)) for it in items if row_name]
+        row_candidates = [t for t in row_candidates if t[1] >= fuzz]
+        if not row_candidates:
+            continue
+        row_it, _ = max(row_candidates, key=lambda t: t[1])
+
+        best_col = None
+        best_score = 0.0
+        for alt in col_alts:
+            cand = [(it, _fuzzy_ratio(it['text'], alt)) for it in items]
+            cand = [t for t in cand if t[1] >= fuzz]
+            if cand:
+                itc, sc = max(cand, key=lambda t: t[1])
+                if sc > best_score:
+                    best_col, best_score = itc, sc
+        if not best_col:
+            continue
+
+        row_h = (row_it['y1'] - row_it['y0'])
+        y_min = row_it['cy'] - row_band * row_h
+        y_max = row_it['cy'] + row_band * row_h
+        col_w = (best_col['x1'] - best_col['x0'])
+        x_min = best_col['cx'] - col_tol * col_w
+        x_max = best_col['cx'] + col_tol * col_w
+
+        hits: List[Tuple[float, Dict[str, float]]] = []
+        for it in items:
+            if y_min <= it['cy'] <= y_max and x_min <= it['cx'] <= x_max:
+                n = _first_numeric(it['text'])
+                if n:
+                    ok = True
+                    if spec.range_min is not None or spec.range_max is not None:
+                        try:
+                            v = float((numeric_only(n) or '').replace(',', ''))
+                            if spec.range_min is not None and v < spec.range_min:
+                                ok = False
+                            if spec.range_max is not None and v > spec.range_max:
+                                ok = False
+                        except Exception:
+                            pass
+                    if ok:
+                        dx = abs(it['cx'] - best_col['cx'])
+                        dy = abs(it['cy'] - row_it['cy'])
+                        hits.append((dx + dy, it))
+        if hits:
+            _, best_it = min(hits, key=lambda t: t[0])
+            number = _first_numeric(best_it['text']) or ''
+            if doc:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=p,
+                number=number,
+                units=extract_units(number),
+                context="row='{}' col='{}'".format(row_it['text'], best_col['text']),
+                method="easyocr:xy(dpi={})".format(dpi),
+                found=True,
+            )
+
+    if doc:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return None
 def ocr_pages_with_paddle(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
     """OCR selected pages using PyMuPDF render + PaddleOCR (pure-Python path).
 
@@ -986,7 +1172,7 @@ def _normalize_text_for_search(s: str) -> str:
     if not s:
         return ""
     s = s.replace("\u00A0", " ")
-    s = s.replace("–", "-").replace("—", "-")
+    s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
     s = s.replace("|", " ")
     s = re.sub(r"[ \t\f\r]+", " ", s)
     return s
@@ -1002,6 +1188,7 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
     Return a consolidated {page: text} mapping and a pipeline summary string.
     """
     tried = []
+    prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
     # Optional pre-processing with OCRmyPDF (primary mode)
     use_ocrmypdf = (os.environ.get('USE_OCRMYPDF', '') or '').strip().lower()
     prefer_ocrmypdf = _HAVE_OCRMYPDF and use_ocrmypdf in ('1','true','yes','always','primary','prefer')
@@ -1079,8 +1266,9 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             if (pt4e.get(p) or "").strip():
                 page_text[p] = pt4e[p]
 
-    # Attempt #4b: Tesseract OCR as final fallback
-    if empty_pages and _HAVE_TESSERACT:
+    # Attempt #4b: Tesseract OCR as final fallback (only when preferred)
+    # Respect OCR_RENDERER preference: skip Tesseract when 'easy' is specified.
+    if empty_pages and _HAVE_TESSERACT and prefer_engine in ('', 'auto', 'tesseract', 'pymupdf', 'pdf2image'):
         prefer = os.environ.get('OCR_RENDERER', '').strip().lower()
         if prefer in ('pdf2image', 'pdf2') and _HAVE_PDF2IMAGE:
             pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
@@ -1327,7 +1515,7 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
                       range_filter: Optional[Tuple[Optional[float], Optional[float]]] = None) -> MatchResult:
     """
     Scan a single PDF for a single term (restricted to the provided pages).
-    - Uses extract_pages_text(...) to build a map of pageâ†’text and a method pipeline string.
+    - Uses extract_pages_text(...) to build a map of pageÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢text and a method pipeline string.
     - Calls find_closest_number_in_text(...) to get the nearest number and context.
     - Returns a MatchResult with page/number/context and pipeline details.
     """
@@ -1379,6 +1567,12 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
     """Attempt XY table extraction using PyMuPDF word coordinates.
     Fallbacks to nearest-number scan if PyMuPDF is unavailable or matching fails.
     """
+    # EasyOCR XY path if enabled
+    _use_ez_xy = ((os.environ.get("USE_EASYOCR_XY","") or "").strip().lower() in ("1","true","yes","on"))
+    if _use_ez_xy and _HAVE_EASYOCR:
+        _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+        if _res is not None:
+            return _res
     if not _HAVE_PYMUPDF:
         return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
                                  units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
@@ -1580,7 +1774,7 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                 fields = [f for f in fields if f]
                 if len(fields) >= idx:
                     selected = fields[idx - 1].strip()
-                    selected = re.sub(r"\s+", " ", selected).lstrip(":-–— ")
+                    selected = re.sub(r"\s+", " ", selected).lstrip(":-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ")
                     if (spec.return_type or "number").lower() == "string":
                         try:
                             doc.close()
@@ -1680,7 +1874,7 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
             fields, line = best
             selected = fields[idx - 1].strip()
             # Normalize: collapse inner whitespace to single, strip leading punctuation like ':'
-            selected = re.sub(r"\s+", " ", selected).lstrip(":-–— ")
+            selected = re.sub(r"\s+", " ", selected).lstrip(":-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ")
             if (spec.return_type or "number").lower() == "string":
                 return MatchResult(
                     pdf_file=pdf_path.name,
@@ -1897,8 +2091,8 @@ def run_scan(
 
     # Prepare structures for the wide "results" sheet and the "metadata" sheet
     term_order = [t.term for t in terms]                  # preserve input order
-    term_pages_raw = {t.term: t.pages_raw for t in terms} # map term â†’ original "Pages" string
-    results_matrix: Dict[str, Dict[str, Optional[str]]] = {t.term: {} for t in terms}  # term â†’ {SN â†’ number}
+    term_pages_raw = {t.term: t.pages_raw for t in terms} # map term ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ original "Pages" string
+    results_matrix: Dict[str, Dict[str, Optional[str]]] = {t.term: {} for t in terms}  # term ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ {SN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ number}
     metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
     summary: List[Dict] = []        # JSON audit entries
 
@@ -2108,7 +2302,7 @@ def main() -> None:
     parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")
     parser.add_argument("--output-xlsx", default="scan_results.xlsx", help="Excel workbook with 'results' and 'metadata' sheets")
     parser.add_argument("--scanned-folder", default="Scanned Docs", help="Folder to move scanned PDFs into")
-    parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (Â± chars)")
+    parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± chars)")
     parser.add_argument("--case-sensitive", action="store_true", help="Enable case-sensitive term matching")
     args = parser.parse_args()
 
