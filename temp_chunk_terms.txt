@@ -1,0 +1,230 @@
+    return "groups"
+
+
+def _norm_return_type(s: Optional[str]) -> str:
+    if not s:
+        return "number"
+    v = s.strip().lower()
+    if v in ("string", "text"):
+        return "string"
+    return "number"
+
+
+def load_terms(input_path: Path) -> List[TermSpec]:
+    """
+    Load the Terms + Pages table from CSV or Excel.
+    - CSV: requires column headers 'Term' and 'Pages' (case-insensitive)
+    - Excel: requires openpyxl to be installed
+
+    Returns a list of TermSpec objects (term, parsed pages list, original pages string).
+    """
+    ext = input_path.suffix.lower()
+    terms: List[TermSpec] = []
+
+    if ext == ".csv":
+        signature = b""
+        try:
+            with input_path.open("rb") as f_check:
+                signature = f_check.read(4)
+        except OSError:
+            pass
+
+        if signature.startswith(b"PK\x03\x04"):
+            print(
+                "[WARN] CSV file appears to be an Excel workbook. Attempting Excel parser instead.",
+                file=sys.stderr,
+            )
+        else:
+            encodings_to_try = [
+                "utf-8-sig",
+                "utf-8",
+                "utf-16",
+                "utf-16-le",
+                "utf-16-be",
+                "cp1252",
+                "latin-1",
+            ]
+
+            def read_csv_terms(encoding: str) -> List[TermSpec]:
+                with input_path.open(newline="", encoding=encoding) as f:
+                    reader = csv.DictReader(f)
+                    result: List[TermSpec] = []
+                    for row in reader:
+                        term = None
+                        pages_str = ""
+                        line = None
+                        column = None
+                        mode = None
+                        anchor = None
+                        field_index = None
+                        field_split = None
+                        return_type = None
+                        range_min = None
+                        range_max = None
+                        units_hint: List[str] = []
+                        for k, v in row.items():
+                            if k and k.strip().lower() == "term":
+                                term = (v or "").strip()
+                            if k and k.strip().lower() == "pages":
+                                pages_str = (v or "").strip()
+                            if k and k.strip().lower() == "line":
+                                line = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "column":
+                                column = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "mode":
+                                mode = _norm_mode(v)
+                            if k and k.strip().lower() == "anchor":
+                                anchor = ((v or "").strip() or None)
+                            if k and k.strip().lower() == "fieldindex":
+                                field_index = _parse_field_index(v)
+                            if k and k.strip().lower() == "fieldsplit":
+                                field_split = _norm_field_split(v)
+                            if k and k.strip().lower() == "return":
+                                return_type = _norm_return_type(v)
+                            if k and k.strip().lower() == "range":
+                                rng = (v or "").strip()
+                                if rng:
+                                    a, b = parse_range(rng)
+                                    range_min, range_max = a, b
+                            if k and k.strip().lower() == "range (min)":
+                                try:
+                                    range_min = float(str(v).replace(',', '')) if v not in (None, "") else range_min
+                                except Exception:
+                                    pass
+                            if k and k.strip().lower() == "range (max)":
+                                try:
+                                    range_max = float(str(v).replace(',', '')) if v not in (None, "") else range_max
+                                except Exception:
+                                    pass
+                            if k and k.strip().lower() == "units":
+                                units_hint = parse_units_hint(v)
+                        if term:
+                            result.append(TermSpec(term=term,
+                                                   pages=parse_page_ranges(pages_str),
+                                                   pages_raw=pages_str,
+                                                   mode=mode,
+                                                   line=line,
+                                                   column=column,
+                                                   anchor=anchor,
+                                                   field_index=field_index,
+                                                   field_split=field_split,
+                                                   return_type=return_type,
+                                                   range_min=range_min,
+                                                   range_max=range_max,
+                                                   units_hint=units_hint))
+                    return result
+
+            last_error: Optional[UnicodeDecodeError] = None
+            for encoding in encodings_to_try:
+                try:
+                    terms = read_csv_terms(encoding)
+                    if encoding != "utf-8-sig":
+                        print(
+                            f"[WARN] CSV file decoded using fallback encoding '{encoding}'.",
+                            file=sys.stderr,
+                        )
+                    return terms
+                except UnicodeDecodeError as err:
+                    last_error = err
+
+            tried = ", ".join(encodings_to_try)
+            if last_error:
+                print(
+                    f"[ERROR] Could not decode CSV file using encodings: {tried}. "
+                    f"Last error: {last_error}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"[ERROR] Could not decode CSV file using encodings: {tried}.", file=sys.stderr)
+            sys.exit(2)
+
+    # Excel path: .xls via pandas if available; otherwise .xlsx via openpyxl
+    if ext == ".xls":
+        if not _HAVE_PANDAS:
+            print("[ERROR] .xls requires pandas (and xlrd). Save as .xlsx or .csv, or install pandas/xlrd.", file=sys.stderr)
+            sys.exit(2)
+        try:
+            df = pd.read_excel(str(input_path))
+        except Exception as e:
+            print(f"[ERROR] Could not read .xls: {e}", file=sys.stderr)
+            sys.exit(2)
+        return _terms_from_dataframe(df)
+
+    try:
+        import openpyxl  # type: ignore
+    except Exception:
+        print(
+            "[ERROR] Excel file given but 'openpyxl' is not available. Install openpyxl or save as CSV.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    wb = openpyxl.load_workbook(str(input_path), data_only=True)
+    ws = wb.active
+
+    # Build a map of header name ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ column index
+    header_map: Dict[str, int] = {}
+    for col_idx, cell in enumerate(ws[1], start=1):
+        key = (str(cell.value) if cell.value is not None else "").strip().lower()
+        if key:
+            header_map[key] = col_idx
+
+    def col_for(name: str) -> Optional[int]:
+        """Return the 1-based column index for a header name, or None if absent.
+        Tolerates headers like 'line (x)' or 'column (y)'.
+        """
+        target = name.lower()
+        # exact match
+        for k, v in header_map.items():
+            if k == target:
+                return v
+        # tolerant match stripping non-letters
+        for k, v in header_map.items():
+            kk = re.sub(r"[^a-z]", "", k)
+            if kk == target.replace(" ", "") or kk.startswith(target.replace(" ", "")):
+                return v
+        return None
+
+    term_col = col_for("term")
+    pages_col = col_for("pages")
+    mode_col = col_for("mode")
+    line_col = col_for("line")
+    column_col = col_for("column")
+    anchor_col = col_for("anchor")
+    fieldindex_col = col_for("fieldindex")
+    fieldsplit_col = col_for("fieldsplit")
+    return_col = col_for("return")
+    range_col = col_for("range")
+    range_min_col = col_for("range (min)")
+    range_max_col = col_for("range (max)")
+    units_col = col_for("units")
+    if not term_col:
+        print("[ERROR] Could not find 'Term' header in Excel file.", file=sys.stderr)
+        sys.exit(2)
+
+    # Walk rows and collect terms
+    for row in ws.iter_rows(min_row=2):
+        term_val = row[term_col - 1].value if term_col else None
+        pages_val = row[pages_col - 1].value if pages_col else "" if pages_col else ""
+        mode_val = row[mode_col - 1].value if mode_col else None
+        line_val = row[line_col - 1].value if line_col else None
+        column_val = row[column_col - 1].value if column_col else None
+        anchor_val = row[anchor_col - 1].value if anchor_col else None
+        fieldindex_val = row[fieldindex_col - 1].value if fieldindex_col else None
+        fieldsplit_val = row[fieldsplit_col - 1].value if fieldsplit_col else None
+        return_val = row[return_col - 1].value if return_col else None
+        range_val = row[range_col - 1].value if range_col else None
+        rmin_val = row[range_min_col - 1].value if range_min_col else None
+        rmax_val = row[range_max_col - 1].value if range_max_col else None
+        units_val = row[units_col - 1].value if units_col else None
+        term = (str(term_val) if term_val is not None else "").strip()
+        pages_str = (str(pages_val) if pages_val is not None else "").strip()
+        mode = _norm_mode(str(mode_val) if mode_val is not None else None)
+        line = (str(line_val).strip() if line_val is not None and str(line_val).strip() else None)
+        column = (str(column_val).strip() if column_val is not None and str(column_val).strip() else None)
+        anchor = (str(anchor_val).strip() if anchor_val is not None and str(anchor_val).strip() else None)
+        field_index = _parse_field_index(str(fieldindex_val) if fieldindex_val is not None else None)
+        field_split = _norm_field_split(str(fieldsplit_val) if fieldsplit_val is not None else None)
+        return_type = _norm_return_type(str(return_val) if return_val is not None else None)
+        rmin = rmax = None
+        if range_val is not None and str(range_val).strip():
