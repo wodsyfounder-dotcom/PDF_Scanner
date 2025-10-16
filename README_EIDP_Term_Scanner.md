@@ -8,27 +8,18 @@ Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest
 
 - No admin / no PATH changes (recommended):
   - Run `install.bat` to create a local `.venv` and install Python packages there.
-  - Optionally place portable tools:
-    - `tools\tesseract` (folder containing `tesseract.exe`)
-    - `tools\poppler\bin` (folder containing `pdftoppm.exe`)
-  - The run scripts will auto-use `.venv` and extend PATH to these folders for the session.
+  - All OCR is handled inside Python (EasyOCR). No external executables are required.
   - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
   - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
 - System-wide (if allowed):
   - `py -m pip install --upgrade pip`
-  - `py -m pip install pymupdf pdfminer.six pypdf pandas xlsxwriter pytesseract pillow pdf2image xlrd`
-- Install Tesseract OCR (needed for scanned/image-only PDFs):
-  - Option A (Chocolatey, admin PowerShell): `choco install tesseract`
-  - Option B: Use the Tesseract Windows installer and ensure `tesseract.exe` is on PATH
-  - Verify: `tesseract --version`
-- Install Poppler (renderer used by pdf2image for OCR):
-  - Option A (Chocolatey, admin PowerShell): `choco install poppler`
-  - Option B: Download Poppler for Windows and add its `bin` folder to PATH
-  - Verify: `pdftoppm -v`
+  - `py -m pip install pymupdf pdfminer.six pypdf` (minimum)
+  - Optional (Excel): `py -m pip install openpyxl` (or `pandas xlsxwriter`)
+  - Optional (OCR fallback): `py -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision` then `py -m pip install easyocr`
 
 Notes:
-- If your PDFs are text-based (not scans), you can skip Tesseract/Poppler. At least one text extractor (PyMuPDF or pdfminer.six) is recommended.
-- Excel output requires `pandas` and either `xlsxwriter` or `openpyxl`. If missing, CSV fallbacks are written instead.
+- If your PDFs are text-based (not scans), OCR may never be invoked. At least one text extractor (PyMuPDF or pdfminer.six) is recommended.
+- Excel output requires `openpyxl` or `pandas` with `xlsxwriter`. If missing, CSV fallbacks are written instead.
 - Reading `.xls` terms requires `pandas` and `xlrd`. If unavailable, save as `.xlsx` or `.csv`.
 
 ---
@@ -155,24 +146,18 @@ Line mode example
   - Verify `terms.csv` headers are exactly `Term, Pages` and pages are 1-indexed (e.g., `5-10; 22`).
 - Excel not generated
   - Install `pandas` plus `xlsxwriter` or `openpyxl`; otherwise CSVs are written.
-- OCR not triggered
-  - Confirm Tesseract is installed and on PATH; Poppler present for `pdf2image`.
-  - Optional: set `TESSERACT_CMD` env var to the full path to `tesseract.exe`.
-  - If using the local venv, `run.bat` adds `.venv\Scripts` to PATH so `ocrmypdf` and Python entry points are available.
+ - OCR not triggered
+  - Ensure `easyocr`, `torch` and `torchvision` are installed if you expect OCR fallback.
+  - On secure/offline machines, pre-cache EasyOCR models by initializing a Reader once on a connected machine and bundling the model folder.
 
-OCRmyPDF (optional, installed into venv by install.bat)
-- Use the venv-local command:
-  - Windows CMD: `.venv\Scripts\ocrmypdf.exe -l eng --force-ocr --rotate-pages --deskew --clean --optimize 3 --tesseract-pagesegmode 4 "user_inputs\EIDP_Import_Docs\SN 1111.pdf" "user_inputs\EIDP_Import_Docs\SN 1111.ocr.pdf"`
-  - PowerShell: `.venv/Scripts/ocrmypdf.exe ...`
-- Requires Tesseract; Ghostscript recommended (for cleanup/compression). Poppler not required for OCRmyPDF.
+OCR fallback (EasyOCR)
+- Handled inside Python only, no external EXEs.
+- Installs: `torch` (CPU), `torchvision`, `easyocr`.
 
 Config file
 - `user_inputs\scanner.env` supports KEY=VALUE lines to set environment without editing your shell:
-  - `USE_OCRMYPDF=primary` to pre-OCR all docs; or `USE_OCRMYPDF=1` to enable fallback.
-  - `OCRMYPDF_FORCE=0` to avoid forcing OCR on pages that already contain text.
-  - `OCRMYPDF_LANG=eng`, `OCRMYPDF_OPTIMIZE=1` for language/opt level.
-  - `OCR_RENDERER=pymupdf|pdf2image`, `OCR_DPI=600`, `TESSERACT_ARGS=--psm 4` to tune direct OCR when used.
-  - `TESSERACT_CMD` or `OCRMYPDF_BIN` to point to tool executables if not on PATH.
+  - `OCR_DPI=600` (or 800) to tune EasyOCR rendering DPI.
+  - `EASYOCR_LANGS=en` to control language models.
   - `VENV_DIR` to choose a custom virtual environment path; `run.bat` will create it if missing.
   - Lines starting with `#` or `;` and blank lines are ignored.
 

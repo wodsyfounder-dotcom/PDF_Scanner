@@ -81,46 +81,13 @@ try:
 except Exception:
     pass
 
-try:
-    import pytesseract  # OCR engine wrapper (requires system Tesseract)
-    from PIL import Image  # pillow: image container for OCR
-    # Optional env-var override to point directly to tesseract.exe
-    try:
-        _tc = os.environ.get('TESSERACT_CMD') or os.environ.get('TESSERACT_PATH')
-        if _tc and os.path.exists(_tc):
-            pytesseract.pytesseract.tesseract_cmd = _tc
-    except Exception:
-        pass
-    # Verify that the native Tesseract engine is actually available on PATH or at override
-    try:
-        _ = pytesseract.get_tesseract_version()
-        _HAVE_TESSERACT = True
-    except Exception:
-        _HAVE_TESSERACT = False
-except Exception:
-    pass
+_HAVE_TESSERACT = False
 
-try:
-    from pdf2image import convert_from_path  # renders PDFs to images for OCR
-    _HAVE_PDF2IMAGE = True
-except Exception:
-    pass
+_HAVE_PDF2IMAGE = False
 
-try:
-    import ocrmypdf as _ocrmypdf  # OCRmyPDF python API
-    _HAVE_OCRMYPDF = True
-except Exception:
-    try:
-        _OCRMYPDF_BIN = shutil.which("ocrmypdf")
-        _HAVE_OCRMYPDF = bool(_OCRMYPDF_BIN)
-    except Exception:
-        _HAVE_OCRMYPDF = False
+_HAVE_OCRMYPDF = False
 
-try:
-    from paddleocr import PaddleOCR  # type: ignore
-    _HAVE_PADDLE_OCR = True
-except Exception:
-    _HAVE_PADDLE_OCR = False
+_HAVE_PADDLE_OCR = False
 
 # EasyOCR (pure-Python OCR)
 try:
@@ -1225,17 +1192,7 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
     """
     tried = []
     prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
-    # Optional pre-processing with OCRmyPDF (primary mode)
-    use_ocrmypdf = (os.environ.get('USE_OCRMYPDF', '') or '').strip().lower()
-    prefer_ocrmypdf = _HAVE_OCRMYPDF and use_ocrmypdf in ('1','true','yes','always','primary','prefer')
     source_pdf = pdf_path
-    _tmpdir: Optional[Path] = None
-    if prefer_ocrmypdf:
-        ocr_pdf, m_ocr, tmpd = _run_ocrmypdf_to_temp(pdf_path)
-        tried.append(m_ocr)
-        if ocr_pdf and ocr_pdf.exists():
-            source_pdf = ocr_pdf
-            _tmpdir = tmpd
 
     # Attempt #1: PyMuPDF
     page_text, m = extract_pages_text_pymupdf(source_pdf, pages)
@@ -1270,82 +1227,13 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
         if _force_ocr:
             empty_pages = list(pages)
 
-    # Attempt #3b: OCRmyPDF fallback for remaining empties (if not already used)
-    if empty_pages and _HAVE_OCRMYPDF and not prefer_ocrmypdf and use_ocrmypdf not in ('off','0','no','false'):
-        ocr_pdf2, m_ocr2, tmpd2 = _run_ocrmypdf_to_temp(pdf_path)
-        tried.append(m_ocr2)
-        if ocr_pdf2 and ocr_pdf2.exists():
-            pt1b, _ = extract_pages_text_pymupdf(ocr_pdf2, empty_pages)
-            pt2b, _ = extract_pages_text_pdfminer(ocr_pdf2, empty_pages)
-            pt3b, _ = extract_pages_text_pypdf(ocr_pdf2, empty_pages)
-            for p in empty_pages:
-                textp = (pt1b.get(p) or '').strip() or (pt2b.get(p) or '').strip() or (pt3b.get(p) or '').strip()
-                if textp:
-                    page_text[p] = textp
-            _tmpdir = tmpd2 or _tmpdir
-        empty_pages = [p for p in pages if page_text.get(p, "").strip() == ""]
-
-    # Attempt #4a: PaddleOCR fallback (pure-Python), opt-in via OCR_RENDERER=padde|paddleocr or if Tesseract missing
-    prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
-    if empty_pages and _HAVE_PADDLE_OCR and prefer_engine in ('paddle', 'paddleocr'):
-        pt4, m4 = ocr_pages_with_paddle(pdf_path, empty_pages)
-        tried.append(m4)
-        for p in empty_pages:
-            if (pt4.get(p) or "").strip():
-                page_text[p] = pt4[p]
-
-    # Attempt #4a-easy: EasyOCR fallback (pure-Python) when requested
-    if empty_pages and _HAVE_EASYOCR and prefer_engine in ('easy', 'easyocr'):
-        pt4e, m4e = ocr_pages_with_easyocr(pdf_path, empty_pages)
-        tried.append(m4e)
-        for p in empty_pages:
-            if (pt4e.get(p) or "").strip():
-                page_text[p] = pt4e[p]
-
-    # Attempt #4b: Tesseract OCR as final fallback (only when preferred)
-    # Respect OCR_RENDERER preference: skip Tesseract when 'easy' is specified.
-    if empty_pages and _HAVE_TESSERACT and prefer_engine in ('', 'auto', 'tesseract', 'pymupdf', 'pdf2image'):
-        prefer = os.environ.get('OCR_RENDERER', '').strip().lower()
-        if prefer in ('pdf2image', 'pdf2') and _HAVE_PDF2IMAGE:
-            pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
-        elif prefer in ('pymupdf', 'fitz') and _HAVE_PYMUPDF:
-            pt4, m4 = ocr_pages_with_pymupdf(pdf_path, empty_pages)
-        else:
-            if _HAVE_PYMUPDF:
-                pt4, m4 = ocr_pages_with_pymupdf(pdf_path, empty_pages)
-            else:
-                pt4, m4 = ocr_pages_with_pdf2image(pdf_path, empty_pages)
-        tried.append(m4)
-        for p in empty_pages:
-            if (pt4.get(p) or "").strip():
-                page_text[p] = pt4[p]
-
-    # Attempt #4c: If still empty and PaddleOCR available (and not forced otherwise), try Paddle as general fallback
-    if empty_pages and _HAVE_PADDLE_OCR and prefer_engine in ('', 'auto', 'paddle', 'paddleocr'):
-        pt4, m4 = ocr_pages_with_paddle(pdf_path, empty_pages)
-        tried.append(m4)
-        for p in empty_pages:
-            if (pt4.get(p) or "").strip():
-                page_text[p] = pt4[p]
-
-    # Attempt #4d: If still empty and EasyOCR available, try EasyOCR as general fallback
-    if empty_pages and _HAVE_EASYOCR and prefer_engine in ('', 'auto', 'easy', 'easyocr'):
-        pt4e, m4e = ocr_pages_with_easyocr(pdf_path, empty_pages)
-        tried.append(m4e)
-        for p in empty_pages:
-            if (pt4e.get(p) or "").strip():
-                page_text[p] = pt4e[p]
+    # (Cleanup) No generic OCR fallback here; EasyOCR is used on-demand in table(xy) path only.
 
     # Normalize text per page to make downstream term matching more robust
     for _p in list(page_text.keys()):
         page_text[_p] = _normalize_text_for_search(page_text.get(_p, ""))
 
-    # Cleanup temporary OCRmyPDF outputs unless requested to keep
-    try:
-        if _tmpdir and os.environ.get('OCRMYPDF_KEEP','').strip().lower() not in ('1','true','yes','keep'):
-            shutil.rmtree(str(_tmpdir), ignore_errors=True)
-    except Exception:
-        pass
+    # (Cleanup) No temporary OCR artifacts to cleanup here
 
     pipeline = " > ".join(tried)
     return page_text, pipeline
@@ -1603,6 +1491,17 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
     """Attempt XY table extraction using PyMuPDF word coordinates.
     Fallbacks to nearest-number scan if PyMuPDF is unavailable or matching fails.
     """
+    # Honor USE_EASYOCR_XY override to try EasyOCR XY first (for debugging/forcing OCR)
+    try:
+        _use_ez_xy = (os.environ.get('USE_EASYOCR_XY','') or '').strip().lower() in ('1','true','yes','on')
+    except Exception:
+        _use_ez_xy = False
+    if _use_ez_xy and _HAVE_EASYOCR:
+        if (os.environ.get('XY_LOG','') or '').strip().lower() in ('1','true','yes','on'):
+            print(f"[XY] Forcing EasyOCR XY for term '{spec.term}'")
+        _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+        if _res is not None:
+            return _res
     # First, try PyMuPDF XY. If not found, fall back to EasyOCR XY on-demand.
     if not _HAVE_PYMUPDF:
         # No PyMuPDF XY match: attempt EasyOCR XY as on-demand fallback
@@ -1611,11 +1510,36 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             if _res is not None:
                 return _res
         # Last resort: nearest-number scan
+        # On-demand EasyOCR XY fallback: only if available, then stop at first success
+        if _HAVE_EASYOCR:
+            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+            if _res is not None:
+                return _res
+        # Last resort: nearest-number scan
+        # No PyMuPDF XY hit: try on-demand EasyOCR XY before falling back to nearest
+        if _HAVE_EASYOCR:
+            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+            if _res is not None:
+                return _res
+        # No PyMuPDF XY hit: try on-demand EasyOCR XY before falling back to nearest
+        if _HAVE_EASYOCR:
+            if (os.environ.get('XY_LOG','') or '').strip().lower() in ('1','true','yes','on'):
+                print(f"[XY] EasyOCR XY fallback (no PyMuPDF XY) for term '{spec.term}'")
+            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+            if _res is not None:
+                return _res
         return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
                                  units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
     try:
         doc = fitz.open(str(pdf_path))
     except Exception:
+        # No PyMuPDF XY match across pages: try EasyOCR XY on-demand
+        if _HAVE_EASYOCR:
+            if (os.environ.get('XY_LOG','') or '').strip().lower() in ('1','true','yes','on'):
+                print(f"[XY] EasyOCR XY fallback after PyMuPDF XY miss for term '{spec.term}'")
+            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+            if _res is not None:
+                return _res
         return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
                                  units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
     try:
