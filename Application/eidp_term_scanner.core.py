@@ -139,6 +139,11 @@ class MatchResult:
     context: str            # Short snippet of nearby text (for verification)
     method: str             # Extraction pipeline used (e.g., "pymupdf > ocr")
     found: bool             # True if any number was found near the term
+    # Added attributes for reporting
+    confidence: Optional[float] = None      # OCR token confidence when available (0..1), else None
+    row_label: Optional[str] = None         # Row identifier (e.g., term/line label in XY/line modes)
+    column_label: Optional[str] = None      # Column/header identifier in table(XY) modes
+    text_source: Optional[str] = None       # 'pdf' vs 'ocr' for the selected page's text
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -773,6 +778,17 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
     used_langs_label = ",".join(langs or ['en'])
     reader = None
+    # Suppress noisy CPU-only torch dataloader warnings about pin_memory
+    try:
+        import warnings as _warn
+        _warn.filterwarnings(
+            "ignore",
+            message=r".*pin_memory.*",
+            category=UserWarning,
+            module=r"torch\.utils\.data\.dataloader",
+        )
+    except Exception:
+        pass
     try:
         reader = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
     except Exception as e:
@@ -844,6 +860,35 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
 
 _EASYOCR_CACHE: Dict[Tuple[str, int, str, int], List[Dict[str, float]]] = {}
 _EASYOCR_READER_CACHE: Dict[str, object] = {}
+_PAGE_TEXT_CACHE: Dict[str, Tuple[Dict[int, str], str, int]] = {}
+
+def _pdf_cache_key(pdf_path: Path) -> str:
+    try:
+        return str(pdf_path.resolve())
+    except Exception:
+        return str(pdf_path)
+
+def get_pdf_page_count(pdf_path: Path) -> int:
+    """Best-effort page count using PyMuPDF or pypdf."""
+    if _HAVE_PYMUPDF:
+        try:
+            doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+            try:
+                return int(getattr(doc, 'page_count', getattr(doc, 'pageCount', 0)) or 0)
+            finally:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if _HAVE_PYPDF:
+        try:
+            reader = _PdfReader(str(pdf_path))  # type: ignore[name-defined]
+            return int(len(getattr(reader, 'pages', [])))
+        except Exception:
+            pass
+    return 0
 
 def _get_easyocr_reader(langs: List[str]):
     key = ",".join(langs or ['en'])
@@ -851,6 +896,17 @@ def _get_easyocr_reader(langs: List[str]):
     if rdr is not None:
         return rdr
     try:
+        # Suppress noisy CPU-only torch dataloader warnings about pin_memory
+        try:
+            import warnings as _warn
+            _warn.filterwarnings(
+                "ignore",
+                message=r".*pin_memory.*",
+                category=UserWarning,
+                module=r"torch\.utils\.data\.dataloader",
+            )
+        except Exception:
+            pass
         rdr = easyocr.Reader(langs or ['en'], gpu=False, verbose=False)  # type: ignore
         _EASYOCR_READER_CACHE[key] = rdr
         return rdr
@@ -1061,6 +1117,10 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
                 context="row='{}' col='{}'".format(row_it['text'], best_col['text']),
                 method="easyocr:xy(dpi={})".format(dpi),
                 found=True,
+                confidence=float(best_it.get('conf', 0.0)),
+                row_label=str(row_it.get('text', '') or ''),
+                column_label=str(best_col.get('text', '') or ''),
+                text_source="ocr",
             )
 
     if doc:
@@ -1198,7 +1258,7 @@ def _normalize_text_for_search(s: str) -> str:
     return s
 
 
-def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bool = True) -> Tuple[Dict[int, str], str]:
     """
     Try multiple extraction methods in a fixed order and fill in what we can:
       1) PyMuPDF
@@ -1245,8 +1305,8 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, 
             empty_pages = list(pages)
 
     # Attempt #4: EasyOCR fallback for remaining empty pages (or all if forced)
-    # Only performs OCR if EasyOCR is available; otherwise records N/A in the pipeline.
-    if empty_pages:
+    # Only performs OCR if EasyOCR is available and do_ocr_fallback=True.
+    if do_ocr_fallback and empty_pages:
         pt4, m4 = ocr_pages_with_easyocr(source_pdf, empty_pages)
         tried.append(m4)
         for p in empty_pages:
@@ -1468,7 +1528,16 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     - Returns a MatchResult with page/number/context and pipeline details.
     """
     # Build text for constrained pages (or the whole doc if no pages specified)
-    page_text_map, pipeline = extract_pages_text(pdf_path, pages if pages else list(range(1, 10000)))
+    # Prefer pre-extracted cache when available to avoid re-reading per term
+    key = _pdf_cache_key(pdf_path)
+    if key in _PAGE_TEXT_CACHE:
+        full_map, pipeline, _pc = _PAGE_TEXT_CACHE[key]
+        if pages:
+            page_text_map = {p: (full_map.get(p) or "") for p in pages}
+        else:
+            page_text_map = dict(full_map)
+    else:
+        page_text_map, pipeline = extract_pages_text(pdf_path, pages if pages else list(range(1, 10000)), do_ocr_fallback=False)
 
     chosen_page = None
     chosen_number = None
@@ -1495,20 +1564,83 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
             units=extract_units(chosen_number),
             context=chosen_ctx or "",
             method=pipeline,
-            found=True
+            found=True,
+            confidence=None,
+            row_label=None,
+            column_label=None,
+            text_source="pdf"
         )
-    else:
-        return MatchResult(
-            pdf_file=pdf_path.name,
-            serial_number=serial_number,
-            term=term,
-            page=None,
-            number=None,
-            units=None,
-            context="",
-            method=pipeline,
-            found=False
-        )
+    # If not found via text extraction, OCR empty pages for this term and retry
+    pages_list = pages if pages else list(sorted(page_text_map.keys()))
+    empty_pages = [p for p in pages_list if (page_text_map.get(p, "").strip() == "")]
+    if empty_pages:
+        pt4, m4 = ocr_pages_with_easyocr(pdf_path, empty_pages)
+        # Update cache and local view
+        new_pipe = pipeline if (m4 in (pipeline or "")) else (pipeline + " > " + m4 if pipeline else m4)
+        # Update full_map if available, else use page_text_map as backing
+        if key in _PAGE_TEXT_CACHE:
+            full_map, _, _pc = _PAGE_TEXT_CACHE[key]
+        else:
+            full_map, _pc = dict(page_text_map), get_pdf_page_count(pdf_path)
+        for p in empty_pages:
+            txt = (pt4.get(p) or "")
+            if txt:
+                full_map[p] = _normalize_text_for_search(txt)
+        _PAGE_TEXT_CACHE[key] = (full_map, new_pipe, _pc)
+        # Rebuild page_text_map for searched pages with new text
+        if pages:
+            page_text_map = {p: (full_map.get(p) or "") for p in pages}
+        else:
+            page_text_map = dict(full_map)
+
+        # Retry search across pages
+        chosen_page = None
+        chosen_number = None
+        chosen_ctx = None
+        for p in sorted(page_text_map.keys()):
+            text = page_text_map[p]
+            number, ctx = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                     units_hint=units_hint, range_filter=range_filter, accept_dates=True)
+            if number:
+                chosen_page = p
+                chosen_number = number
+                chosen_ctx = ctx or ""
+                break
+        if chosen_number:
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=term,
+                page=chosen_page,
+                number=chosen_number,
+                units=extract_units(chosen_number),
+                context=chosen_ctx or "",
+                method=new_pipe,
+                found=True,
+                confidence=None,
+                row_label=None,
+                column_label=None,
+                text_source="ocr"
+            )
+
+        # No result after OCR fallback
+        pipeline = new_pipe
+
+    return MatchResult(
+        pdf_file=pdf_path.name,
+        serial_number=serial_number,
+        term=term,
+        page=None,
+        number=None,
+        units=None,
+        context="",
+        method=pipeline,
+        found=False,
+        confidence=None,
+        row_label=None,
+        column_label=None,
+        text_source=None
+    )
 
 
 def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> MatchResult:
@@ -1577,6 +1709,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
         chosen_page = None
         chosen_number = None
         chosen_ctx = None
+        best_header_txt = None
 
         for p in pages:
             if p < 1 or p > doc.page_count:
@@ -1619,20 +1752,29 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             if best_dy is None or dy < best_dy:
                                 best_dy = dy
                                 best_header_x = (float(w[0]) + float(w[2]))/2.0
+                                best_header_txt = txt
                         break
             if best_header_x is None:
                 hx_list = []
+                hx_pairs = []
                 for w in words:
                     txt = str(w[4]) if len(w) > 4 else ""
                     if not txt:
                         continue
                     for alt in (col_alts or [spec.column] if spec.column else []):
                         if alt and norm(alt) in norm(txt):
-                            hx_list.append((float(w[0]) + float(w[2]))/2.0)
+                            cx = (float(w[0]) + float(w[2]))/2.0
+                            hx_list.append(cx)
+                            hx_pairs.append((cx, txt))
                             break
                 if not hx_list:
                     continue
                 best_header_x = sum(hx_list)/len(hx_list)
+                # choose the header token closest to the averaged x as the label
+                try:
+                    best_header_txt = min(hx_pairs, key=lambda t: abs(t[0]-best_header_x))[1] if hx_pairs else (spec.column or (col_alts[0] if col_alts else ""))
+                except Exception:
+                    best_header_txt = spec.column or (col_alts[0] if col_alts else "")
 
             ws_sorted = sorted(row_words, key=lambda k: k[0])
             candidates = []
@@ -1680,6 +1822,10 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                 context=chosen_ctx or "",
                 method="pymupdf:xy",
                 found=True,
+                confidence=None,
+                row_label=(spec.line or spec.term),
+                column_label=(best_header_txt or spec.column or None),
+                text_source="pdf",
             )
 
         return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
@@ -1830,6 +1976,10 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                                 context=line_text.strip()[:200],
                                 method="pymupdf:line-geom",
                                 found=True,
+                                confidence=None,
+                                row_label=(spec.anchor or spec.term or None),
+                                column_label=(spec.column or f"field_{idx}"),
+                                text_source="pdf",
                             )
             try:
                 doc.close()
@@ -1840,8 +1990,16 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
             pass
 
     # 1) Text-based approach if geometry path was unavailable or failed
-    # Build text for constrained pages (or whole doc)
-    page_text_map, pipeline = extract_pages_text(pdf_path, spec.pages if spec.pages else list(range(1, 10000)))
+    # Build text for constrained pages (or whole doc) — prefer cache
+    key = _pdf_cache_key(pdf_path)
+    if key in _PAGE_TEXT_CACHE:
+        full_map, pipeline, _pc = _PAGE_TEXT_CACHE[key]
+        if spec.pages:
+            page_text_map = {p: (full_map.get(p) or "") for p in spec.pages}
+        else:
+            page_text_map = dict(full_map)
+    else:
+        page_text_map, pipeline = extract_pages_text(pdf_path, spec.pages if spec.pages else list(range(1, 10000)), do_ocr_fallback=False)
     anchor = (spec.anchor or spec.term or "")
     if not case_sensitive:
         anchor_cmp = anchor.lower()
@@ -1891,6 +2049,10 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                     context=line.strip()[:200],
                     method=f"text:line",
                     found=True,
+                    confidence=None,
+                    row_label=(spec.anchor or spec.term or None),
+                    column_label=(spec.column or f"field_{idx}"),
+                    text_source="pdf",
                 )
             # Return number: search within selected field, applying filters
             nums = [m.group(0) for m in NUMBER_REGEX.finditer(selected)]
@@ -1922,6 +2084,10 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                         context=line.strip()[:200],
                         method=f"text:line",
                         found=True,
+                        confidence=None,
+                        row_label=(spec.anchor or spec.term or None),
+                        column_label=(spec.column or f"field_{idx}"),
+                        text_source="pdf",
                     )
             # If no number matched, fall back to nearest later
     # Fallback to nearest with filters
@@ -2085,13 +2251,11 @@ def run_scan(
     exports_dir = Path("Product_Data_File")
     run_dir = exports_dir / "run_data" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
-    by_pdf_dir = run_dir / "by_pdf"
-    by_pdf_dir.mkdir(parents=True, exist_ok=True)
+    # No per-PDF directory output; keep only summary JSON and flat Excel
 
     # Reroute output paths into the run_dir regardless of CLI-provided paths.
     output_json = run_dir / "scan_results.json"
-    output_csv = run_dir / "scan_results_flat.csv"
-    output_xlsx = run_dir / "scan_results.xlsx"
+    output_xlsx = run_dir / "scan_results_flat.xlsx"
     print(f"[INFO] Outputs will be saved under: {run_dir}")
 
     # Prepare structures for the wide "results" sheet and the "metadata" sheet
@@ -2107,10 +2271,54 @@ def run_scan(
         serial_number = get_serial_number_from_filename(pdf_path)
         print(f"[INFO] Scanning: {pdf_path.name}  ({serial_number})")
 
-        per_pdf: List[Dict] = []
+        # No per-PDF artifact collection needed
+
+        # Pre-extract text for all needed pages once per PDF (includes OCR fallback as configured)
+        try:
+            page_count = get_pdf_page_count(pdf_path)
+        except Exception:
+            page_count = 0
+        needs_all = False
+        union_pages: set[int] = set()
+        for t in terms:
+            if getattr(t, 'pages', None):
+                for p in t.pages:
+                    if isinstance(p, int) and p > 0:
+                        union_pages.add(p)
+            else:
+                needs_all = True
+        if needs_all or not union_pages:
+            if page_count <= 0:
+                # Fallback: let extract_pages_text deal with page bounds dynamically
+                pages_for_extract = list(sorted(union_pages)) or list(range(1, 10000))
+            else:
+                pages_for_extract = list(range(1, page_count + 1))
+        else:
+            pages_for_extract = list(sorted(union_pages))
+
+        # Honor FORCE_OCR for pre-extraction only if explicitly set; otherwise delay OCR until a term misses
+        try:
+            _force_ocr_pre = (os.environ.get('FORCE_OCR','') or '').strip().lower() in ('1','true','yes','force','always')
+        except Exception:
+            _force_ocr_pre = False
+        pre_map, pre_pipe = extract_pages_text(pdf_path, pages_for_extract, do_ocr_fallback=_force_ocr_pre)
+        _PAGE_TEXT_CACHE[_pdf_cache_key(pdf_path)] = (pre_map, pre_pipe, page_count)
+        try:
+            print(f"[INFO] Pre-extracted {len(pre_map)} page(s) via: {pre_pipe}")
+        except Exception:
+            pass
 
         # Search each configured term within the allowed page ranges
-        for t in terms:
+        total_terms = len(terms)
+        completed = 0
+        prev_pct = -1
+        # Initial progress line
+        try:
+            print(f"[PROGRESS] Terms: 0% (0/{total_terms})")
+        except Exception:
+            pass
+
+        for idx, t in enumerate(terms, start=1):
             mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
             if mode == "line":
                 res = scan_pdf_for_term_line(pdf_path, serial_number, t, window_chars, case_sensitive)
@@ -2136,6 +2344,10 @@ def run_scan(
                 "units": res.units,
                 "context": res.context,
                 "method_pipeline": res.method,
+                "text_source": res.text_source,
+                "confidence": res.confidence,
+                "row_label": res.row_label,
+                "column_label": res.column_label,
                 # Terms schema hints for transparency/debug
                 "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
                 "pages_raw": getattr(t, 'pages_raw', ""),
@@ -2151,7 +2363,18 @@ def run_scan(
             }
             metadata_rows.append(meta)
             summary.append(meta)
-            per_pdf.append(meta)
+            # No per-PDF accumulation
+
+            # Update and print progress for this PDF's terms
+            try:
+                completed = idx
+                pct = int((completed * 100) / max(1, total_terms))
+                # Print at meaningful increments to avoid flooding the console
+                if pct != prev_pct and (total_terms <= 20 or pct % 5 == 0 or completed == total_terms):
+                    print(f"[PROGRESS] Terms: {pct}% ({completed}/{total_terms})")
+                    prev_pct = pct
+            except Exception:
+                pass
 
         # Step 4: Move the scanned PDF to the "Scanned Docs" folder
         try:
@@ -2167,123 +2390,94 @@ def run_scan(
         except Exception as e:
             print(f"[WARN] Could not write JSON during loop: {e}")
 
-        # Also write a per-PDF JSON for convenience
+        # No per-PDF JSON output
+
+            # continue even if per-PDF write failed
+
+            
+        # Finalize per-PDF terms progress to 100%
         try:
-            per_pdf_path = by_pdf_dir / f"{pdf_path.stem}.json"
-            with per_pdf_path.open("w", encoding="utf-8") as pf:
-                json.dump(per_pdf, pf, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"[WARN] Could not write per-PDF JSON for {pdf_path.name}: {e}")
+            print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms})")
+        except Exception:
+            pass
 
-    # Step 6: Emit Excel (or CSV fallback) and a flat CSV summary for compatibility
-    csv_fallback_prefix = output_xlsx.with_suffix("")
-    write_outputs_excel_or_csv(output_xlsx, results_matrix, term_order, term_pages_raw, metadata_rows, csv_fallback_prefix)
-
-    # Legacy flat CSV (one row per (pdf, term))
-    try:
-        with output_csv.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["pdf_file", "serial_number", "term", "found", "page", "number", "units", "context", "method_pipeline"])
+    # Output: Flat extraction table as Excel and details JSON
+    # Columns for the flat (Excel/CSV) extraction table:
+    # - omit verbose context
+    # - include row/column labels used to derive the value
+    # - include actual OCR confidence where available
+    cols_display = [
+        "pdf_file", "serial_number", "term", "found", "page", "number", "units",
+        "method_pipeline", "text_source", "confidence", "row", "column"
+    ]
+    wrote_xlsx = False
+    if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
+        try:
+            import pandas as _pd
+            rows_for_df = []
             for row in summary:
-                writer.writerow([
-                    row["pdf_file"], row["serial_number"], row["term"], row["found"],
-                    row["page"], row["number"], row.get("units"), row["context"], row["method_pipeline"]
-                ])
-        print(f"[DONE] Flat CSV summary -> {output_csv}")
-    except Exception as e:
-        print(f"[WARN] Could not write flat CSV summary: {e}")
+                row_val = row.get("row_label") or row.get("line") or ""
+                col_val = row.get("column_label") or row.get("column") or ""
+                rows_for_df.append({
+                    "pdf_file": row.get("pdf_file"),
+                    "serial_number": row.get("serial_number"),
+                    "term": row.get("term"),
+                    "found": row.get("found"),
+                    "page": row.get("page"),
+                    "number": row.get("number"),
+                    "units": row.get("units"),
+                    "method_pipeline": row.get("method_pipeline"),
+                    "text_source": row.get("text_source"),
+                    "confidence": row.get("confidence"),
+                    "row": row_val,
+                    "column": col_val,
+                })
+            df = _pd.DataFrame(rows_for_df, columns=cols_display)
+            with _pd.ExcelWriter(output_xlsx, engine="xlsxwriter") as writer:
+                df.to_excel(writer, sheet_name="extraction", index=False)
+                ws = writer.sheets["extraction"]
+                # Freeze header row
+                ws.freeze_panes(1, 0)
+                # Auto-size columns based on content
+                for i, col in enumerate(df.columns):
+                    try:
+                        max_len = int(df[col].astype(str).map(len).max()) if not df.empty else len(col)
+                    except Exception:
+                        max_len = len(col)
+                    ws.set_column(i, i, min(60, max(10, max_len + 2)))
+            wrote_xlsx = True
+            print(f"[DONE] Extraction table -> {output_xlsx}")
+        except Exception as e:
+            print(f"[WARN] Could not write Excel extraction table: {e}")
+    if not wrote_xlsx:
+        # Fallback: write CSV next to intended xlsx (same basename) if Excel writer not available
+        try:
+            fallback_csv = output_xlsx.with_suffix(".csv")
+            with fallback_csv.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(cols_display)
+                for row in summary:
+                    row_val = row.get("row_label") or row.get("line") or ""
+                    col_val = row.get("column_label") or row.get("column") or ""
+                    w.writerow([
+                        row.get("pdf_file"), row.get("serial_number"), row.get("term"), row.get("found"),
+                        row.get("page"), row.get("number"), row.get("units"), row.get("method_pipeline"),
+                        row.get("text_source"), row.get("confidence"), row_val, col_val
+                    ])
+            print(f"[DONE] Extraction table (CSV fallback) -> {fallback_csv}")
+        except Exception as e:
+            print(f"[WARN] Could not write extraction table fallback: {e}")
 
     print(f"[DONE] Details JSON -> {output_json}")
 
-    # Ensure metadata CSV has units column regardless of writer backend
+    # Remove legacy aggregate artifact if present
     try:
-        meta_csv = output_xlsx.with_suffix('.metadata.csv')
-        with meta_csv.open('w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["pdf_file","serial_number","term","found","page","number","units","context","method_pipeline"])
-            for row in metadata_rows:
-                writer.writerow([
-                    row.get("pdf_file"), row.get("serial_number"), row.get("term"), row.get("found"),
-                    row.get("page"), row.get("number"), row.get("units"), row.get("context"), row.get("method_pipeline")
-                ])
-    except Exception as e:
-        print(f"[WARN] Could not rewrite metadata CSV with units: {e}")
-
-    # --- Aggregate export: Product_Data_File/EIDP_data.csv ---
-    try:
-        exports_dir = Path("Product_Data_File")
-        exports_dir.mkdir(parents=True, exist_ok=True)
-        agg_path = exports_dir / "EIDP_data.csv"
-
-        def _read_csv(path: Path):
-            if not path.exists():
-                return ["Term", "Pages"], {}
-            rows = {}
-            with path.open("r", encoding="utf-8", newline="") as f:
-                r = csv.reader(f)
-                header = next(r, [])
-                for row in r:
-                    if not row:
-                        continue
-                    term = row[0]
-                    rows[term] = row
-            return header, rows
-
-        def _write_csv(path: Path, header, rows_map):
-            with path.open("w", encoding="utf-8", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(header)
-                # Preserve input order for known terms first
-                for term in term_order:
-                    if term in rows_map:
-                        w.writerow(rows_map[term])
-                # Then any pre-existing terms not in current order
-                for term in rows_map.keys():
-                    if term not in term_order:
-                        w.writerow(rows_map[term])
-
-        header, existing = _read_csv(agg_path)
-        # Ensure first two columns
-        if not header or header[:2] != ["Term", "Pages"]:
-            header = ["Term", "Pages"] + [h for h in header if h not in ("Term", "Pages")]
-
-        # Add new SN columns at the end in discovered order
-        new_sns = []
-        for term, sn_map in results_matrix.items():
-            for sn in sn_map.keys():
-                if sn not in header and sn not in new_sns:
-                    new_sns.append(sn)
-        header = header + new_sns
-
-        # Build a lookup for column index
-        col_index = {name: i for i, name in enumerate(header)}
-
-        # Seed rows from existing
-        rows_map = {}
-        for term, row in existing.items():
-            # Pad or trim row to header length
-            out = [""] * len(header)
-            for i, val in enumerate(row[:len(header)]):
-                out[i] = val
-            # Fill missing mandatory fields
-            if not out[0]:
-                out[0] = term
-            rows_map[term] = out
-
-        # Merge current results
-        for term in term_order:
-            if term not in rows_map:
-                rows_map[term] = [""] * len(header)
-                rows_map[term][col_index["Term"]] = term
-                rows_map[term][col_index["Pages"]] = term_pages_raw.get(term, "")
-            for sn, val in (results_matrix.get(term) or {}).items():
-                if sn in col_index:
-                    rows_map[term][col_index[sn]] = val or ""
-
-        _write_csv(agg_path, header, rows_map)
-        print(f"[DONE] Aggregate CSV -> {agg_path}")
-    except Exception as e:
-        print(f"[WARN] Could not update aggregate CSV: {e}")
+        agg_path = Path("Product_Data_File") / "EIDP_data.csv"
+        if agg_path.exists():
+            agg_path.unlink(missing_ok=True)  # type: ignore[call-arg]
+            print(f"[CLEANUP] Removed legacy aggregate -> {agg_path}")
+    except Exception:
+        pass
 
     # --- Per-run snapshot note ---
     # No copy needed; all artifacts were written directly under run_dir.
