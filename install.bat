@@ -29,8 +29,7 @@ echo [SETUP] Installing required Python packages (minimal)...
 "%VPY%" -m pip install ^
   pymupdf ^
   pandas ^
-  openpyxl ^
-  xlsxwriter
+  openpyxl
 if errorlevel 1 (
   echo [ERROR] Package install failed.
   endlocal & exit /b 1
@@ -52,9 +51,9 @@ rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv run
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
 echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
-echo         pymupdf, pandas, openpyxl, xlsxwriter, easyocr, torch, torchvision
+echo         pymupdf, pandas, openpyxl, easyocr, torch, torchvision
 "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
-  pymupdf pandas openpyxl xlsxwriter easyocr
+  pymupdf pandas openpyxl easyocr
 "%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
   torch torchvision
 if errorlevel 1 (
@@ -76,23 +75,10 @@ rem Create scanner.env with sensible defaults if missing
 if not exist "%ROOT%user_inputs\scanner.env" (
   echo [SETUP] Creating default user_inputs\scanner.env
   >  "%ROOT%user_inputs\scanner.env" echo # Scanner configuration (KEY=VALUE)
-  >> "%ROOT%user_inputs\scanner.env" echo # Edited via GUI Settings
-  >> "%ROOT%user_inputs\scanner.env" echo.
-  >> "%ROOT%user_inputs\scanner.env" echo # General
   >> "%ROOT%user_inputs\scanner.env" echo QUIET=1
   >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%ROOT%.venv
-  >> "%ROOT%user_inputs\scanner.env" echo.
-  >> "%ROOT%user_inputs\scanner.env" echo # OCR (EasyOCR-only by default)
-  >> "%ROOT%user_inputs\scanner.env" echo OCR_DPI=600
-  >> "%ROOT%user_inputs\scanner.env" echo EASYOCR_LANGS=en
-  >> "%ROOT%user_inputs\scanner.env" echo #FORCE_OCR=0
-  >> "%ROOT%user_inputs\scanner.env" echo #USE_EASYOCR_XY=0
-  >> "%ROOT%user_inputs\scanner.env" echo #XY_LOG=0
-  >> "%ROOT%user_inputs\scanner.env" echo.
-  >> "%ROOT%user_inputs\scanner.env" echo # XY table tuning (0..1)
-  >> "%ROOT%user_inputs\scanner.env" echo #XY_FUZZ=0.75
-  >> "%ROOT%user_inputs\scanner.env" echo #ROW_BAND=0.6
-  >> "%ROOT%user_inputs\scanner.env" echo #COL_TOL=0.6
+  >> "%ROOT%user_inputs\scanner.env" echo #OCR_DPI=600
+  >> "%ROOT%user_inputs\scanner.env" echo #EASYOCR_LANGS=en
 )
 
 echo.
@@ -107,3 +93,4 @@ echo   2) Edit user_inputs\terms.xlsx (or .csv)
 echo   3) Run: run.bat   or  py gui.py
 
 endlocal & exit /b 0
+

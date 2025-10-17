@@ -33,7 +33,7 @@ def main() -> None:
     headers = [
         'Term', 'Pages', 'Mode', 'Line (x)', 'Column (y)',
         'Anchor', 'FieldIndex', 'FieldSplit', 'Return',
-        'Units', 'Range (min)', 'Range (max)'
+        'Units', 'Range (min)', 'Range (max)', 'Format', 'GroupAfter'
     ]
     ws.append(headers)
     header_font = Font(bold=True)
@@ -64,12 +64,14 @@ def main() -> None:
     # If Return <> "number", grey Units (J), Range min(K), Range max(L)
     for col in ('J','K','L'):
         ws.conditional_formatting.add(f'{col}2:{col}2000', FormulaRule(formula=["$I2<>\"number\""], fill=grey))
+    # If Mode == table(xy), grey Format (M) (typically used for nearest/string)
+    ws.conditional_formatting.add('M2:M2000', FormulaRule(formula=["$C2=\"table(xy)\""], fill=grey))
 
     # Example rows
     examples = [
-        ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000'],
-        ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', ''],
-        ['Ignition Temperature', '1-2', 'nearest', '', '', '', '', '', 'number', 'K|degC', '200', '5000'],
+        ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000', '', 'Proof Pressure'],
+        ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', '', '', ''],
+        ['Test Plan', '1-2', 'nearest', '', '', '', '', '', 'string', '', '', '', 'tpl-xxxx', 'Qualification'],
     ]
     for row in examples:
         ws.append(row)
@@ -95,6 +97,8 @@ def main() -> None:
         ' - XY headers accepted as "Line (x)" and "Column (y)".',
         ' - Units: Preferred units (pipe list) for number return.',
         ' - Range (min)/(max): Numeric bounds (scientific notation allowed).',
+        ' - Format: Optional value mask for string returns (e.g., tpl-xxxx) or /regex/ if needed.',
+        ' - GroupAfter: Only search values after this anchor text appears.',
     ]
     for i, t in enumerate(lines, start=2):
         inst[f'A{i}'] = t
@@ -107,4 +111,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

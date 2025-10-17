@@ -50,7 +50,16 @@ if exist "%CFG%" (
   for /f "usebackq tokens=* delims=" %%L in ("%CFG%") do (
     set "LINE=%%L"
     if not "!LINE!"=="" if not "!LINE:~0,1!"==" " if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" if not "!LINE!"=="!LINE:=!" (
-      set "%%L"
+      for /f "tokens=1,* delims==" %%A in ("!LINE!") do (
+        set "K=%%~A"
+        set "V=%%~B"
+        if defined K (
+          for /f "tokens=1 delims=#;" %%C in ("!V!") do set "V=%%~C"
+          set "V=!V:~0!"
+          for /f "tokens=* delims= " %%D in ("!V!") do set "V=%%~D"
+          if not "!V!"=="" set "!K!=!V!"
+        )
+      )
     )
   )
   if not "%QUIET%"=="1" echo [RUN] Config parsed.

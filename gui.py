@@ -33,7 +33,7 @@ RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
 
 
 def parse_scanner_env(path: Path) -> dict[str, str]:
-    env = {}
+    env: dict[str, str] = {}
     if not path.exists():
         return env
     for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -44,8 +44,15 @@ def parse_scanner_env(path: Path) -> dict[str, str]:
             continue
         k, v = line.split("=", 1)
         k = k.strip()
+        # Strip inline comments and whitespace
         v = v.strip()
+        if "#" in v:
+            v = v.split("#", 1)[0].strip()
+        if ";" in v:
+            v = v.split(";", 1)[0].strip()
         if not k:
+            continue
+        if v == "":
             continue
         env[k] = v
     return env
@@ -310,8 +317,7 @@ class App(tk.Tk):
         v_ocr_dpi = tk.StringVar(value=data.get("OCR_DPI","600"))
         v_langs = tk.StringVar(value=data.get("EASYOCR_LANGS", data.get("OCR_LANGS", "en")))
         v_xy_fuzz = tk.StringVar(value=data.get("XY_FUZZ","0.75"))
-        v_row_band = tk.StringVar(value=data.get("ROW_BAND","0.6"))
-        v_col_tol = tk.StringVar(value=data.get("COL_TOL","0.6"))
+        # bands removed: ROW_BAND, COL_TOL no longer used
 
         # Widgets
         add_row("Quiet logs", ttk.Checkbutton(frm, variable=v_quiet))
@@ -323,8 +329,7 @@ class App(tk.Tk):
         ent_langs = ttk.Entry(frm, textvariable=v_langs, width=20)
         add_row("EasyOCR langs (csv)", ent_langs)
         add_row("XY fuzz (0-1)", ttk.Entry(frm, textvariable=v_xy_fuzz, width=10))
-        add_row("Row band (0-1)", ttk.Entry(frm, textvariable=v_row_band, width=10))
-        add_row("Col tol (0-1)", ttk.Entry(frm, textvariable=v_col_tol, width=10))
+        # Removed band/tolerance controls from UI
         frm.columnconfigure(1, weight=1)
 
         # Buttons
@@ -341,8 +346,6 @@ class App(tk.Tk):
             lang = v_langs.get().strip()
             updates["EASYOCR_LANGS"] = lang or None
             updates["XY_FUZZ"] = v_xy_fuzz.get().strip() or None
-            updates["ROW_BAND"] = v_row_band.get().strip() or None
-            updates["COL_TOL"] = v_col_tol.get().strip() or None
             try:
                 # Merge with existing and persist
                 merged = parse_scanner_env(SCANNER_ENV)
@@ -367,7 +370,7 @@ class App(tk.Tk):
         ]
         # Order important keys first
         order = [
-            "QUIET","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","ROW_BAND","COL_TOL","VENV_DIR"
+            "QUIET","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","VENV_DIR"
         ]
         written = set()
         for k in order:
