@@ -70,6 +70,7 @@ class Runner:
                 "--input", str(terms),
                 "--pdf-folder", str(pdf_dir),
                 "--scanned-folder", str(scanned),
+                "--quiet",
             ]
         else:
             # Fallback: invoke the Python entry directly on non-Windows
@@ -79,12 +80,15 @@ class Runner:
                 "--input", str(terms),
                 "--pdf-folder", str(pdf_dir),
                 "--scanned-folder", str(scanned),
+                "--quiet",
             ]
         env = os.environ.copy()
         # Let run.bat parse scanner.env; still merge here for direct Python fallback
         env.update(parse_scanner_env(SCANNER_ENV))
         # Ensure vendored packages are visible for direct Python fallback
         env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        # Respect GUI settings via scanner.env; default to quiet if not set
+        env.setdefault("QUIET", "1")
 
         try:
             self.proc = subprocess.Popen(
@@ -136,6 +140,7 @@ class App(tk.Tk):
         self.title("EIDP Scanner GUI")
         self.geometry("900x600")
         self.runner = Runner(self.append_log)
+        self._env_cache: dict[str, str] = parse_scanner_env(SCANNER_ENV)
         self._build_ui()
 
     def _build_ui(self):
@@ -174,6 +179,7 @@ class App(tk.Tk):
         self.btn_run.pack(side=tk.LEFT)
         self.btn_stop = ttk.Button(btns, text="Stop", command=self._stop, state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Settings", command=self._open_settings).pack(side=tk.LEFT, padx=(16, 0))
         ttk.Button(btns, text="Open Last Run Folder", command=self._open_last_run).pack(side=tk.LEFT, padx=(16, 0))
         ttk.Button(btns, text="Open Run Registry", command=self._open_registry).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(btns, text="Compile Master", command=self._compile_master).pack(side=tk.LEFT, padx=(8, 0))
@@ -221,6 +227,11 @@ class App(tk.Tk):
             messagebox.showerror("Missing PDFs folder", f"PDFs folder not found:\n{pdfs}")
             return
         scanned.mkdir(parents=True, exist_ok=True)
+        # Ensure latest env settings are saved before launching
+        try:
+            self._save_scanner_env(self._env_cache)
+        except Exception:
+            pass
         self.status.set("Running...")
         self.btn_run.configure(state=tk.DISABLED)
         self.btn_stop.configure(state=tk.NORMAL)
@@ -271,6 +282,108 @@ class App(tk.Tk):
                 subprocess.Popen(["xdg-open", str(target)])
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
+
+    # --- Settings (env knobs) ---
+    def _open_settings(self):
+        data = parse_scanner_env(SCANNER_ENV)
+        if not data:
+            data = self._env_cache.copy()
+        dlg = tk.Toplevel(self)
+        dlg.title("Settings")
+        dlg.grab_set()
+        frm = ttk.Frame(dlg, padding=8)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # Row builder
+        row = 0
+        def add_row(label, widget):
+            nonlocal row
+            ttk.Label(frm, text=label+":").grid(row=row, column=0, sticky=tk.W, padx=(0,6), pady=4)
+            widget.grid(row=row, column=1, sticky=tk.EW, pady=4)
+            row += 1
+
+        # Variables
+        v_quiet = tk.IntVar(value=1 if data.get("QUIET","1").strip().lower() in ("1","true","yes") else 0)
+        v_force_ocr = tk.IntVar(value=1 if data.get("FORCE_OCR","0").strip().lower() in ("1","true","yes","force","always") else 0)
+        v_use_xy = tk.IntVar(value=1 if data.get("USE_EASYOCR_XY","0").strip().lower() in ("1","true","yes","on") else 0)
+        v_xy_log = tk.IntVar(value=1 if data.get("XY_LOG","0").strip().lower() in ("1","true","yes","on") else 0)
+        v_ocr_dpi = tk.StringVar(value=data.get("OCR_DPI","600"))
+        v_langs = tk.StringVar(value=data.get("EASYOCR_LANGS", data.get("OCR_LANGS", "en")))
+        v_xy_fuzz = tk.StringVar(value=data.get("XY_FUZZ","0.75"))
+        v_row_band = tk.StringVar(value=data.get("ROW_BAND","0.6"))
+        v_col_tol = tk.StringVar(value=data.get("COL_TOL","0.6"))
+
+        # Widgets
+        add_row("Quiet logs", ttk.Checkbutton(frm, variable=v_quiet))
+        add_row("Force OCR pre-extract", ttk.Checkbutton(frm, variable=v_force_ocr))
+        add_row("Use EasyOCR XY", ttk.Checkbutton(frm, variable=v_use_xy))
+        add_row("XY debug log", ttk.Checkbutton(frm, variable=v_xy_log))
+        ent_dpi = ttk.Entry(frm, textvariable=v_ocr_dpi, width=10)
+        add_row("OCR DPI", ent_dpi)
+        ent_langs = ttk.Entry(frm, textvariable=v_langs, width=20)
+        add_row("EasyOCR langs (csv)", ent_langs)
+        add_row("XY fuzz (0-1)", ttk.Entry(frm, textvariable=v_xy_fuzz, width=10))
+        add_row("Row band (0-1)", ttk.Entry(frm, textvariable=v_row_band, width=10))
+        add_row("Col tol (0-1)", ttk.Entry(frm, textvariable=v_col_tol, width=10))
+        frm.columnconfigure(1, weight=1)
+
+        # Buttons
+        btns = ttk.Frame(dlg)
+        btns.pack(fill=tk.X, padx=8, pady=(0,8))
+        def on_save():
+            updates: dict[str,str|None] = {}
+            updates["QUIET"] = "1" if v_quiet.get() else None
+            updates["FORCE_OCR"] = "1" if v_force_ocr.get() else None
+            updates["USE_EASYOCR_XY"] = "1" if v_use_xy.get() else None
+            updates["XY_LOG"] = "1" if v_xy_log.get() else None
+            updates["OCR_DPI"] = v_ocr_dpi.get().strip() or None
+            # Prefer EASYOCR_LANGS key
+            lang = v_langs.get().strip()
+            updates["EASYOCR_LANGS"] = lang or None
+            updates["XY_FUZZ"] = v_xy_fuzz.get().strip() or None
+            updates["ROW_BAND"] = v_row_band.get().strip() or None
+            updates["COL_TOL"] = v_col_tol.get().strip() or None
+            try:
+                # Merge with existing and persist
+                merged = parse_scanner_env(SCANNER_ENV)
+                for k, v in updates.items():
+                    if v is None:
+                        merged.pop(k, None)
+                    else:
+                        merged[k] = v
+                self._env_cache = merged
+                self._save_scanner_env(merged)
+                self.status.set("Settings saved to scanner.env")
+                dlg.destroy()
+            except Exception as e:
+                messagebox.showerror("Save failed", str(e))
+        ttk.Button(btns, text="Save", command=on_save).pack(side=tk.RIGHT)
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT, padx=(0,8))
+
+    def _save_scanner_env(self, env_map: dict[str,str]) -> None:
+        lines = [
+            "# Scanner configuration (KEY=VALUE)",
+            "# Edited via GUI Settings"
+        ]
+        # Order important keys first
+        order = [
+            "QUIET","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","ROW_BAND","COL_TOL","VENV_DIR"
+        ]
+        written = set()
+        for k in order:
+            v = env_map.get(k)
+            if v:
+                lines.append(f"{k}={v}")
+                written.add(k)
+        # Write the rest, stable order
+        for k in sorted(env_map.keys()):
+            if k in written:
+                continue
+            v = env_map[k]
+            if v:
+                lines.append(f"{k}={v}")
+        SCANNER_ENV.parent.mkdir(parents=True, exist_ok=True)
+        SCANNER_ENV.write_text("\n".join(lines)+"\n", encoding="utf-8")
 
     def _compile_master(self):
         try:

@@ -37,7 +37,9 @@ Notes:
   - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs --window-chars 400`
 
 Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Create `user_inputs\EIDP_Import_Docs` and `user_inputs\Scanned_Docs` on first run. Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
-Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-level file updated is `Product_Data_File\EIDP_data.csv`.
+Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
+- A persistent run registry is maintained at `Product_Data_File\run_registry.xlsx` (CSV fallback if Excel not available).
+- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `scripts/compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
 
 ---
 
@@ -50,7 +52,43 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`. The only top-l
   - `scan_results.results.csv` and `scan_results.metadata.csv`
 - `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder
   - `by_pdf/` folder contains one JSON per PDF with just that fileâ€™s term results
-- Top-level aggregate that grows over time: `Product_Data_File\EIDP_data.csv`
+- Persistent cross-run registry: `Product_Data_File\run_registry.xlsx` (or `run_registry.csv`).
+- Optional consolidated workbook via compile: `Product_Data_File\master.xlsx` (or `master.csv`).
+
+---
+
+## GUI Launcher
+
+- Start with a simple GUI: `py gui.py`
+  - Choose your Terms file, PDFs folder, and Scanned folder.
+  - The GUI streams scanner logs and provides shortcuts to open the last run folder, run registry, and compile/open the master workbook.
+  - The GUI runs in quiet mode by default to reduce log noise.
+
+---
+
+## Quiet Output
+
+- Reduce console chatter via either:
+  - CLI: add `--quiet` to the scanner command
+  - Env var: set `QUIET=1` in `user_inputs\scanner.env`
+- Quiet mode suppresses progress/debug lines (e.g., `[PROGRESS]`, `[XY]`, setup chatter) and keeps `[ERROR]`, `[WARN]`, and `[DONE]` summaries.
+
+---
+
+## Packaging (Single-File Installer)
+
+- Option A: Zip-based installer (smaller payload)
+- Create a single `install.bat` using: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_single_installer.ps1`
+  - Output: `dist\install.bat`
+  - On a clean machine: copy `install.bat` to an empty folder and run it.
+  - It extracts the app files and automatically runs project setup (creates a venv, installs deps, scaffolds folders, and generates `scanner.env` and `terms.schema.xlsx`).
+  - Optional: pass a custom venv location: `install.bat C:\\MyVenvs\\PDF_Scanner.venv` (equivalent to calling the internal setup with that argument).
+
+- Option B: Full-text installer (no embedded zip)
+  - Generate with: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_full_text_installer.ps1`
+  - Output: `dist\full_installer.bat`
+  - This single BAT embeds file contents as Base64 and reconstructs the project via PowerShell only (no certutil/zip required).
+  - Usage on a clean machine: run `full_installer.bat` (optionally pass venv path like above). It writes all files, then runs the internal setup.
 
 ---
 

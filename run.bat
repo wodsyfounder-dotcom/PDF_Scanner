@@ -46,14 +46,14 @@ if not exist "%OUT_DIR%\run_data" mkdir "%OUT_DIR%\run_data"
 rem Load optional scanner config (user_inputs\scanner.env) as KEY=VALUE lines
 set "CFG=%ROOT%user_inputs\scanner.env"
 if exist "%CFG%" (
-  echo [RUN] Loading config: "%CFG%"
+  if not "%QUIET%"=="1" echo [RUN] Loading config: "%CFG%"
   for /f "usebackq tokens=* delims=" %%L in ("%CFG%") do (
     set "LINE=%%L"
     if not "!LINE!"=="" if not "!LINE:~0,1!"==" " if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" if not "!LINE!"=="!LINE:=!" (
       set "%%L"
     )
   )
-  echo [RUN] Config parsed.
+  if not "%QUIET%"=="1" echo [RUN] Config parsed.
 )
 
 rem Ensure vendored packages path is prepended even if PYTHONPATH was overridden in scanner.env
@@ -63,7 +63,7 @@ rem Optional venv override via scanner.env
 if defined VENV_DIR (
   set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
   if not exist "%VENV_PY%" (
-    echo [SETUP] No venv at "%VENV_DIR%". Bootstrapping...
+    if not "%QUIET%"=="1" echo [SETUP] No venv at "%VENV_DIR%". Bootstrapping...
     call "%ROOT%install.bat" "%VENV_DIR%"
   )
   if exist "%VENV_PY%" (
@@ -75,21 +75,24 @@ if defined VENV_DIR (
   )
 )
 
-echo [RUN] Python: "%PY%"
-echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
-echo [RUN] PDFs  : "%IN_DIR%"
-echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
-
-rem Show effective OCR-related settings for debug/traceability
-echo [RUN] OCR    : USE_OCRMYPDF=%USE_OCRMYPDF%, OCR_RENDERER=%OCR_RENDERER%, USE_EASYOCR_XY=%USE_EASYOCR_XY%
-if defined FORCE_OCR echo [RUN] OCR    : FORCE_OCR=%FORCE_OCR%
-if defined OCR_DPI echo [RUN] OCR    : OCR_DPI=%OCR_DPI%
-if defined EASYOCR_LANGS echo [RUN] OCR    : EASYOCR_LANGS=%EASYOCR_LANGS%
+if not "%QUIET%"=="1" (
+  echo [RUN] Python: "%PY%"
+  echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
+  echo [RUN] PDFs  : "%IN_DIR%"
+  echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
+  echo [RUN] OCR    : USE_OCRMYPDF=%USE_OCRMYPDF%, OCR_RENDERER=%OCR_RENDERER%, USE_EASYOCR_XY=%USE_EASYOCR_XY%
+  if defined FORCE_OCR echo [RUN] OCR    : FORCE_OCR=%FORCE_OCR%
+  if defined OCR_DPI echo [RUN] OCR    : OCR_DPI=%OCR_DPI%
+  if defined EASYOCR_LANGS echo [RUN] OCR    : EASYOCR_LANGS=%EASYOCR_LANGS%
+)
 
 rem Enforce EasyOCR-only OCR behavior (no external OCR engines)
 if not defined USE_OCRMYPDF set "USE_OCRMYPDF=off"
 if not defined OCR_RENDERER set "OCR_RENDERER=easyocr"
 if not defined USE_EASYOCR_XY set "USE_EASYOCR_XY=0"
+
+set "QUIET_FLAG="
+if /I "%QUIET%"=="1" set "QUIET_FLAG=--quiet"
 
 "%PY%" "%ROOT%Application\eidp_term_scanner.py" ^
   --input "%TERMS%" ^
@@ -98,6 +101,7 @@ if not defined USE_EASYOCR_XY set "USE_EASYOCR_XY=0"
   --output-json "%OUT_JSON%" ^
   --output-csv "%OUT_CSV%" ^
   --scanned-folder "%SCANNED%" ^
+  %QUIET_FLAG% ^
   %*
 
 set "RC=%ERRORLEVEL%"
@@ -113,5 +117,4 @@ if defined LAST_RUN (
 ) else (
   echo [DONE] Check: "%OUT_DIR%\run_data" for this run.
 )
-echo [DONE] Top-level aggregate updated (if enabled): "%OUT_DIR%\EIDP_data.csv"
 endlocal & exit /b 0

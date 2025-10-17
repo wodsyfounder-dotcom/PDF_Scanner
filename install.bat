@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
 set "PY=py"
@@ -12,58 +12,53 @@ echo [SETUP] Creating local virtual environment: "%VENV_DIR%" ...
 "%PY%" -m venv "%VENV_DIR%"
 if errorlevel 1 (
   echo [ERROR] Failed to create venv. Ensure Python 3 is installed.
-  exit /b 1
+  endlocal & exit /b 1
 )
 
 set "VPY=%VENV_DIR%\Scripts\python.exe"
 if not exist "%VPY%" (
   echo [ERROR] venv python not found: "%VPY%"
-  exit /b 1
+  endlocal & exit /b 1
 )
 
 echo [SETUP] Upgrading pip...
 "%VPY%" -m pip install --upgrade pip
 if errorlevel 1 echo [WARN] pip upgrade had warnings.
 
-echo [SETUP] Installing local Python packages...
+echo [SETUP] Installing required Python packages (minimal)...
 "%VPY%" -m pip install ^
   pymupdf ^
-  pdfminer.six ^
-  pypdf ^
   pandas ^
-  xlsxwriter ^
   openpyxl ^
-  xlrd ^
-  pytesseract ^
-  pillow ^
-  pdf2image ^
-  ocrmypdf
+  xlsxwriter
 if errorlevel 1 (
   echo [ERROR] Package install failed.
-  exit /b 1
+  endlocal & exit /b 1
 )
 
-rem Optional: PaddleOCR stack (pure-Python OCR) when enabled via env var PADDLE_OCR=1
-if /I "%PADDLE_OCR%"=="1" (
-  echo [SETUP] Installing PaddleOCR stack into venv...
-  "%VPY%" -m pip install paddleocr paddlepaddle
-  if errorlevel 1 echo [WARN] PaddleOCR install had warnings.
+echo [SETUP] Installing EasyOCR + CPU torch/torchvision (OCR fallback)...
+"%VPY%" -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+if errorlevel 1 (
+  echo [ERROR] PyTorch CPU install failed.
+  endlocal & exit /b 1
+)
+"%VPY%" -m pip install easyocr
+if errorlevel 1 (
+  echo [ERROR] EasyOCR install failed.
+  endlocal & exit /b 1
 )
 
 rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv runs)
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
-echo [SETUP] Vendoring Python deps to Lib\site-packages:
-echo         pymupdf, pdfminer.six, pypdf, pillow, pytesseract, pdf2image, pandas, xlsxwriter, openpyxl, xlrd, ocrmypdf
+echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
+echo         pymupdf, pandas, openpyxl, xlsxwriter, easyocr, torch, torchvision
 "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
-  pymupdf pdfminer.six pypdf pillow pytesseract pdf2image pandas xlsxwriter openpyxl xlrd ocrmypdf
+  pymupdf pandas openpyxl xlsxwriter easyocr
+"%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
+  torch torchvision
 if errorlevel 1 (
   echo [WARN] Vendoring had warnings/failures. Non-venv runs may miss some features.
-)
-
-if /I "%PADDLE_OCR%"=="1" (
-  echo [SETUP] Vendoring PaddleOCR into Lib\site-packages...
-  "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" paddleocr paddlepaddle
 )
 
 rem --- Scaffold expected folders and sample terms file ---
@@ -81,78 +76,34 @@ rem Create scanner.env with sensible defaults if missing
 if not exist "%ROOT%user_inputs\scanner.env" (
   echo [SETUP] Creating default user_inputs\scanner.env
   >  "%ROOT%user_inputs\scanner.env" echo # Scanner configuration (KEY=VALUE)
-  >> "%ROOT%user_inputs\scanner.env" echo #USE_OCRMYPDF=primary
-  >> "%ROOT%user_inputs\scanner.env" echo OCRMYPDF_FORCE=1
-  >> "%ROOT%user_inputs\scanner.env" echo OCRMYPDF_LANG=eng
-  >> "%ROOT%user_inputs\scanner.env" echo OCRMYPDF_OPTIMIZE=1
-  >> "%ROOT%user_inputs\scanner.env" echo #OCR_DPI=600
-  >> "%ROOT%user_inputs\scanner.env" echo #TESSERACT_ARGS=--psm 4
+  >> "%ROOT%user_inputs\scanner.env" echo # Edited via GUI Settings
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # General
+  >> "%ROOT%user_inputs\scanner.env" echo QUIET=1
   >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%ROOT%.venv
-  >> "%ROOT%user_inputs\scanner.env" echo #TESSERACT_CMD=C:\\Program Files\\Tesseract-OCR\\tesseract.exe
-)
-
-rem --- Check for Tesseract OCR binary (native dependency, not a Python package) ---
-set "TESS_PATH_64=%ProgramFiles%\Tesseract-OCR\tesseract.exe"
-set "TESS_PATH_86=%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe"
-set "TESS_TOOL_1=%ROOT%tools\tesseract\tesseract.exe"
-set "TESS_TOOL_2=%ROOT%tools\tesseract\bin\tesseract.exe"
-
-if exist "%TESS_PATH_64%" (
-  echo [INFO] Tesseract found: "%TESS_PATH_64%"
-) else if exist "%TESS_PATH_86%" (
-  echo [INFO] Tesseract found: "%TESS_PATH_86%"
-) else if exist "%TESS_TOOL_1%" (
-  echo [INFO] Tesseract (portable) found: "%TESS_TOOL_1%"
-) else if exist "%TESS_TOOL_2%" (
-  echo [INFO] Tesseract (portable) found: "%TESS_TOOL_2%"
-) else (
-  echo [WARN] Tesseract not detected. OCR for image-only PDFs will be unavailable.
-  echo        Install via Windows installer (recommended) or place a portable build under:
-  echo        "%ROOT%tools\tesseract\"  (so that "tesseract.exe" is inside this folder)
-) 
-
-rem --- Check for Ghostscript (required by OCRmyPDF) and QPDF (optional) ---
-set "GS_DIR64=%ProgramFiles%\gs"
-set "GS_DIR86=%ProgramFiles(x86)%\gs"
-set "QPDF_BIN1=%ProgramFiles%\qpdf\bin\qpdf.exe"
-set "QPDF_BIN2=%ProgramFiles(x86)%\qpdf\bin\qpdf.exe"
-
-set "_GS_FOUND="
-for /d %%G in ("%GS_DIR64%\gs*") do (
-  if exist "%%~fG\bin\gswin64c.exe" set "_GS_FOUND=%%~fG\bin\gswin64c.exe"
-)
-if not defined _GS_FOUND (
-  for /d %%G in ("%GS_DIR86%\gs*") do (
-    if exist "%%~fG\bin\gswin32c.exe" set "_GS_FOUND=%%~fG\bin\gswin32c.exe"
-  )
-)
-if defined _GS_FOUND (
-  echo [INFO] Ghostscript found: "%_GS_FOUND%"
-) else (
-  echo [WARN] Ghostscript not detected. OCRmyPDF will fail until installed (gswin64c.exe).
-)
-
-if exist "%QPDF_BIN1%" (
-  echo [INFO] QPDF found: "%QPDF_BIN1%"
-) else if exist "%QPDF_BIN2%" (
-  echo [INFO] QPDF found: "%QPDF_BIN2%"
-) else (
-  echo [INFO] QPDF not detected (optional). OCRmyPDF can still run using bundled libs.
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # OCR (EasyOCR-only by default)
+  >> "%ROOT%user_inputs\scanner.env" echo OCR_DPI=600
+  >> "%ROOT%user_inputs\scanner.env" echo EASYOCR_LANGS=en
+  >> "%ROOT%user_inputs\scanner.env" echo #FORCE_OCR=0
+  >> "%ROOT%user_inputs\scanner.env" echo #USE_EASYOCR_XY=0
+  >> "%ROOT%user_inputs\scanner.env" echo #XY_LOG=0
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # XY table tuning (0..1)
+  >> "%ROOT%user_inputs\scanner.env" echo #XY_FUZZ=0.75
+  >> "%ROOT%user_inputs\scanner.env" echo #ROW_BAND=0.6
+  >> "%ROOT%user_inputs\scanner.env" echo #COL_TOL=0.6
 )
 
 echo.
 echo [READY] Local environment set up.
 echo   - Python venv: "%VENV_DIR%"
 echo   - Vendored Python deps in Lib\site-packages for non-venv runs
-echo   - Optional OCR tools (no PATH edits):
-echo       Create "%ROOT%tools\tesseract" and place tesseract.exe there
-echo       Create "%ROOT%tools\poppler\bin" and place pdftoppm.exe there
-echo   - OCRmyPDF installed inside venv. Use: ".venv\\Scripts\\ocrmypdf.exe"
+echo   - OCR handled via EasyOCR (pure Python). No external OCR tools required.
 echo.
-echo The run scripts will prefer .venv and extend PATH with ^"tools^" if present.
 echo Next steps:
 echo   1) Place PDFs under user_inputs\EIDP_Import_Docs
-echo   2) Edit user_inputs\terms.csv
-echo   3) Run: run.bat   (or  .\run.ps1)
+echo   2) Edit user_inputs\terms.xlsx (or .csv)
+echo   3) Run: run.bat   or  py gui.py
 
 endlocal & exit /b 0

@@ -1,3 +1,948 @@
+===== PDF_Scanner Full Snapshot =====
+Generated: Thu 10/16/2025 15:31:36.65
+Root: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\..\
+
+
+---------- BEGIN FILE: README_EIDP_Term_Scanner.md ----------
+# EIDP Term Scanner
+
+Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest numeric value near each term within specified page ranges, and export a matrix (rows=terms, columns=Serial Numbers) plus detailed metadata. Scanned PDFs are moved out so the next run only processes new files.
+
+---
+
+## Install (Windows)
+
+- No admin / no PATH changes (recommended):
+  - Run `install.bat` to create a local `.venv` and install Python packages there.
+  - All OCR is handled inside Python (EasyOCR). No external executables are required.
+  - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
+  - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
+- System-wide (if allowed):
+  - `py -m pip install --upgrade pip`
+  - `py -m pip install pymupdf pdfminer.six pypdf` (minimum)
+  - Optional (Excel): `py -m pip install openpyxl` (or `pandas xlsxwriter`)
+  - Optional (OCR fallback): `py -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision` then `py -m pip install easyocr`
+
+Notes:
+- If your PDFs are text-based (not scans), OCR may never be invoked. At least one text extractor (PyMuPDF or pdfminer.six) is recommended.
+- Excel output requires `openpyxl` or `pandas` with `xlsxwriter`. If missing, CSV fallbacks are written instead.
+- Reading `.xls` terms requires `pandas` and `xlrd`. If unavailable, save as `.xlsx` or `.csv`.
+
+---
+
+## Super Simple Run
+
+- One-time setup: install.bat scaffolds folders and drops a sample terms CSV if none exists:
+  - `user_inputs\\EIDP_Import_Docs`, `user_inputs\\Scanned_Docs`
+  - `user_inputs\\terms.xlsx` or `user_inputs\\terms.csv` (headers: `Term, Pages`)
+- Put PDFs in `user_inputs\EIDP_Import_Docs`.
+- Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv` (headers: `Term, Pages`).
+- Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines)
+- Run one of:
+  - Windows: double-click `run.bat`
+  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs --window-chars 400`
+
+Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Create `user_inputs\EIDP_Import_Docs` and `user_inputs\Scanned_Docs` on first run. Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
+Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
+- A persistent run registry is maintained at `Product_Data_File\run_registry.xlsx` (CSV fallback if Excel not available).
+- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `scripts/compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
+
+---
+
+## What You Get
+
+- `Product_Data_File\run_data\<timestamp>\scan_results.xlsx` (if Excel writers available)
+  - `results` sheet: Term, Pages, and one column per SN (Serial Number from filename)
+  - `metadata` sheet: pdf_file, serial_number, term, found, page, number, units, context, method_pipeline
+- CSV fallbacks (written into the same `run_data` folder if Excel libs are missing):
+  - `scan_results.results.csv` and `scan_results.metadata.csv`
+- `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder
+  - `by_pdf/` folder contains one JSON per PDF with just that fileâ€™s term results
+- Persistent cross-run registry: `Product_Data_File\run_registry.xlsx` (or `run_registry.csv`).
+- Optional consolidated workbook via compile: `Product_Data_File\master.xlsx` (or `master.csv`).
+
+---
+
+## GUI Launcher
+
+- Start with a simple GUI: `py gui.py`
+  - Choose your Terms file, PDFs folder, and Scanned folder.
+  - The GUI streams scanner logs and provides shortcuts to open the last run folder, run registry, and compile/open the master workbook.
+  - The GUI runs in quiet mode by default to reduce log noise.
+
+---
+
+## Quiet Output
+
+- Reduce console chatter via either:
+  - CLI: add `--quiet` to the scanner command
+  - Env var: set `QUIET=1` in `user_inputs\scanner.env`
+- Quiet mode suppresses progress/debug lines (e.g., `[PROGRESS]`, `[XY]`, setup chatter) and keeps `[ERROR]`, `[WARN]`, and `[DONE]` summaries.
+
+---
+
+## Packaging (Single-File Installer)
+
+- Option A: Zip-based installer (smaller payload)
+- Create a single `install.bat` using: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_single_installer.ps1`
+  - Output: `dist\install.bat`
+  - On a clean machine: copy `install.bat` to an empty folder and run it.
+  - It extracts the app files and automatically runs project setup (creates a venv, installs deps, scaffolds folders, and generates `scanner.env` and `terms.schema.xlsx`).
+  - Optional: pass a custom venv location: `install.bat C:\\MyVenvs\\PDF_Scanner.venv` (equivalent to calling the internal setup with that argument).
+
+- Option B: Full-text installer (no embedded zip)
+  - Generate with: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_full_text_installer.ps1`
+  - Output: `dist\full_installer.bat`
+  - This single BAT embeds file contents as Base64 and reconstructs the project via PowerShell only (no certutil/zip required).
+  - Usage on a clean machine: run `full_installer.bat` (optionally pass venv path like above). It writes all files, then runs the internal setup.
+
+---
+
+## Features & Behavior
+
+- Serial Number detection
+  - Looks for `SN` followed by an ID in the filename (letters/digits/_/-). Output header is `SN <ID>`.
+  - If no `SN` is found, uses `SN_<stem>`.
+- Page-constrained search
+  - Each term can specify page ranges; search is restricted to those pages.
+  - If `Pages` is empty for a term, the whole document is searched.
+- Closest-number extraction
+  - For each occurrence, the nearest number (by characters) is selected.
+  - Numbers include formats like `1,234`, `12.5`, optional units, and signs.
+- Robust extraction pipeline
+  - Tries PyMuPDF, pdfminer.six, pypdf.
+  - Optional OCR paths:
+    - OCRmyPDF (searchable PDF pre-processing) as primary or fallback (recommended for scanned tables)
+    - Direct OCR via Tesseract (PyMuPDF/pdf2image renderers)
+- Auto-move scanned PDFs
+  - After scanning, PDFs are moved from `--pdf-folder` to `--scanned-folder`.
+
+---
+
+## Terms File Schema
+
+- Supports `.csv`, `.xlsx`, and `.xls` (for `.xls`, pandas+xlrd required).
+- Required columns:
+  - `Term`: the search term name
+  - `Pages`: page ranges (e.g., `5-10; 22`)
+- Mode and extraction options (optional):
+  - `Mode`: `nearest` | `table(xy)` | `line` (default `nearest`)
+
+  - For `table(xy)`:
+    - `Line`: row header text (data row)
+    - `Column`: column header text; supports alternatives with pipe (e.g., `Value|Nominal`)
+
+  - For `line`:
+    - `Anchor`: text that must appear on the target line (defaults to `Term`)
+    - `FieldIndex`: which field after the anchor to return (1-based; `2` or `2nd` etc.)
+    - `FieldSplit`: `auto` | `groups` | `tokens`
+      - `groups`: split by two-or-more spaces or tabs (e.g., `Ford EIDP` | `Revision A` | `Type 2`)
+      - `tokens`: split by any whitespace (single words)
+      - `auto`: try `groups`, fall back to `tokens`
+    - `Return`: `string` | `number` (default `number`)
+
+  - Filters (apply to `number` return types):
+    - `Units`: preferred units near the number (pipe `|` list, e.g., `lbf|psi`)
+    - `Range (min)`, `Range (max)`: numeric bounds; scientific notation supported (e.g., `8E-8`)
+    - Legacy `Range`: `a..b` also supported; explicit min/max take precedence
+
+Behavior
+- `table(xy)`: locate column header x-position, find row containing `Line`, return the number on that row closest (by x) to the column.
+  - Falls back to `nearest` if not found.
+- `line`: find a line containing `Anchor` (or `Term`), split the tail into fields, pick the `FieldIndex`-th field.
+  - If `Return=string` â†’ return that text; if `Return=number` â†’ extract a number from that field (respects `Units` and `Range`).
+  - Falls back to `nearest` if not found.
+- `nearest` (default): prefers same-line numbers (right, then left), then adjacent lines, then by distance; respects `Units`/`Range` if provided.
+- Numbers support scientific notation (e.g., `8E-8`). Dates (`MM/DD/YY` or `MM/DD/YYYY`) are allowed values.
+
+## Command-Line Options
+
+```
+--input           Path to terms file (.csv or .xlsx). Headers: Term, Pages
+--pdf-folder      Folder containing PDFs to scan
+--output-xlsx     Excel workbook output (ignored: artifacts always go to run_data)
+--output-json     JSON details output (ignored: artifacts always go to run_data)
+--output-csv      Flat CSV summary (ignored: artifacts always go to run_data)
+--scanned-folder  Destination for processed PDFs (default: "Scanned Docs")
+--window-chars    Proximity window in characters around term (default: 160)
+--case-sensitive  Case-sensitive term matching (off by default)
+```
+
+Examples:
+```
+py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --window-chars 240 --case-sensitive
+```
+
+Line mode example
+- Line text: `Title: Ford EIDP   Revision A   Type 2`
+- Terms row:
+  - `Term=Title`, `Mode=line`, `Anchor=Title:`, `FieldIndex=2`, `FieldSplit=groups`, `Return=string`
+  - Result â†’ `Revision A`
+
+---
+
+## Troubleshooting
+
+- No outputs or empty results
+  - Install the Python packages listed in Install (Windows).
+  - If PDFs are scanned images, install Tesseract and Poppler; verify with `tesseract --version` and `pdftoppm -v`.
+  - Ensure PDFs exist in `user_inputs\EIDP_Import_Docs` and are not already moved to `Scanned_Docs`.
+  - Verify `terms.csv` headers are exactly `Term, Pages` and pages are 1-indexed (e.g., `5-10; 22`).
+- Excel not generated
+  - Install `pandas` plus `xlsxwriter` or `openpyxl`; otherwise CSVs are written.
+ - OCR not triggered
+  - Ensure `easyocr`, `torch` and `torchvision` are installed if you expect OCR fallback.
+  - On secure/offline machines, pre-cache EasyOCR models by initializing a Reader once on a connected machine and bundling the model folder.
+
+OCR fallback (EasyOCR)
+- Handled inside Python only, no external EXEs.
+- Installs: `torch` (CPU), `torchvision`, `easyocr`.
+
+Config file
+- `user_inputs\scanner.env` supports KEY=VALUE lines to set environment without editing your shell:
+  - `OCR_DPI=600` (or 800) to tune EasyOCR rendering DPI.
+  - `EASYOCR_LANGS=en` to control language models.
+  - `VENV_DIR` to choose a custom virtual environment path; `run.bat` will create it if missing.
+  - Lines starting with `#` or `;` and blank lines are ignored.
+
+OCR tuning (env vars)
+- `TESSERACT_CMD`: full path to `tesseract.exe` (if not on PATH)
+- `TESSERACT_ARGS`: extra args passed to Tesseract (default `--psm 6`). Examples: `--psm 4`, `--oem 1`.
+- `OCR_DPI`: rendering DPI for OCR (default `400`, range `200..800`).
+- `OCR_RENDERER`: `pymupdf` or `pdf2image` to force renderer choice (defaults to PyMuPDF when available).
+  
+OCRmyPDF integration (env vars)
+- `USE_OCRMYPDF`: `always|primary|prefer` to pre-OCR the whole doc, or any truthy value to enable fallback when pages are empty. `off|0|no|false` disables.
+- `OCRMYPDF_LANG`: language (default `eng`).
+- `OCRMYPDF_OPTIMIZE`: 0â€“3 (default `1`). Higher values may require external tools like `pngquant`.
+- `OCRMYPDF_BIN`: path to the `ocrmypdf` executable (if Python API import isnâ€™t available).
+- `OCRMYPDF_KEEP`: `1/true` to keep temporary OCR outputs.
+- Serial Number column missing
+  - Ensure filenames include a pattern like `SN 1234` or `SN-ABC_09`.
+
+---
+
+## Privacy & Safety
+
+- Files are processed locally; no network calls are made by this script.
+- Output includes nearby text snippets for verification. Remove sensitive rows/columns as needed.
+
+---
+
+## Changelog
+
+- v2: Serial-number columns, Excel results/metadata sheets, auto-move scanned PDFs, per-run outputs under run_data only, plus `VENV_DIR` support and automatic venv bootstrap in `run.bat`.
+- v1: CSV/JSON summary per PDF-term, multi-extractor pipeline with optional OCR.
+
+---
+
+## License
+
+Internal tooling for EIDP workflows. Adapt as needed.
+---------- END FILE: README_EIDP_Term_Scanner.md ----------
+
+---------- BEGIN FILE: install.bat ----------
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+
+set "ROOT=%~dp0"
+set "PY=py"
+rem Optional first arg: custom venv directory. Defaults to %ROOT%.venv
+set "VENV_DIR=%~1"
+if "%VENV_DIR%"=="" set "VENV_DIR=%ROOT%.venv"
+where %PY% >nul 2>nul || set "PY=python"
+
+echo [SETUP] Creating local virtual environment: "%VENV_DIR%" ...
+"%PY%" -m venv "%VENV_DIR%"
+if errorlevel 1 (
+  echo [ERROR] Failed to create venv. Ensure Python 3 is installed.
+  endlocal & exit /b 1
+)
+
+set "VPY=%VENV_DIR%\Scripts\python.exe"
+if not exist "%VPY%" (
+  echo [ERROR] venv python not found: "%VPY%"
+  endlocal & exit /b 1
+)
+
+echo [SETUP] Upgrading pip...
+"%VPY%" -m pip install --upgrade pip
+if errorlevel 1 echo [WARN] pip upgrade had warnings.
+
+echo [SETUP] Installing required Python packages (minimal)...
+"%VPY%" -m pip install ^
+  pymupdf ^
+  pandas ^
+  openpyxl ^
+  xlsxwriter
+if errorlevel 1 (
+  echo [ERROR] Package install failed.
+  endlocal & exit /b 1
+)
+
+echo [SETUP] Installing EasyOCR + CPU torch/torchvision (OCR fallback)...
+"%VPY%" -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+if errorlevel 1 (
+  echo [ERROR] PyTorch CPU install failed.
+  endlocal & exit /b 1
+)
+"%VPY%" -m pip install easyocr
+if errorlevel 1 (
+  echo [ERROR] EasyOCR install failed.
+  endlocal & exit /b 1
+)
+
+rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv runs)
+set "LOCAL_SITE=%ROOT%Lib\site-packages"
+if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
+echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
+echo         pymupdf, pandas, openpyxl, xlsxwriter, easyocr, torch, torchvision
+"%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
+  pymupdf pandas openpyxl xlsxwriter easyocr
+"%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
+  torch torchvision
+if errorlevel 1 (
+  echo [WARN] Vendoring had warnings/failures. Non-venv runs may miss some features.
+)
+
+rem --- Scaffold expected folders and sample terms file ---
+if not exist "%ROOT%user_inputs" mkdir "%ROOT%user_inputs"
+if not exist "%ROOT%user_inputs\EIDP_Import_Docs" mkdir "%ROOT%user_inputs\EIDP_Import_Docs"
+if not exist "%ROOT%user_inputs\Scanned_Docs" mkdir "%ROOT%user_inputs\Scanned_Docs"
+if not exist "%ROOT%Product_Data_File" mkdir "%ROOT%Product_Data_File"
+if not exist "%ROOT%Product_Data_File\run_data" mkdir "%ROOT%Product_Data_File\run_data"
+if not exist "%ROOT%user_inputs\terms.xlsx" if not exist "%ROOT%user_inputs\terms.csv" if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
+  echo [SETUP] Creating Excel terms template (user_inputs\terms.schema.xlsx)
+  "%VPY%" "%ROOT%scripts\generate_terms_schema.py"
+)
+
+rem Create scanner.env with sensible defaults if missing
+if not exist "%ROOT%user_inputs\scanner.env" (
+  echo [SETUP] Creating default user_inputs\scanner.env
+  >  "%ROOT%user_inputs\scanner.env" echo # Scanner configuration (KEY=VALUE)
+  >> "%ROOT%user_inputs\scanner.env" echo # Edited via GUI Settings
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # General
+  >> "%ROOT%user_inputs\scanner.env" echo QUIET=1
+  >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%ROOT%.venv
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # OCR (EasyOCR-only by default)
+  >> "%ROOT%user_inputs\scanner.env" echo OCR_DPI=600
+  >> "%ROOT%user_inputs\scanner.env" echo EASYOCR_LANGS=en
+  >> "%ROOT%user_inputs\scanner.env" echo #FORCE_OCR=0
+  >> "%ROOT%user_inputs\scanner.env" echo #USE_EASYOCR_XY=0
+  >> "%ROOT%user_inputs\scanner.env" echo #XY_LOG=0
+  >> "%ROOT%user_inputs\scanner.env" echo.
+  >> "%ROOT%user_inputs\scanner.env" echo # XY table tuning (0..1)
+  >> "%ROOT%user_inputs\scanner.env" echo #XY_FUZZ=0.75
+  >> "%ROOT%user_inputs\scanner.env" echo #ROW_BAND=0.6
+  >> "%ROOT%user_inputs\scanner.env" echo #COL_TOL=0.6
+)
+
+echo.
+echo [READY] Local environment set up.
+echo   - Python venv: "%VENV_DIR%"
+echo   - Vendored Python deps in Lib\site-packages for non-venv runs
+echo   - OCR handled via EasyOCR (pure Python). No external OCR tools required.
+echo.
+echo Next steps:
+echo   1) Place PDFs under user_inputs\EIDP_Import_Docs
+echo   2) Edit user_inputs\terms.xlsx (or .csv)
+echo   3) Run: run.bat   or  py gui.py
+
+endlocal & exit /b 0
+---------- END FILE: install.bat ----------
+
+---------- BEGIN FILE: run.bat ----------
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+
+set "ROOT=%~dp0"
+
+rem Prefer local venv if present
+set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
+if exist "%VENV_PY%" (
+  set "PY=%VENV_PY%"
+  set "PATH=%ROOT%.venv\Scripts;%PATH%"
+) else (
+  set "PY=py"
+  where %PY% >nul 2>nul || set "PY=python"
+)
+
+rem Make vendored packages available when not installed system-wide
+set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+
+rem Detect terms file and scaffold if missing
+set "TERMS_XLSX=%ROOT%user_inputs\terms.xlsx"
+set "TERMS_CSV=%ROOT%user_inputs\terms.csv"
+if exist "%TERMS_XLSX%" set "TERMS=%TERMS_XLSX%" & goto has_terms
+if exist "%TERMS_CSV%" set "TERMS=%TERMS_CSV%" & goto has_terms
+echo [WARN] No terms file found.
+if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
+  echo [SETUP] Creating Excel terms template (user_inputs\terms.schema.xlsx)
+  "%PY%" "%ROOT%scripts\generate_terms_schema.py"
+)
+echo Open and edit: "%ROOT%user_inputs\terms.schema.xlsx" (save as terms.xlsx when ready)
+exit /b 1
+
+:has_terms
+set "IN_DIR=%ROOT%user_inputs\EIDP_Import_Docs"
+set "SCANNED=%ROOT%user_inputs\Scanned_Docs"
+set "OUT_DIR=%ROOT%Product_Data_File"
+set "OUT_XLSX=%OUT_DIR%\scan_results.xlsx"
+set "OUT_JSON=%OUT_DIR%\scan_results.json"
+set "OUT_CSV=%OUT_DIR%\scan_results_flat.csv"
+
+rem Ensure directories exist
+if not exist "%IN_DIR%"       mkdir "%IN_DIR%"
+if not exist "%SCANNED%"      mkdir "%SCANNED%"
+if not exist "%OUT_DIR%"      mkdir "%OUT_DIR%"
+if not exist "%OUT_DIR%\run_data" mkdir "%OUT_DIR%\run_data"
+
+rem Load optional scanner config (user_inputs\scanner.env) as KEY=VALUE lines
+set "CFG=%ROOT%user_inputs\scanner.env"
+if exist "%CFG%" (
+  if not "%QUIET%"=="1" echo [RUN] Loading config: "%CFG%"
+  for /f "usebackq tokens=* delims=" %%L in ("%CFG%") do (
+    set "LINE=%%L"
+    if not "!LINE!"=="" if not "!LINE:~0,1!"==" " if not "!LINE:~0,1!"=="#" if not "!LINE:~0,1!"==";" if not "!LINE!"=="!LINE:=!" (
+      set "%%L"
+    )
+  )
+  if not "%QUIET%"=="1" echo [RUN] Config parsed.
+)
+
+rem Ensure vendored packages path is prepended even if PYTHONPATH was overridden in scanner.env
+set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+
+rem Optional venv override via scanner.env
+if defined VENV_DIR (
+  set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+  if not exist "%VENV_PY%" (
+    if not "%QUIET%"=="1" echo [SETUP] No venv at "%VENV_DIR%". Bootstrapping...
+    call "%ROOT%install.bat" "%VENV_DIR%"
+  )
+  if exist "%VENV_PY%" (
+    set "PY=%VENV_PY%"
+    set "PATH=%VENV_DIR%\Scripts;%PATH%"
+  ) else (
+    echo [ERROR] Failed to create venv at "%VENV_DIR%".>&2
+    exit /b 1
+  )
+)
+
+if not "%QUIET%"=="1" (
+  echo [RUN] Python: "%PY%"
+  echo [RUN] Terms : "%TERMS%"  (use .xlsx/.csv)
+  echo [RUN] PDFs  : "%IN_DIR%"
+  echo [RUN] Out   : "%OUT_DIR%" (per-run outputs saved under run_data)
+  echo [RUN] OCR    : USE_OCRMYPDF=%USE_OCRMYPDF%, OCR_RENDERER=%OCR_RENDERER%, USE_EASYOCR_XY=%USE_EASYOCR_XY%
+  if defined FORCE_OCR echo [RUN] OCR    : FORCE_OCR=%FORCE_OCR%
+  if defined OCR_DPI echo [RUN] OCR    : OCR_DPI=%OCR_DPI%
+  if defined EASYOCR_LANGS echo [RUN] OCR    : EASYOCR_LANGS=%EASYOCR_LANGS%
+)
+
+rem Enforce EasyOCR-only OCR behavior (no external OCR engines)
+if not defined USE_OCRMYPDF set "USE_OCRMYPDF=off"
+if not defined OCR_RENDERER set "OCR_RENDERER=easyocr"
+if not defined USE_EASYOCR_XY set "USE_EASYOCR_XY=0"
+
+set "QUIET_FLAG="
+if /I "%QUIET%"=="1" set "QUIET_FLAG=--quiet"
+
+"%PY%" "%ROOT%Application\eidp_term_scanner.py" ^
+  --input "%TERMS%" ^
+  --pdf-folder "%IN_DIR%" ^
+  --output-xlsx "%OUT_XLSX%" ^
+  --output-json "%OUT_JSON%" ^
+  --output-csv "%OUT_CSV%" ^
+  --scanned-folder "%SCANNED%" ^
+  %QUIET_FLAG% ^
+  %*
+
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" exit /b %RC%
+
+rem Locate the most recent run_data folder for convenience
+set "LAST_RUN="
+for /f "delims=" %%D in ('dir /ad /b /o:-d "%OUT_DIR%\run_data" 2^>nul') do (
+  if not defined LAST_RUN set "LAST_RUN=%%D"
+)
+if defined LAST_RUN (
+  echo [DONE] Run folder: "%OUT_DIR%\run_data\%LAST_RUN%"
+) else (
+  echo [DONE] Check: "%OUT_DIR%\run_data" for this run.
+)
+endlocal & exit /b 0
+---------- END FILE: run.bat ----------
+
+---------- BEGIN FILE: gui.py ----------
+#!/usr/bin/env python3
+"""
+Simple native GUI (Tkinter) launcher for the EIDP Term Scanner.
+
+- Pure Python standard library (Tkinter) — no external EXEs or downloads.
+- Loads env from user_inputs/scanner.env
+- Lets you pick Terms file, PDFs folder, Scanned folder
+- Runs the scanner in a background thread, streams stdout/stderr to the UI
+- Buttons to Stop run and Open last run folder
+
+Usage:
+  python gui.py
+"""
+from __future__ import annotations
+
+import os
+import sys
+import threading
+import subprocess
+import queue
+from pathlib import Path
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+
+ROOT = Path(__file__).resolve().parent
+DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.xlsx"
+DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
+DEFAULT_SCANNED_DIR = ROOT / "user_inputs" / "Scanned_Docs"
+SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
+APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
+RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
+
+
+def parse_scanner_env(path: Path) -> dict[str, str]:
+    env = {}
+    if not path.exists():
+        return env
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        v = v.strip()
+        if not k:
+            continue
+        env[k] = v
+    return env
+
+
+class Runner:
+    def __init__(self, log_cb):
+        self.proc: subprocess.Popen | None = None
+        self.thread: threading.Thread | None = None
+        self.log_cb = log_cb
+        self._stop = threading.Event()
+
+    def start(self, terms: Path, pdf_dir: Path, scanned: Path):
+        if self.proc is not None:
+            return
+        # Prefer running the project-provided run.bat so environment setup
+        # (venv, vendored site-packages, scanner.env) matches CLI runs.
+        if os.name == "nt":
+            runbat = str(ROOT / "run.bat")
+            cmd = [
+                "cmd.exe", "/c", runbat,
+                "--input", str(terms),
+                "--pdf-folder", str(pdf_dir),
+                "--scanned-folder", str(scanned),
+                "--quiet",
+            ]
+        else:
+            # Fallback: invoke the Python entry directly on non-Windows
+            cmd = [
+                sys.executable,
+                str(APP_ENTRY),
+                "--input", str(terms),
+                "--pdf-folder", str(pdf_dir),
+                "--scanned-folder", str(scanned),
+                "--quiet",
+            ]
+        env = os.environ.copy()
+        # Let run.bat parse scanner.env; still merge here for direct Python fallback
+        env.update(parse_scanner_env(SCANNER_ENV))
+        # Ensure vendored packages are visible for direct Python fallback
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        # Respect GUI settings via scanner.env; default to quiet if not set
+        env.setdefault("QUIET", "1")
+
+        try:
+            self.proc = subprocess.Popen(
+                cmd,
+                cwd=str(ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as e:
+            self.log_cb(f"[ERROR] Failed to start: {e}\n")
+            self.proc = None
+            return
+
+        def _pump():
+            try:
+                assert self.proc is not None
+                for line in self.proc.stdout:  # type: ignore[arg-type]
+                    if self._stop.is_set():
+                        break
+                    self.log_cb(line)
+            except Exception as e:
+                self.log_cb(f"[WARN] Reader error: {e}\n")
+            finally:
+                try:
+                    if self.proc is not None:
+                        self.proc.wait(timeout=1)
+                except Exception:
+                    pass
+                self.log_cb("\n[INFO] Run finished.\n")
+                self.proc = None
+
+        self.thread = threading.Thread(target=_pump, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self._stop.set()
+        try:
+            if self.proc and self.proc.poll() is None:
+                self.proc.terminate()
+        except Exception:
+            pass
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("EIDP Scanner GUI")
+        self.geometry("900x600")
+        self.runner = Runner(self.append_log)
+        self._env_cache: dict[str, str] = parse_scanner_env(SCANNER_ENV)
+        self._build_ui()
+
+    def _build_ui(self):
+        pad = {"padx": 8, "pady": 6}
+
+        frm = ttk.Frame(self)
+        frm.pack(fill=tk.X, **pad)
+
+        # Terms file
+        ttk.Label(frm, text="Terms file (.xlsx/.csv):").grid(row=0, column=0, sticky=tk.W)
+        self.var_terms = tk.StringVar(value=str(DEFAULT_TERMS_XLSX))
+        ent_terms = ttk.Entry(frm, textvariable=self.var_terms, width=80)
+        ent_terms.grid(row=0, column=1, sticky=tk.EW)
+        ttk.Button(frm, text="Browse", command=self._pick_terms).grid(row=0, column=2)
+
+        # PDFs folder
+        ttk.Label(frm, text="PDFs folder:").grid(row=1, column=0, sticky=tk.W)
+        self.var_pdfs = tk.StringVar(value=str(DEFAULT_PDF_DIR))
+        ent_pdfs = ttk.Entry(frm, textvariable=self.var_pdfs, width=80)
+        ent_pdfs.grid(row=1, column=1, sticky=tk.EW)
+        ttk.Button(frm, text="Browse", command=self._pick_pdfs).grid(row=1, column=2)
+
+        # Scanned folder
+        ttk.Label(frm, text="Scanned folder:").grid(row=2, column=0, sticky=tk.W)
+        self.var_scanned = tk.StringVar(value=str(DEFAULT_SCANNED_DIR))
+        ent_sc = ttk.Entry(frm, textvariable=self.var_scanned, width=80)
+        ent_sc.grid(row=2, column=1, sticky=tk.EW)
+        ttk.Button(frm, text="Browse", command=self._pick_scanned).grid(row=2, column=2)
+
+        frm.columnconfigure(1, weight=1)
+
+        # Controls
+        btns = ttk.Frame(self)
+        btns.pack(fill=tk.X, **pad)
+        self.btn_run = ttk.Button(btns, text="Run", command=self._run)
+        self.btn_run.pack(side=tk.LEFT)
+        self.btn_stop = ttk.Button(btns, text="Stop", command=self._stop, state=tk.DISABLED)
+        self.btn_stop.pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Settings", command=self._open_settings).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(btns, text="Open Last Run Folder", command=self._open_last_run).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(btns, text="Open Run Registry", command=self._open_registry).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Compile Master", command=self._compile_master).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(btns, text="Open Master", command=self._open_master).pack(side=tk.LEFT, padx=(8, 0))
+
+        # Log area
+        self.txt = tk.Text(self, wrap="word", height=24)
+        self.txt.pack(fill=tk.BOTH, expand=True, **pad)
+        self.txt.configure(state=tk.DISABLED)
+
+        # Status bar
+        self.status = tk.StringVar(value="Ready.")
+        ttk.Label(self, textvariable=self.status, anchor=tk.W).pack(fill=tk.X)
+
+    def append_log(self, s: str):
+        self.txt.configure(state=tk.NORMAL)
+        self.txt.insert(tk.END, s)
+        self.txt.see(tk.END)
+        self.txt.configure(state=tk.DISABLED)
+
+    def _pick_terms(self):
+        path = filedialog.askopenfilename(title="Select terms file", initialdir=str((DEFAULT_TERMS_XLSX).parent),
+                                          filetypes=[("Terms files", "*.xlsx *.csv"), ("All", "*.*")])
+        if path:
+            self.var_terms.set(path)
+
+    def _pick_pdfs(self):
+        path = filedialog.askdirectory(title="Select PDFs folder", initialdir=str(DEFAULT_PDF_DIR))
+        if path:
+            self.var_pdfs.set(path)
+
+    def _pick_scanned(self):
+        path = filedialog.askdirectory(title="Select Scanned folder", initialdir=str(DEFAULT_SCANNED_DIR))
+        if path:
+            self.var_scanned.set(path)
+
+    def _run(self):
+        terms = Path(self.var_terms.get()).resolve()
+        pdfs = Path(self.var_pdfs.get()).resolve()
+        scanned = Path(self.var_scanned.get()).resolve()
+        if not terms.exists():
+            messagebox.showerror("Missing terms", f"Terms file not found:\n{terms}")
+            return
+        if not pdfs.exists():
+            messagebox.showerror("Missing PDFs folder", f"PDFs folder not found:\n{pdfs}")
+            return
+        scanned.mkdir(parents=True, exist_ok=True)
+        # Ensure latest env settings are saved before launching
+        try:
+            self._save_scanner_env(self._env_cache)
+        except Exception:
+            pass
+        self.status.set("Running...")
+        self.btn_run.configure(state=tk.DISABLED)
+        self.btn_stop.configure(state=tk.NORMAL)
+        self.append_log(f"[GUI] Starting run with terms={terms}, pdfs={pdfs}\n")
+        self.runner.start(terms, pdfs, scanned)
+
+    def _stop(self):
+        self.runner.stop()
+        self.status.set("Stopped (requested).")
+        self.btn_run.configure(state=tk.NORMAL)
+        self.btn_stop.configure(state=tk.DISABLED)
+
+    def _open_last_run(self):
+        try:
+            if not RUNS_DIR.exists():
+                messagebox.showinfo("No runs", f"No run_data found under:\n{RUNS_DIR}")
+                return
+            latest = max((p for p in RUNS_DIR.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, default=None)
+            if not latest:
+                messagebox.showinfo("No runs", "No run folders found")
+                return
+            if sys.platform.startswith("win"):
+                os.startfile(str(latest))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(latest)])
+            else:
+                subprocess.Popen(["xdg-open", str(latest)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _open_registry(self):
+        try:
+            reg_xlsx = ROOT / "Product_Data_File" / "run_registry.xlsx"
+            reg_csv = ROOT / "Product_Data_File" / "run_registry.csv"
+            target = None
+            if reg_xlsx.exists():
+                target = reg_xlsx
+            elif reg_csv.exists():
+                target = reg_csv
+            else:
+                messagebox.showinfo("No registry", "No run_registry.xlsx found yet. Run once to create it.")
+                return
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    # --- Settings (env knobs) ---
+    def _open_settings(self):
+        data = parse_scanner_env(SCANNER_ENV)
+        if not data:
+            data = self._env_cache.copy()
+        dlg = tk.Toplevel(self)
+        dlg.title("Settings")
+        dlg.grab_set()
+        frm = ttk.Frame(dlg, padding=8)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # Row builder
+        row = 0
+        def add_row(label, widget):
+            nonlocal row
+            ttk.Label(frm, text=label+":").grid(row=row, column=0, sticky=tk.W, padx=(0,6), pady=4)
+            widget.grid(row=row, column=1, sticky=tk.EW, pady=4)
+            row += 1
+
+        # Variables
+        v_quiet = tk.IntVar(value=1 if data.get("QUIET","1").strip().lower() in ("1","true","yes") else 0)
+        v_force_ocr = tk.IntVar(value=1 if data.get("FORCE_OCR","0").strip().lower() in ("1","true","yes","force","always") else 0)
+        v_use_xy = tk.IntVar(value=1 if data.get("USE_EASYOCR_XY","0").strip().lower() in ("1","true","yes","on") else 0)
+        v_xy_log = tk.IntVar(value=1 if data.get("XY_LOG","0").strip().lower() in ("1","true","yes","on") else 0)
+        v_ocr_dpi = tk.StringVar(value=data.get("OCR_DPI","600"))
+        v_langs = tk.StringVar(value=data.get("EASYOCR_LANGS", data.get("OCR_LANGS", "en")))
+        v_xy_fuzz = tk.StringVar(value=data.get("XY_FUZZ","0.75"))
+        v_row_band = tk.StringVar(value=data.get("ROW_BAND","0.6"))
+        v_col_tol = tk.StringVar(value=data.get("COL_TOL","0.6"))
+
+        # Widgets
+        add_row("Quiet logs", ttk.Checkbutton(frm, variable=v_quiet))
+        add_row("Force OCR pre-extract", ttk.Checkbutton(frm, variable=v_force_ocr))
+        add_row("Use EasyOCR XY", ttk.Checkbutton(frm, variable=v_use_xy))
+        add_row("XY debug log", ttk.Checkbutton(frm, variable=v_xy_log))
+        ent_dpi = ttk.Entry(frm, textvariable=v_ocr_dpi, width=10)
+        add_row("OCR DPI", ent_dpi)
+        ent_langs = ttk.Entry(frm, textvariable=v_langs, width=20)
+        add_row("EasyOCR langs (csv)", ent_langs)
+        add_row("XY fuzz (0-1)", ttk.Entry(frm, textvariable=v_xy_fuzz, width=10))
+        add_row("Row band (0-1)", ttk.Entry(frm, textvariable=v_row_band, width=10))
+        add_row("Col tol (0-1)", ttk.Entry(frm, textvariable=v_col_tol, width=10))
+        frm.columnconfigure(1, weight=1)
+
+        # Buttons
+        btns = ttk.Frame(dlg)
+        btns.pack(fill=tk.X, padx=8, pady=(0,8))
+        def on_save():
+            updates: dict[str,str|None] = {}
+            updates["QUIET"] = "1" if v_quiet.get() else None
+            updates["FORCE_OCR"] = "1" if v_force_ocr.get() else None
+            updates["USE_EASYOCR_XY"] = "1" if v_use_xy.get() else None
+            updates["XY_LOG"] = "1" if v_xy_log.get() else None
+            updates["OCR_DPI"] = v_ocr_dpi.get().strip() or None
+            # Prefer EASYOCR_LANGS key
+            lang = v_langs.get().strip()
+            updates["EASYOCR_LANGS"] = lang or None
+            updates["XY_FUZZ"] = v_xy_fuzz.get().strip() or None
+            updates["ROW_BAND"] = v_row_band.get().strip() or None
+            updates["COL_TOL"] = v_col_tol.get().strip() or None
+            try:
+                # Merge with existing and persist
+                merged = parse_scanner_env(SCANNER_ENV)
+                for k, v in updates.items():
+                    if v is None:
+                        merged.pop(k, None)
+                    else:
+                        merged[k] = v
+                self._env_cache = merged
+                self._save_scanner_env(merged)
+                self.status.set("Settings saved to scanner.env")
+                dlg.destroy()
+            except Exception as e:
+                messagebox.showerror("Save failed", str(e))
+        ttk.Button(btns, text="Save", command=on_save).pack(side=tk.RIGHT)
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side=tk.RIGHT, padx=(0,8))
+
+    def _save_scanner_env(self, env_map: dict[str,str]) -> None:
+        lines = [
+            "# Scanner configuration (KEY=VALUE)",
+            "# Edited via GUI Settings"
+        ]
+        # Order important keys first
+        order = [
+            "QUIET","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","ROW_BAND","COL_TOL","VENV_DIR"
+        ]
+        written = set()
+        for k in order:
+            v = env_map.get(k)
+            if v:
+                lines.append(f"{k}={v}")
+                written.add(k)
+        # Write the rest, stable order
+        for k in sorted(env_map.keys()):
+            if k in written:
+                continue
+            v = env_map[k]
+            if v:
+                lines.append(f"{k}={v}")
+        SCANNER_ENV.parent.mkdir(parents=True, exist_ok=True)
+        SCANNER_ENV.write_text("\n".join(lines)+"\n", encoding="utf-8")
+
+    def _compile_master(self):
+        try:
+            self.status.set("Compiling master...")
+            # Launch compile script; stream output to log
+            cmd = [sys.executable, str(ROOT / "scripts" / "compile_master.py")]
+            env = os.environ.copy()
+            # Ensure vendored packages (openpyxl/xlsxwriter/pandas) are visible
+            env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+            proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.append_log("[GUI] Compiling master...\n")
+            def _pump():
+                try:
+                    for line in proc.stdout:  # type: ignore[arg-type]
+                        self.append_log(line)
+                except Exception as e:
+                    self.append_log(f"[WARN] Master compile reader error: {e}\n")
+                finally:
+                    try:
+                        proc.wait(timeout=1)
+                    except Exception:
+                        pass
+                    self.status.set("Master compile finished.")
+            threading.Thread(target=_pump, daemon=True).start()
+        except Exception as e:
+            messagebox.showerror("Compile failed", str(e))
+
+    def _open_master(self):
+        try:
+            xlsx = ROOT / "Product_Data_File" / "master.xlsx"
+            csv = ROOT / "Product_Data_File" / "master.csv"
+            target = xlsx if xlsx.exists() else (csv if csv.exists() else None)
+            if not target:
+                messagebox.showinfo("No master", "No master workbook found yet. Compile it first.")
+                return
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+
+if __name__ == "__main__":
+    App().mainloop()
+---------- END FILE: gui.py ----------
+
+---------- BEGIN FILE: Application\eidp_term_scanner.py ----------
+#!/usr/bin/env python3
+"""
+EIDP Term Scanner (Application deliverable)
+This file is a self-contained copy of the main scanner script so that
+the /Application folder can be transferred as the deliverable.
+"""
+
+# NOTE: For brevity in this patch, this wrapper delegates to the root script if present
+# and otherwise informs the user. If you are running from the deliverable that only
+# contains /Application, place eidp_term_scanner.py here (already done during packaging).
+
+import runpy
+from pathlib import Path
+import sys
+
+HERE = Path(__file__).resolve().parent
+LOCAL = HERE / "eidp_term_scanner.core.py"
+ROOT = HERE.parents[0]
+LEGACY = ROOT / "eidp_term_scanner.py"
+
+if LOCAL.exists():
+    runpy.run_path(str(LOCAL), run_name="__main__")
+elif LEGACY.exists():
+    sys.path.insert(0, str(ROOT))
+    runpy.run_path(str(LEGACY), run_name="__main__")
+else:
+    raise SystemExit("No scanner core found in /Application. Expected 'eidp_term_scanner.core.py'.")
+---------- END FILE: Application\eidp_term_scanner.py ----------
+
+---------- BEGIN FILE: Application\eidp_term_scanner.core.py ----------
 ﻿
 #!/usr/bin/env python3
 # Application-consolidated build
@@ -2686,3 +3631,522 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+---------- END FILE: Application\eidp_term_scanner.core.py ----------
+
+---------- BEGIN FILE: user_inputs\scanner.env ----------
+# Scanner configuration (session-scoped). Use KEY=VALUE.
+# Blank lines and lines starting with # or ; are ignored.
+
+# ---------------------------------------------------------------------------
+# Python/venv (optional)
+# If you keep the venv outside the repo, set VENV_DIR so run.bat uses it.
+#VENV_DIR=C:\Path\To\PDF_Scanner.venv
+
+# Optional: add a local site-packages folder if you vendor wheels into the repo
+#PYTHONPATH=C:\Users\zachs\Documents\DevProjects\PDF_Scanner\Lib\site-packages;%PYTHONPATH%
+
+# ---------------------------------------------------------------------------
+# OCR behavior (EasyOCR-only, on-demand)
+# We do NOT use external OCR tools (Tesseract/OCRmyPDF/Poppler/Paddle).
+USE_OCRMYPDF=off            # keep off; no external pre-OCR passes
+OCR_RENDERER=easyocr        # core will use EasyOCR only when needed
+USE_EASYOCR_XY=1            # let the core invoke EasyOCR on-demand for table(xy)
+
+# Only set FORCE_OCR=1 if you want to force OCR for all requested pages
+# (generally leave this off so text-first is attempted across the range).
+#FORCE_OCR=1
+
+# EasyOCR tuning
+OCR_DPI=800                 # 600 is fast/good; use 800 for tiny fonts
+EASYOCR_LANGS=en            # comma/semicolon list
+XY_FUZZ=0.7                # 0..1; higher is stricter header/row fuzzy match
+ROW_BAND=0.6                # vertical band around the matched row (relative to row height)
+COL_TOL=1.0                 # horizontal tolerance around header center (relative to header width)
+#XY_LOG=1
+---------- END FILE: user_inputs\scanner.env ----------
+
+---------- BEGIN FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\compile_master.py ----------
+#!/usr/bin/env python3
+"""
+Compile a master extraction workbook from the per-run caches recorded in run_registry.
+
+Inputs:
+  - Product_Data_File/run_registry.xlsx (preferred) or run_registry.csv
+  - For each row: (serial_number, run_folder)
+  - Each run folder contains scan_results.json which holds per-term values per SN.
+
+Output:
+  - Product_Data_File/master.xlsx (preferred, pandas + xlsxwriter)
+  - Fallback: Product_Data_File/master.csv
+
+No external executables required. Uses pandas/xlsxwriter if available; otherwise falls back to CSV.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import sys
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPORTS = ROOT / "Product_Data_File"
+REG_XLSX = EXPORTS / "run_registry.xlsx"
+REG_CSV = EXPORTS / "run_registry.csv"
+OUT_XLSX = EXPORTS / "master.xlsx"
+OUT_CSV = EXPORTS / "master.csv"
+
+
+def load_registry() -> List[Tuple[str, Path]]:
+    """Return list of (serial_number, run_folder) from registry.
+    Priority: Excel -> CSV. Duplicates are unlikely; if present, keep last occurrence.
+    """
+    rows: List[Tuple[str, Path]] = []
+    if REG_XLSX.exists():
+        # Try pandas first
+        try:
+            import pandas as pd  # type: ignore
+            df = pd.read_excel(REG_XLSX)
+            for _, r in df.iterrows():
+                sn = str(r.get("serial_number") or "").strip()
+                rf = str(r.get("run_folder") or "").strip()
+                if sn and rf:
+                    rows.append((sn, Path(rf)))
+            return rows
+        except Exception:
+            # Fallback: openpyxl without pandas
+            try:
+                from openpyxl import load_workbook  # type: ignore
+                wb = load_workbook(str(REG_XLSX), data_only=True)
+                ws = wb["runs"] if "runs" in wb.sheetnames else wb.active
+                # Build header map (case-insensitive)
+                header_map: Dict[str, int] = {}
+                for ci, cell in enumerate(next(ws.iter_rows(min_row=1, max_row=1)), start=1):
+                    key = (str(cell.value) if cell.value is not None else "").strip().lower()
+                    if key:
+                        header_map[key] = ci
+                def col_idx(name: str) -> Optional[int]:
+                    name = name.lower()
+                    for k, v in header_map.items():
+                        if k == name:
+                            return v
+                    return None
+                sn_col = col_idx("serial_number")
+                rf_col = col_idx("run_folder")
+                if sn_col and rf_col:
+                    for row in ws.iter_rows(min_row=2):
+                        sn_val = row[sn_col - 1].value if sn_col else None
+                        rf_val = row[rf_col - 1].value if rf_col else None
+                        sn = (str(sn_val) if sn_val is not None else "").strip()
+                        rf = (str(rf_val) if rf_val is not None else "").strip()
+                        if sn and rf:
+                            rows.append((sn, Path(rf)))
+                    if rows:
+                        return rows
+            except Exception:
+                pass
+    if REG_CSV.exists():
+        try:
+            with REG_CSV.open("r", encoding="utf-8", newline="") as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    sn = (row.get("serial_number") or "").strip()
+                    rf = (row.get("run_folder") or "").strip()
+                    if sn and rf:
+                        rows.append((sn, Path(rf)))
+        except Exception:
+            pass
+    return rows
+
+
+def load_results_json(run_folder: Path) -> List[Dict]:
+    path = run_folder / "scan_results.json"
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def build_master() -> Tuple[List[str], Dict[str, Dict[str, Optional[str]]]]:
+    """Return (serials, matrix) where matrix[term][sn] = value string or None."""
+    reg = load_registry()
+    if not reg:
+        print("[WARN] No registry entries found. Nothing to compile.")
+        return [], {}
+
+    # Keep last occurrence per SN (registry is already latest-first, but be safe)
+    last_for_sn: Dict[str, Path] = {}
+    for sn, rf in reg:
+        last_for_sn[sn] = rf
+
+    terms_order: List[str] = []
+    matrix: Dict[str, Dict[str, Optional[str]]] = {}
+
+    for sn, rf in last_for_sn.items():
+        rows = load_results_json(rf)
+        if not rows:
+            print(f"[WARN] No scan_results.json in {rf}")
+            continue
+        # Build a best-value per term for this SN (first occurrence wins per run)
+        seen_terms = set()
+        for row in rows:
+            if (row.get("serial_number") or "").strip() != sn:
+                continue
+            term = (row.get("term") or "").strip()
+            if not term or term in seen_terms:
+                continue
+            val = row.get("number")
+            seen_terms.add(term)
+            if term not in matrix:
+                matrix[term] = {}
+                terms_order.append(term)
+            matrix[term][sn] = val
+
+    serials = list(last_for_sn.keys())
+    return serials, matrix
+
+
+def write_master(serials: List[str], matrix: Dict[str, Dict[str, Optional[str]]]) -> None:
+    EXPORTS.mkdir(parents=True, exist_ok=True)
+    # Try Excel via pandas/xlsxwriter
+    try:
+        import pandas as pd  # type: ignore
+        import xlsxwriter  # noqa: F401
+        rows = []
+        for term in matrix.keys():
+            row = {"Term": term}
+            for sn in serials:
+                row[sn] = matrix.get(term, {}).get(sn)
+            rows.append(row)
+        df = pd.DataFrame(rows, columns=["Term"] + serials)
+        with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="master", index=False)
+            ws = writer.sheets["master"]
+            ws.freeze_panes(1, 1)
+            # Auto-size columns
+            for i, col in enumerate(df.columns):
+                try:
+                    max_len = int(df[col].astype(str).map(len).max()) if not df.empty else len(col)
+                except Exception:
+                    max_len = len(col)
+                ws.set_column(i, i, min(60, max(10, max_len + 2)))
+        print(f"[DONE] Master workbook -> {OUT_XLSX}")
+        return
+    except Exception as e:
+        print(f"[WARN] Excel write unavailable ({e}); falling back to CSV")
+
+    # CSV fallback
+    try:
+        with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["Term"] + serials)
+            for term in matrix.keys():
+                row = [term]
+                for sn in serials:
+                    row.append(matrix.get(term, {}).get(sn))
+                w.writerow(row)
+        print(f"[DONE] Master CSV -> {OUT_CSV}")
+    except Exception as e:
+        print(f"[ERROR] Could not write master CSV: {e}")
+
+
+def main() -> None:
+    serials, matrix = build_master()
+    if not serials:
+        sys.exit(0)
+    write_master(serials, matrix)
+
+
+if __name__ == "__main__":
+    main()
+---------- END FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\compile_master.py ----------
+
+---------- BEGIN FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\generate_terms_schema.py ----------
+#!/usr/bin/env python3
+"""
+Generate a user-friendly Excel schema with dropdowns and conditional formatting:
+- Sheet "Template" with headers + validation lists and greying of non-applicable fields by Mode/Return
+- Sheet "Instructions" describing each column and examples
+
+Writes: user_inputs/terms.schema.xlsx
+"""
+from pathlib import Path
+import sys
+
+
+def main() -> None:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.formatting.rule import FormulaRule
+    except Exception:
+        print("[ERROR] openpyxl is required to generate the template. Install with: py -m pip install openpyxl", file=sys.stderr)
+        sys.exit(1)
+
+    root = Path(__file__).resolve().parents[1]
+    out_dir = root / 'user_inputs'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / 'terms.schema.xlsx'
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Template'
+
+    # Headers
+    headers = [
+        'Term', 'Pages', 'Mode', 'Line (x)', 'Column (y)',
+        'Anchor', 'FieldIndex', 'FieldSplit', 'Return',
+        'Units', 'Range (min)', 'Range (max)'
+    ]
+    ws.append(headers)
+    header_font = Font(bold=True)
+    for col_idx, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        ws.column_dimensions[cell.column_letter].width = max(12, len(h) + 2)
+
+    # Data validation lists
+    dv_mode = DataValidation(type="list", formula1='"nearest,table(xy),line"', allow_blank=True)
+    dv_split = DataValidation(type="list", formula1='"auto,groups,tokens"', allow_blank=True)
+    dv_return = DataValidation(type="list", formula1='"number,string"', allow_blank=True)
+    ws.add_data_validation(dv_mode)
+    ws.add_data_validation(dv_split)
+    ws.add_data_validation(dv_return)
+    dv_mode.add('C2:C2000')
+    dv_split.add('H2:H2000')
+    dv_return.add('I2:I2000')
+
+    # Conditional formatting to grey non-applicable fields
+    grey = PatternFill(start_color='00DDDDDD', end_color='00DDDDDD', fill_type='solid')
+    # If Mode <> "table(xy)", grey Line (D) and Column (E)
+    ws.conditional_formatting.add('D2:D2000', FormulaRule(formula=["$C2<>\"table(xy)\""], fill=grey))
+    ws.conditional_formatting.add('E2:E2000', FormulaRule(formula=["$C2<>\"table(xy)\""], fill=grey))
+    # If Mode <> "line", grey Anchor (F), FieldIndex (G), FieldSplit (H)
+    for col in ('F','G','H'):
+        ws.conditional_formatting.add(f'{col}2:{col}2000', FormulaRule(formula=["$C2<>\"line\""], fill=grey))
+    # If Return <> "number", grey Units (J), Range min(K), Range max(L)
+    for col in ('J','K','L'):
+        ws.conditional_formatting.add(f'{col}2:{col}2000', FormulaRule(formula=["$I2<>\"number\""], fill=grey))
+
+    # Example rows
+    examples = [
+        ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000'],
+        ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', ''],
+        ['Ignition Temperature', '1-2', 'nearest', '', '', '', '', '', 'number', 'K|degC', '200', '5000'],
+    ]
+    for row in examples:
+        ws.append(row)
+
+    ws.freeze_panes = 'A2'
+
+    # Instructions
+    inst = wb.create_sheet('Instructions')
+    inst['A1'] = 'EIDP Terms Schema Template'
+    inst['A1'].font = Font(bold=True)
+    lines = [
+        'Fill rows in the Template sheet. Rows appear in outputs in the same order.',
+        '',
+        'Columns:',
+        ' - Term: Friendly row name (required).',
+        ' - Pages: Page ranges (1-indexed), e.g., 5-10; 22 (required).',
+        ' - Mode: nearest | table(xy) | line (defaults to nearest).',
+        '   * table(xy): Use Line (row header) and Column (column header; allow Value|Nominal).',
+        '   * line     : Use Anchor (defaults to Term), FieldIndex (1-based), FieldSplit (auto|groups|tokens), Return (number|string).',
+        '   * nearest  : No extra fields; optional Units and Range (min/max).',
+        '',
+        'Header aliases:',
+        ' - XY headers accepted as "Line (x)" and "Column (y)".',
+        ' - Units: Preferred units (pipe list) for number return.',
+        ' - Range (min)/(max): Numeric bounds (scientific notation allowed).',
+    ]
+    for i, t in enumerate(lines, start=2):
+        inst[f'A{i}'] = t
+        inst[f'A{i}'].alignment = Alignment(wrap_text=True)
+    inst.column_dimensions['A'].width = 110
+
+    wb.save(out_path)
+    print(f"[DONE] Wrote template -> {out_path}")
+
+
+if __name__ == '__main__':
+    main()
+
+---------- END FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\generate_terms_schema.py ----------
+
+---------- BEGIN FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\ocr_dump.py ----------
+#!/usr/bin/env python3
+"""
+Quick EasyOCR dump for debugging pages that might need OCR.
+
+Usage examples (from project root):
+  py -3.11 scripts/ocr_dump.py --pdf "user_inputs/EIDP_Import_Docs/sn 4444.pdf" --pages 1 --dpi 800 --langs en
+  py -3.11 scripts/ocr_dump.py --pdf "user_inputs/EIDP_Import_Docs/sn 4444.pdf" --pages 1-3 --dpi 600 --langs en --min-conf 0.2 --out-dir Product_Data_File/ocr_dump/sn_4444
+
+Outputs:
+  - Prints conf|text lines to stdout for each requested page.
+  - If --out-dir is provided, writes per-page JSON lists of tokens with coordinates:
+      [ {x0,y0,x1,y1,cx,cy,w,h,conf,text}, ... ]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Dict, List
+
+
+def parse_pages(pages_raw: str | None, max_page: int) -> List[int]:
+    if not pages_raw:
+        return [i for i in range(1, max_page + 1)]
+    s = pages_raw.replace(" ", "")
+    out: set[int] = set()
+    for part in s.split(','):
+        if not part:
+            continue
+        if '-' in part:
+            a, b = part.split('-', 1)
+            try:
+                a, b = int(a), int(b)
+            except Exception:
+                continue
+            if a > b:
+                a, b = b, a
+            for p in range(a, b + 1):
+                if 1 <= p <= max_page:
+                    out.add(p)
+        else:
+            try:
+                p = int(part)
+                if 1 <= p <= max_page:
+                    out.add(p)
+            except Exception:
+                pass
+    return sorted(out)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Dump EasyOCR tokens per page for a PDF")
+    ap.add_argument("--pdf", required=True, help="Path to input PDF")
+    ap.add_argument("--pages", default=None, help="Pages to OCR (e.g., '1' or '1-3,5')")
+    ap.add_argument("--dpi", type=int, default=800, help="Render DPI (200..900)")
+    ap.add_argument("--langs", default="en", help="Comma/semicolon list of languages (default en)")
+    ap.add_argument("--min-conf", type=float, default=0.0, help="Min confidence to keep a token")
+    ap.add_argument("--out-dir", default=None, help="Output directory for per-page JSON")
+    args = ap.parse_args()
+
+    try:
+        import fitz  # type: ignore  # PyMuPDF
+    except Exception as e:
+        print("[ERROR] PyMuPDF is required: pip install pymupdf", file=sys.stderr)
+        sys.exit(1)
+    try:
+        import easyocr  # type: ignore
+    except Exception:
+        print("[ERROR] EasyOCR is required: pip install easyocr (and CPU torch/torchvision)", file=sys.stderr)
+        sys.exit(1)
+
+    pdf = Path(args.pdf)
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    langs = [s.strip() for s in args.langs.replace(";", ",").split(",") if s.strip()]
+
+    try:
+        doc = fitz.open(str(pdf))  # type: ignore[name-defined]
+    except Exception as e:
+        print(f"[ERROR] Unable to open PDF: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    pages = parse_pages(args.pages, doc.page_count)
+    if not pages:
+        print("[WARN] No pages selected.")
+        try:
+            doc.close()
+        except Exception:
+            pass
+        return
+
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize EasyOCR reader once
+    try:
+        reader = easyocr.Reader(langs or ["en"], gpu=False, verbose=False)  # type: ignore
+    except Exception as e:
+        print(f"[ERROR] EasyOCR init failed: {type(e).__name__}: {e}", file=sys.stderr)
+        try:
+            doc.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    for p in pages:
+        if not (1 <= p <= doc.page_count):
+            continue
+        try:
+            page = doc.load_page(p - 1)
+            pix = page.get_pixmap(dpi=args.dpi)
+        except Exception:
+            print(f"[WARN] Failed to render page {p}")
+            continue
+        import tempfile, shutil
+        tmp_dir = Path(tempfile.mkdtemp(prefix="ocr_dump_"))
+        img_path = tmp_dir / f"p{p}.png"
+        tokens: List[Dict[str, float]] = []
+        try:
+            pix.save(str(img_path))
+            try:
+                res = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
+            except Exception:
+                res = []
+            for it in res:
+                try:
+                    bbox, text, conf = it
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    cval = 0.0
+                    try:
+                        cval = float(conf) if conf is not None else 0.0
+                    except Exception:
+                        cval = 0.0
+                    if cval < float(args.min_conf):
+                        continue
+                    xs = [float(pt[0]) for pt in bbox]
+                    ys = [float(pt[1]) for pt in bbox]
+                    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                    cx = (x0 + x1) / 2.0
+                    cy = (y0 + y1) / 2.0
+                    tokens.append({
+                        "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+                        "cx": cx, "cy": cy, "w": (x1 - x0), "h": (y1 - y0),
+                        "conf": cval, "text": text.strip(),
+                    })
+                except Exception:
+                    # Defensive: skip malformed item
+                    pass
+        finally:
+            try:
+                shutil.rmtree(str(tmp_dir), ignore_errors=True)
+            except Exception:
+                pass
+
+        print(f"\n=== Page {p} (tokens >= {args.min_conf}) ===")
+        for t in sorted(tokens, key=lambda x: (-x["conf"], x["cy"], x["cx"]))[:1000]:
+            print(f"{t['conf']:.3f} | {t['text']}")
+
+        if out_dir is not None:
+            out_path = out_dir / f"{pdf.stem}_page_{p}.ocr.json"
+            out_path.write_text(json.dumps(tokens, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    try:
+        doc.close()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    main()
+---------- END FILE: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\ocr_dump.py ----------
+===== END OF SNAPSHOT =====
