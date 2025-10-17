@@ -140,6 +140,22 @@ except Exception:
     _HAVE_EASYOCR = False
 
 
+def _get_ocr_mode() -> str:
+    """Return OCR mode: 'fallback' (default), 'ocr_only', or 'no_ocr'.
+    Accepts synonyms: 'auto'->fallback, 'none'/'off'->no_ocr, 'ocr'/'only'->ocr_only.
+    """
+    try:
+        m = (os.environ.get('OCR_MODE', '') or '').strip().lower()
+    except Exception:
+        m = ''
+    if m in ('ocr_only', 'ocr', 'only'):
+        return 'ocr_only'
+    if m in ('no_ocr', 'none', 'off', 'disabled'):
+        return 'no_ocr'
+    # default
+    return 'fallback'
+
+
 @dataclass
 class TermSpec:
     """Term, page constraints, and extraction hints.
@@ -1198,84 +1214,86 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
         if group_anchor_y is not None and not (row_it['cy'] > group_anchor_y):
             continue
 
-        best_col = None
-        best_score = 0.0
-        above_cands: List[Tuple[float, float, Dict[str, float]]] = []
+        # Build list of header candidates directly above the row and to the right of the row label
+        col_cands: List[Tuple[float, float, Dict[str, float]]] = []  # (dy, score, header_it)
         for alt in col_alts:
             for it in items:
                 sc = _fuzzy_ratio(it['text'], alt)
-                if sc >= fuzz and it.get('cy', 0) < row_it.get('cy', 0):
+                if sc >= fuzz and it.get('cy', 0) < row_it.get('cy', 0) and it.get('cx', 0) >= row_it.get('x1', 0):
                     dy = row_it['cy'] - it['cy']
-                    above_cands.append((dy, sc, it))
-        if above_cands:
-            above_cands.sort(key=lambda t: (t[0], -t[1]))
-            best_col = above_cands[0][2]
-            best_score = above_cands[0][1]
-        else:
+                    col_cands.append((dy, sc, it))
+        # Fallback: consider any matching header anywhere to the right if none directly above
+        if not col_cands:
             for alt in col_alts:
-                cand = [(it, _fuzzy_ratio(it['text'], alt)) for it in items]
-                cand = [t for t in cand if t[1] >= fuzz]
-                if cand:
-                    itc, sc = max(cand, key=lambda t: t[1])
-                    if sc > best_score:
-                        best_col, best_score = itc, sc
-        if not best_col:
+                for it in items:
+                    sc = _fuzzy_ratio(it['text'], alt)
+                    if sc >= fuzz and it.get('cx', 0) >= row_it.get('x1', 0):
+                        dy = max(0.0, row_it['cy'] - it['cy'])
+                        col_cands.append((dy, sc, it))
+        if not col_cands:
             continue
 
-        # Use strict intersection targeting with small, geometry-derived spans
+        # Evaluate each header candidate and pick the one that yields the best valid hit
+        overall: List[Tuple[Tuple[int, float], Dict[str, float], str, Dict[str, float]]] = []
         row_h = max(1.0, (row_it['y1'] - row_it['y0']))
-        col_w = max(1.0, (best_col['x1'] - best_col['x0']))
-        y_min = max(best_col['y1'], row_it['cy'] - 0.5 * row_h)
-        y_max = row_it['cy'] + 0.5 * row_h
-        x_min = best_col['cx'] - 0.5 * col_w
-        x_max = best_col['cx'] + 0.5 * col_w
-        ix, iy = best_col['cx'], row_it['cy']
-
-        ranked: List[Tuple[Tuple[int, float], Dict[str, float], str]] = []
-        for it in items:
-            if not (y_min <= it['cy'] <= y_max and x_min <= it['cx'] <= x_max and it['cx'] >= row_it['x1']):
-                continue
-            val_text: Optional[str] = None
-            if ret_type == 'string':
-                t = (it.get('text') or '').strip()
-                if not t:
+        col_cands.sort(key=lambda t: (t[0], -t[1]))
+        for _, _sc, hdr in col_cands:
+            col_cands = col_cands[:1]  # pick nearest-above header only
+            col_w = max(1.0, (hdr['x1'] - hdr['x0']))
+            # Restrict search band to intersection area directly below the header and around the row baseline
+            y_min = max(hdr['y1'], row_it['cy'] - 0.5 * row_h)
+            y_max = row_it['cy'] + 0.5 * row_h
+            x_min = hdr['cx'] - 0.5 * col_w
+            x_max = hdr['cx'] + 0.5 * col_w
+            ix, iy = hdr['cx'], row_it['cy']
+            ranked: List[Tuple[Tuple[int, float], Dict[str, float], str]] = []
+            for it in items:
+                if not (y_min <= it['cy'] <= y_max and x_min <= it['cx'] <= x_max and it['cx'] >= row_it['x1']):
                     continue
-                if fmt_pat and not fmt_pat.search(t):
-                    continue
-                val_text = t
-            else:
-                n = _first_numeric(it['text'] or '')
-                if not n:
-                    continue
-                # Range/units gate
-                ok = True
-                if spec.range_min is not None or spec.range_max is not None:
-                    try:
-                        v = float((numeric_only(n) or '').replace(',', ''))
-                        if spec.range_min is not None and v < spec.range_min:
+                val_text: Optional[str] = None
+                if ret_type == 'string':
+                    t = (it.get('text') or '').strip()
+                    if not t:
+                        continue
+                    if fmt_pat and not fmt_pat.search(t):
+                        continue
+                    val_text = t
+                else:
+                    n = _first_numeric(it['text'] or '')
+                    if not n:
+                        continue
+                    # Range/units gate
+                    ok = True
+                    if spec.range_min is not None or spec.range_max is not None:
+                        try:
+                            v = float((numeric_only(n) or '').replace(',', ''))
+                            if spec.range_min is not None and v < spec.range_min:
+                                ok = False
+                            if spec.range_max is not None and v > spec.range_max:
+                                ok = False
+                        except Exception:
                             ok = False
-                        if spec.range_max is not None and v > spec.range_max:
+                    if ok and spec.units_hint:
+                        u = extract_units(n)
+                        if not (u and any(u.lower()==h.lower() for h in spec.units_hint)):
                             ok = False
-                    except Exception:
-                        ok = False
-                if ok and spec.units_hint:
-                    u = extract_units(n)
-                    if not (u and any(u.lower()==h.lower() for h in spec.units_hint)):
-                        ok = False
-                if not ok:
-                    continue
-                val_text = n
-            dx = abs(it['cx'] - ix)
-            dy = abs(it['cy'] - iy)
-            fmt_ok = 1
-            if fmt_pat and val_text is not None and fmt_pat.search(val_text):
-                fmt_ok = 0
-            ranked.append(((fmt_ok, dx + dy), it, val_text or ''))
+                    if not ok:
+                        continue
+                    val_text = n
+                dx = abs(it['cx'] - ix)
+                dy = abs(it['cy'] - iy)
+                fmt_ok = 1
+                if fmt_pat and val_text is not None and fmt_pat.search(val_text):
+                    fmt_ok = 0
+                ranked.append(((fmt_ok, dx + dy), it, val_text or ''))
+            if ranked:
+                ranked.sort(key=lambda t: t[0])
+                # store with header to compute label later
+                overall.append((ranked[0][0], ranked[0][1], ranked[0][2], hdr))
 
-        if ranked:
-            ranked.sort(key=lambda t: t[0])
-            best_it = ranked[0][1]
-            best_val = ranked[0][2]
+        if overall:
+            overall.sort(key=lambda t: t[0])
+            best_key, best_it, best_val, best_hdr = overall[0]
             if doc:
                 try:
                     doc.close()
@@ -1288,12 +1306,12 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
                 page=p,
                 number=best_val,
                 units=(None if ret_type == 'string' else extract_units(best_val)),
-                context="row='{}' col='{}'".format(row_it.get('text',''), best_col.get('text','')),
+                context="row='{}' col='{}'".format(row_it.get('text',''), best_hdr.get('text','')),
                 method="easyocr:xy(dpi={})".format(dpi),
                 found=True,
                 confidence=float(best_it.get('conf', 0.0)),
                 row_label=str(row_it.get('text', '') or ''),
-                column_label=str(best_col.get('text', '') or ''),
+                column_label=str(best_hdr.get('text', '') or ''),
                 text_source="ocr",
             )
 
@@ -1432,7 +1450,7 @@ def _normalize_text_for_search(s: str) -> str:
     return s
 
 
-def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bool = True) -> Tuple[Dict[int, str], str]:
+def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bool = True, ocr_mode: Optional[str] = None) -> Tuple[Dict[int, str], str]:
     """
     Try multiple extraction methods in a fixed order and fill in what we can:
       1) PyMuPDF
@@ -1441,8 +1459,16 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bo
       4) OCR (as a last resort if Tesseract is available)
     Return a consolidated {page: text} mapping and a pipeline summary string.
     """
+    # Honor OCR mode: fallback (default), ocr_only, no_ocr
+    mode = (ocr_mode or _get_ocr_mode())
     tried = []
-    prefer_engine = os.environ.get('OCR_RENDERER', '').strip().lower()
+    if mode == 'ocr_only':
+        pt4, m4 = ocr_pages_with_easyocr(pdf_path, pages)
+        # Normalize text
+        for _p in list(pt4.keys()):
+            pt4[_p] = _normalize_text_for_search(pt4.get(_p, ""))
+        return pt4, m4
+    # OCR renderer is selected internally; external knob removed
     source_pdf = pdf_path
 
     # Attempt #1: PyMuPDF
@@ -1480,7 +1506,7 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bo
 
     # Attempt #4: EasyOCR fallback for remaining empty pages (or all if forced)
     # Only performs OCR if EasyOCR is available and do_ocr_fallback=True.
-    if do_ocr_fallback and empty_pages:
+    if (mode != 'no_ocr') and do_ocr_fallback and empty_pages:
         pt4, m4 = ocr_pages_with_easyocr(source_pdf, empty_pages)
         tried.append(m4)
         for p in empty_pages:
@@ -1783,9 +1809,10 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
 
     # OCR fallback for empty pages only (numbers)
     if (spec.return_type or 'number').lower() != 'string':
+        _mode = _get_ocr_mode()
         pages_list = list(sorted(page_text_map.keys()))
         empty_pages = [p for p in pages_list if (page_text_map.get(p, '').strip() == '')]
-        if empty_pages:
+        if (_mode != 'no_ocr') and empty_pages:
             pt4, m4 = ocr_pages_with_easyocr(pdf_path, empty_pages)
             if pt4:
                 for p in empty_pages:
@@ -1869,9 +1896,10 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
             text_source="pdf"
         )
     # If not found via text extraction, OCR empty pages for this term and retry
+    _mode2 = _get_ocr_mode()
     pages_list = pages if pages else list(sorted(page_text_map.keys()))
     empty_pages = [p for p in pages_list if (page_text_map.get(p, "").strip() == "")]
-    if empty_pages:
+    if (_mode2 != 'no_ocr') and empty_pages:
         pt4, m4 = ocr_pages_with_easyocr(pdf_path, empty_pages)
         # Update cache and local view
         new_pipe = pipeline if (m4 in (pipeline or "")) else (pipeline + " > " + m4 if pipeline else m4)
@@ -1945,45 +1973,209 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
     """Attempt XY table extraction using PyMuPDF word coordinates.
     Fallbacks to nearest-number scan if PyMuPDF is unavailable or matching fails.
     """
-    # Honor USE_EASYOCR_XY override to try EasyOCR XY first (for debugging/forcing OCR)
+    # OCR mode governance
+    mode = _get_ocr_mode()
+    allow_easyocr_xy = (mode != 'no_ocr') and _HAVE_EASYOCR
+    # Back-compat: env flag to force EasyOCR XY; OCR_MODE=ocr_only also prefers it
     try:
-        _use_ez_xy = (os.environ.get('USE_EASYOCR_XY','') or '').strip().lower() in ('1','true','yes','on')
+        force_easyocr_xy = (os.environ.get('USE_EASYOCR_XY','') or '').strip().lower() in ('1','true','yes','on')
     except Exception:
-        _use_ez_xy = False
-    if _use_ez_xy and _HAVE_EASYOCR:
-        if (os.environ.get('XY_LOG','') or '').strip().lower() in ('1','true','yes','on'):
-            print(f"[XY] Forcing EasyOCR XY for term '{spec.term}'")
+        force_easyocr_xy = False
+    prefer_easyocr_first = (mode == 'ocr_only') or force_easyocr_xy
+
+    # Try preferred path first
+    if prefer_easyocr_first and allow_easyocr_xy:
         _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
         if _res is not None:
             return _res
-    # First, try PyMuPDF XY. If not found, fall back to EasyOCR XY on-demand.
-    if not _HAVE_PYMUPDF:
-        # No PyMuPDF XY match: attempt EasyOCR XY as on-demand fallback
-        if _HAVE_EASYOCR:
-            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-            if _res is not None:
-                return _res
-        # Last resort: nearest-number scan
-        # On-demand EasyOCR XY fallback: only if available, then stop at first success
-        if _HAVE_EASYOCR:
-            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-            if _res is not None:
-                return _res
-        # Last resort: nearest-number scan
-        # No PyMuPDF XY hit: try on-demand EasyOCR XY before falling back to nearest
-        if _HAVE_EASYOCR:
-            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-            if _res is not None:
-                return _res
-        # No PyMuPDF XY hit: try on-demand EasyOCR XY before falling back to nearest
-        if _HAVE_EASYOCR:
-            if (os.environ.get('XY_LOG','') or '').strip().lower() in ('1','true','yes','on'):
-                print(f"[XY] EasyOCR XY fallback (no PyMuPDF XY) for term '{spec.term}'")
-            _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-            if _res is not None:
-                return _res
-        return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
-                                 units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+
+    # Try PyMuPDF XY (PDF-native) when available
+    if _HAVE_PYMUPDF:
+        try:
+            doc = fitz.open(str(pdf_path))
+        except Exception:
+            doc = None
+        if doc is not None:
+            try:
+                pages = spec.pages if spec.pages else list(range(1, doc.page_count + 1))
+                col_alts = [c.strip() for c in (spec.column or '').split('|') if c.strip()]
+                row_text = spec.line or spec.term
+                ret_type = (spec.return_type or 'number').strip().lower()
+                fmt_pat = _compile_value_regex(spec.value_format or '') if spec.value_format else None
+                def norm(t: str) -> str:
+                    return t if case_sensitive else t.lower()
+                header_x = None
+                chosen_page = None
+                chosen_number = None
+                chosen_ctx = None
+                best_header_txt = None
+                for p in pages:
+                    if p < 1 or p > doc.page_count:
+                        continue
+                    page = doc.load_page(p - 1)
+                    words = page.get_text("words") or []
+                    # Group words by line id
+                    lines_map = {}
+                    for w in words:
+                        ln = w[6] if len(w) >= 7 else round(float(w[1]))
+                        lines_map.setdefault(ln, []).append(w)
+                    # Find row line containing row_text
+                    target_ln = None
+                    for ln, ws in lines_map.items():
+                        line_str = " ".join([str(x[4]) for x in sorted(ws, key=lambda k: k[0])])
+                        if norm(row_text) in norm(line_str):
+                            target_ln = ln
+                            break
+                    if target_ln is None:
+                        continue
+                    # Compute row center y
+                    row_words = lines_map[target_ln]
+                    row_cys = [ (float(w[1]) + float(w[3]))/2.0 for w in row_words ]
+                    row_cy = sum(row_cys)/len(row_cys)
+                    row_right = max((float(w[2]) for w in row_words), default=0.0)
+                    # Build header candidates directly above the row and to the right of the row label
+                    row_right = max(float(w[2]) for w in row_words) if row_words else 0.0
+                    hdr_cands: List[Tuple[float, float, str]] = []  # (dy, cx, text)
+                    for w2 in words:
+                        txt2 = str(w2[4]) if len(w2) > 4 else ""
+                        if not txt2:
+                            continue
+                        for alt in (col_alts or [spec.column] if spec.column else []):
+                            if alt and norm(alt) in norm(txt2):
+                                cx2 = (float(w2[0]) + float(w2[2]))/2.0
+                                cy2 = (float(w2[1]) + float(w2[3]))/2.0
+                                if cy2 < row_cy and cx2 >= row_right:
+                                    dy = row_cy - cy2
+                                    hdr_cands.append((dy, cx2, txt2))
+                                break
+                    if not hdr_cands:
+                        # fallback: any matching header to the right
+                        for w2 in words:
+                            txt2 = str(w2[4]) if len(w2) > 4 else ""
+                            if not txt2:
+                                continue
+                            for alt in (col_alts or [spec.column] if spec.column else []):
+                                if alt and norm(alt) in norm(txt2):
+                                    cx2 = (float(w2[0]) + float(w2[2]))/2.0
+                                    if cx2 >= row_right:
+                                        dy = max(0.0, row_cy - ((float(w2[1]) + float(w2[3]))/2.0))
+                                        hdr_cands.append((dy, cx2, txt2))
+                                    break
+                    if not hdr_cands:
+                        continue
+                    hdr_cands.sort(key=lambda t: t[0])
+
+                    hdr_cands = hdr_cands[:1]  # pick nearest-above header only
+                    # Evaluate each header candidate; pick the one that yields a valid value closest to its vertical
+                    ws_sorted = sorted(row_words, key=lambda k: k[0])
+                    best_local = None  # (dist, value, header_txt)
+                    if ret_type == 'string':
+                        for dy, hx, htxt in hdr_cands:
+                            cand_s: List[Tuple[float, str]] = []
+                            for w3 in ws_sorted:
+                                tok = str(w3[4]) if len(w3) > 4 else ""
+                                if not tok:
+                                    continue
+                                if fmt_pat and not fmt_pat.search(tok):
+                                    continue
+                                cx = (float(w3[0]) + float(w3[2]))/2.0
+                                cand_s.append((abs(cx - hx), tok))
+                            if cand_s:
+                                cand_s.sort(key=lambda t: t[0])
+                                if best_local is None or cand_s[0][0] < best_local[0]:
+                                    best_local = (cand_s[0][0], cand_s[0][1], htxt)
+                    else:
+                        for dy, hx, htxt in hdr_cands:
+                            candidates: List[Tuple[float, str]] = []
+                            for w3 in ws_sorted:
+                                tok = str(w3[4]) if len(w3) > 4 else ""
+                                if not tok:
+                                    continue
+                                if NUMBER_REGEX.fullmatch(tok) or DATE_REGEX.fullmatch(tok):
+                                    ok = True
+                                    if spec.range_min is not None or spec.range_max is not None:
+                                        try:
+                                            vv = float((numeric_only(tok) or '').replace(',', ''))
+                                            if spec.range_min is not None and vv < spec.range_min:
+                                                ok = False
+                                            if spec.range_max is not None and vv > spec.range_max:
+                                                ok = False
+                                        except Exception:
+                                            ok = True
+                                    if ok and spec.units_hint:
+                                        u = extract_units(tok)
+                                        ok = bool(u and any(u.lower()==h.lower() for h in spec.units_hint))
+                                    if not ok:
+                                        continue
+                                    cx = (float(w3[0]) + float(w3[2]))/2.0
+                                    candidates.append((abs(cx - hx), tok))
+                            if candidates:
+                                candidates.sort(key=lambda t: t[0])
+                                if best_local is None or candidates[0][0] < best_local[0]:
+                                    best_local = (candidates[0][0], candidates[0][1], htxt)
+                    if best_local is not None:
+                        chosen_number = best_local[1]
+                        best_header_txt = best_local[2]
+                        chosen_page = p
+                        chosen_ctx = " ".join([str(x[4]) for x in ws_sorted])[:200]
+                        break
+                if chosen_number:
+                    # Optional post-filter
+                    if (ret_type != 'string') and ((spec.range_min is not None or spec.range_max is not None) or spec.units_hint):
+                        ok_rng = True
+                        try:
+                            val = float((numeric_only(chosen_number) or '').replace(',', ''))
+                            if spec.range_min is not None and val < spec.range_min:
+                                ok_rng = False
+                            if spec.range_max is not None and val > spec.range_max:
+                                ok_rng = False
+                        except Exception:
+                            ok_rng = True
+                        ok_units = True
+                        if spec.units_hint:
+                            u = extract_units(chosen_number)
+                            ok_units = bool(u and any(u.lower()==h.lower() for h in spec.units_hint))
+                        if not (ok_rng and ok_units):
+                            # fall through
+                            pass
+                        else:
+                            return MatchResult(
+                                pdf_file=pdf_path.name,
+                                serial_number=serial_number,
+                                term=spec.term,
+                                page=chosen_page,
+                                number=chosen_number,
+                                units=extract_units(chosen_number),
+                                context=chosen_ctx or "",
+                                method="pymupdf:xy",
+                                found=True,
+                                confidence=None,
+                                row_label=(spec.line or spec.term),
+                                column_label=(best_header_txt or spec.column or None),
+                                text_source="pdf",
+                            )
+            finally:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+
+    # In fallback/no_ocr modes: prefer PDF text-based nearest before OCR XY
+    if mode in ('fallback', 'no_ocr'):
+        res_near = scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                     units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+        if res_near.found:
+            return res_near
+
+    # Try EasyOCR XY as final resort if OCR is allowed
+    if allow_easyocr_xy:
+        _res = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+        if _res is not None:
+            return _res
+
+    # Last resort: nearest-number scan (still returned if OCR-only failed to hit, or OCR disallowed)
+    return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
     try:
         doc = fitz.open(str(pdf_path))
     except Exception:
@@ -2037,7 +2229,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             row_cys = [ (float(w[1]) + float(w[3]))/2.0 for w in row_words ]
             row_cy = sum(row_cys)/len(row_cys)
 
-            # Pick header token directly above the row (nearest-above); fallback to page-average if none above
+            # Pick the single header directly above the row (nearest-above) and to the right of the row label
             best_header_x = None
             best_dy = None
             for w in words:
@@ -2047,11 +2239,12 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                 for alt in (col_alts or [spec.column] if spec.column else []):
                     if alt and norm(alt) in norm(txt):
                         hy = (float(w[1]) + float(w[3]))/2.0
-                        if hy < row_cy:
+                        cx = (float(w[0]) + float(w[2]))/2.0
+                        if hy < row_cy and cx >= row_right:
                             dy = row_cy - hy
                             if best_dy is None or dy < best_dy:
                                 best_dy = dy
-                                best_header_x = (float(w[0]) + float(w[2]))/2.0
+                                best_header_x = cx
                                 best_header_txt = txt
                         break
             if best_header_x is None:
@@ -2894,6 +3087,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 

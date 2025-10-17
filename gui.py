@@ -313,6 +313,7 @@ class App(tk.Tk):
         v_quiet = tk.IntVar(value=1 if data.get("QUIET","1").strip().lower() in ("1","true","yes") else 0)
         v_force_ocr = tk.IntVar(value=1 if data.get("FORCE_OCR","0").strip().lower() in ("1","true","yes","force","always") else 0)
         v_use_xy = tk.IntVar(value=1 if data.get("USE_EASYOCR_XY","0").strip().lower() in ("1","true","yes","on") else 0)
+        v_ocr_mode = tk.StringVar(value=(data.get("OCR_MODE","fallback").strip().lower() or "fallback"))
         v_xy_log = tk.IntVar(value=1 if data.get("XY_LOG","0").strip().lower() in ("1","true","yes","on") else 0)
         v_ocr_dpi = tk.StringVar(value=data.get("OCR_DPI","600"))
         v_langs = tk.StringVar(value=data.get("EASYOCR_LANGS", data.get("OCR_LANGS", "en")))
@@ -323,6 +324,9 @@ class App(tk.Tk):
         add_row("Quiet logs", ttk.Checkbutton(frm, variable=v_quiet))
         add_row("Force OCR pre-extract", ttk.Checkbutton(frm, variable=v_force_ocr))
         add_row("Use EasyOCR XY", ttk.Checkbutton(frm, variable=v_use_xy))
+        # OCR Mode selector
+        cmb_mode = ttk.Combobox(frm, textvariable=v_ocr_mode, values=("fallback","ocr_only","no_ocr"), state="readonly", width=12)
+        add_row("OCR mode", cmb_mode)
         add_row("XY debug log", ttk.Checkbutton(frm, variable=v_xy_log))
         ent_dpi = ttk.Entry(frm, textvariable=v_ocr_dpi, width=10)
         add_row("OCR DPI", ent_dpi)
@@ -346,6 +350,10 @@ class App(tk.Tk):
             lang = v_langs.get().strip()
             updates["EASYOCR_LANGS"] = lang or None
             updates["XY_FUZZ"] = v_xy_fuzz.get().strip() or None
+            updates["OCR_MODE"] = (v_ocr_mode.get().strip().lower() or None)
+            # Clean obsolete keys if present in existing env
+            updates["USE_OCRMYPDF"] = None
+            updates["OCR_RENDERER"] = None
             try:
                 # Merge with existing and persist
                 merged = parse_scanner_env(SCANNER_ENV)
@@ -370,7 +378,7 @@ class App(tk.Tk):
         ]
         # Order important keys first
         order = [
-            "QUIET","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","VENV_DIR"
+            "QUIET","OCR_MODE","OCR_DPI","EASYOCR_LANGS","FORCE_OCR","USE_EASYOCR_XY","XY_LOG","XY_FUZZ","VENV_DIR"
         ]
         written = set()
         for k in order:

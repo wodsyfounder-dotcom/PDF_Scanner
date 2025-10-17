@@ -77,6 +77,7 @@ if not exist "%ROOT%user_inputs\scanner.env" (
   >  "%ROOT%user_inputs\scanner.env" echo # Scanner configuration (KEY=VALUE)
   >> "%ROOT%user_inputs\scanner.env" echo QUIET=1
   >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%ROOT%.venv
+  >> "%ROOT%user_inputs\scanner.env" echo #OCR_MODE=fallback   ^# fallback|ocr_only|no_ocr
   >> "%ROOT%user_inputs\scanner.env" echo #OCR_DPI=600
   >> "%ROOT%user_inputs\scanner.env" echo #EASYOCR_LANGS=en
 )
@@ -93,4 +94,3 @@ echo   2) Edit user_inputs\terms.xlsx (or .csv)
 echo   3) Run: run.bat   or  py gui.py
 
 endlocal & exit /b 0
-
