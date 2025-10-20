@@ -206,6 +206,7 @@ class MatchResult:
     row_label: Optional[str] = None         # Row identifier (e.g., term/line label in XY/line modes)
     column_label: Optional[str] = None      # Column/header identifier in table(XY) modes
     text_source: Optional[str] = None       # 'pdf' vs 'ocr' for the selected page's text
+    error_reason: Optional[str] = None      # Reason when found=False
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -1527,14 +1528,14 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bo
 def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, case_sensitive: bool = False,
                                 units_hint: Optional[List[str]] = None,
                                 range_filter: Optional[Tuple[Optional[float], Optional[float]]] = None,
-                                accept_dates: bool = True) -> Tuple[Optional[str], Optional[str]]:
+                                accept_dates: bool = True) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Prefer numbers on the same line to the right of the term, then left,
     then next line, previous line, else fall back to closest in a window.
     Returns (number_string or None, context_snippet or None).
     """
     if not text:
-        return None, None
+        return None, None, "No text available"
 
     src = text
     # Normalize case if needed
@@ -1597,7 +1598,7 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
             pass
 
     if not positions:
-        return None, None
+        return None, None, "Term not located in text"
 
     # Pre-compute all numeric spans in the text
     nums = [(m.group(0), m.start(), m.end()) for m in NUMBER_REGEX.finditer(src)]
@@ -1613,6 +1614,7 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
     best_num = None
     best_ctx = None
     best_dist = 10**9
+    failure_reason: Optional[str] = None
 
     for pos in positions:
         # Determine line bounds
@@ -1624,6 +1626,7 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
 
         # 1) Same line, to the right
         cand_line = line_nums
+        raw_line = list(cand_line)
         def _in_range(nstr: str) -> bool:
             if not range_filter:
                 return True
@@ -1647,19 +1650,17 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
             if not u:
                 return False
             return any(u.lower() == h.lower() for h in units_hint)
-        filtered = [(n,i,j) for (n,i,j) in cand_line if _in_range(n) and _units_ok(n)]
-        if filtered:
-            cand_line = filtered
+        if range_filter or units_hint:
+            filtered_line = [(n,i,j) for (n,i,j) in cand_line if _in_range(n) and _units_ok(n)]
+            if filtered_line:
+                cand_line = filtered_line
+            elif raw_line:
+                failure_reason = "Numbers found but rejected by range/units"
+                cand_line = []
         right_side = [(n, i, j) for (n, i, j) in cand_line if i >= pos]
         if right_side:
             n, i, j = min(right_side, key=lambda t: t[1] - pos)
-            return n, snippet(i, j)
-
-        # 2) Same line, to the left
-        left_side = [(n, i, j) for (n, i, j) in cand_line if j <= pos]
-        if left_side:
-            n, i, j = max(left_side, key=lambda t: t[2])
-            return n, snippet(i, j)
+            return n, snippet(i, j), None
 
         # 3) Next line
         nlb = rb + 1
@@ -1667,32 +1668,28 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
         if nrb == -1:
             nrb = len(src)
         next_nums = numbers_in(nlb, nrb)
-        if units_hint or range_filter:
-            next_nums = [(n,i,j) for (n,i,j) in next_nums if _in_range(n) and _units_ok(n)] or next_nums
+        if range_filter or units_hint:
+            filtered_next = [(n,i,j) for (n,i,j) in next_nums if _in_range(n) and _units_ok(n)]
+            if filtered_next:
+                next_nums = filtered_next
+            elif next_nums:
+                failure_reason = "Next-line numbers rejected by range/units"
+                next_nums = []
         if next_nums:
             n, i, j = next_nums[0]
-            return n, snippet(i, j)
-
-        # 4) Previous line
-        plb = src.rfind("\n", 0, lb - 1)
-        if plb == -1:
-            plb = 0
-        else:
-            plb = plb + 1
-        prb = lb - 1
-        prev_nums = numbers_in(plb, prb)
-        if units_hint or range_filter:
-            prev_nums = [(n,i,j) for (n,i,j) in prev_nums if _in_range(n) and _units_ok(n)] or prev_nums
-        if prev_nums:
-            n, i, j = prev_nums[-1]
-            return n, snippet(i, j)
+            return n, snippet(i, j), None
 
         # 5) Fallback to closest in window
         left = max(0, pos - window_chars)
         right = min(len(src), pos + len(term) + window_chars)
         cand = [(n, i, j) for (n, i, j) in nums if i >= left and j <= right]
-        if units_hint or range_filter:
-            cand = [(n,i,j) for (n,i,j) in cand if _in_range(n) and _units_ok(n)] or cand
+        if range_filter or units_hint:
+            filtered_window = [(n,i,j) for (n,i,j) in cand if _in_range(n) and _units_ok(n)]
+            if filtered_window:
+                cand = filtered_window
+            elif cand:
+                failure_reason = "Window numbers rejected by range/units"
+                cand = []
         if cand:
             n, i, j = min(cand, key=lambda t: min(abs(t[1]-pos), abs(t[2]-pos)))
             d = min(abs(i - pos), abs(j - pos))
@@ -1700,7 +1697,9 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
                 best_dist = d
                 best_num, best_ctx = n, snippet(i, j)
 
-    return best_num, best_ctx
+    if best_num is not None:
+        return best_num, best_ctx, None
+    return None, None, failure_reason
 
 
 def _compile_value_regex(fmt: str) -> Optional[re.Pattern]:
@@ -1783,6 +1782,8 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
             start = pos + max(1, len(needle))
         return None, None
 
+    failure_reason = None
+
     for p in sorted(page_text_map.keys()):
         text = page_text_map[p] or ''
         if not text:
@@ -1800,13 +1801,16 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
                 return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
                                    page=p, number=val, units=None, context=ctx or '', method=pipeline,
                                    found=True, text_source='pdf')
+            failure_reason = "No string value matched the term to the right"
         else:
-            number, ctx = find_closest_number_in_text(text, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                     units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
+            number, ctx, reason = find_closest_number_in_text(text, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
             if number:
                 return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
                                    page=p, number=number, units=extract_units(number), context=ctx or '',
                                    method=pipeline, found=True, text_source='pdf')
+            if reason:
+                failure_reason = reason
 
     # OCR fallback for empty pages only (numbers)
     if (spec.return_type or 'number').lower() != 'string':
@@ -1819,14 +1823,19 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
                 for p in empty_pages:
                     t = (pt4.get(p) or '')
                     if t:
-                        number, ctx = find_closest_number_in_text(t, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                                 units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
+                        number, ctx, reason = find_closest_number_in_text(t, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                                         units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
                         if number:
                             return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
                                                page=p, number=number, units=extract_units(number), context=ctx or '',
                                                method=m4, found=True, text_source='ocr')
+                        if reason:
+                            failure_reason = reason
+                if failure_reason is None:
+                    failure_reason = "OCR fallback found no numeric value to the right"
     return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                       page=None, number=None, units=None, context='', method='', found=False)
+                       page=None, number=None, units=None, context='', method=pipeline, found=False,
+                       error_reason=failure_reason or "No value found for term")
 
 def get_serial_number_from_filename(pdf_path: Path) -> str:
     """
@@ -1868,17 +1877,21 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     chosen_page = None
     chosen_number = None
     chosen_ctx = None
+    failure_reason: Optional[str] = None
+    failure_reason = "No numeric value to the right within range/units"
 
     # Search pages in ascending order; stop at the first page where a number is found
     for p in sorted(page_text_map.keys()):
         text = page_text_map[p]
-        number, ctx = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                 units_hint=units_hint, range_filter=range_filter, accept_dates=True)
+        number, ctx, reason = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                         units_hint=units_hint, range_filter=range_filter, accept_dates=True)
         if number:
             chosen_page = p
             chosen_number = number
             chosen_ctx = ctx or ""
             break
+        failure_reason = reason or failure_reason
+        failure_reason = "No numeric value to the right within range/units"
 
     if chosen_number:
         return MatchResult(
@@ -1926,13 +1939,16 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
         chosen_ctx = None
         for p in sorted(page_text_map.keys()):
             text = page_text_map[p]
-            number, ctx = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                     units_hint=units_hint, range_filter=range_filter, accept_dates=True)
+            number, ctx, reason = find_closest_number_in_text(text, term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                             units_hint=units_hint, range_filter=range_filter, accept_dates=True)
             if number:
                 chosen_page = p
                 chosen_number = number
                 chosen_ctx = ctx or ""
                 break
+            failure_reason = reason or failure_reason
+        if chosen_number is None:
+            failure_reason = "OCR fallback found no numeric value to the right"
         if chosen_number:
             return MatchResult(
                 pdf_file=pdf_path.name,
@@ -1966,7 +1982,8 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
         confidence=None,
         row_label=None,
         column_label=None,
-        text_source=None
+        text_source=None,
+        error_reason=failure_reason
     )
 
 
@@ -2189,8 +2206,11 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             return _res
 
     # Last resort: nearest-number scan
-    return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
-                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    fallback_res = scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                     units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    if not fallback_res.found and not fallback_res.error_reason:
+        fallback_res.error_reason = "No table intersection located for row/column"
+    return fallback_res
     try:
         doc = fitz.open(str(pdf_path))
     except Exception:
@@ -2632,8 +2652,11 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                     )
             # If no number matched, fall back to nearest later
     # Fallback to nearest with filters
-    return scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
-                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    fallback_res = scan_pdf_for_term(pdf_path, serial_number, spec.term, spec.pages, window_chars, case_sensitive,
+                                     units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max))
+    if not fallback_res.found and not fallback_res.error_reason:
+        fallback_res.error_reason = "No line field matched the requested index"
+    return fallback_res
 def move_file_safely(src: Path, dst_folder: Path) -> Path:
     """
     Move a file into a destination folder, avoiding collisions by appending (n)
@@ -2690,6 +2713,11 @@ def write_outputs_excel_or_csv(
         # Create DataFrames
         df_results = pd.DataFrame(rows, columns=["Term", "Pages"] + serial_cols)
         df_meta = pd.DataFrame(metadata_rows)
+        error_cols = ["pdf_file", "serial_number", "term", "error", "method", "page", "column", "row"]
+        if errors_rows:
+            df_errors = pd.DataFrame(errors_rows, columns=error_cols)
+        else:
+            df_errors = pd.DataFrame(columns=error_cols)
 
         # Write Excel with two sheets
         with pd.ExcelWriter(output_xlsx, engine="xlsxwriter") as writer:
@@ -2697,12 +2725,16 @@ def write_outputs_excel_or_csv(
             df_results.to_excel(writer, sheet_name="results", index=False)
             # Sheet 2: detailed metadata
             df_meta.to_excel(writer, sheet_name="metadata", index=False)
+            # Sheet 3: failures/errors summary
+            df_errors.to_excel(writer, sheet_name="errors", index=False)
 
             # Cosmetic improvements: freeze header rows and set reasonable column widths
             ws_res = writer.sheets["results"]
             ws_meta = writer.sheets["metadata"]
+            ws_err = writer.sheets["errors"]
             ws_res.freeze_panes(1, 0)
             ws_meta.freeze_panes(1, 0)
+            ws_err.freeze_panes(1, 0)
 
             # Auto-size columns based on max content length (capped)
             for i, col in enumerate(df_results.columns):
@@ -2711,6 +2743,9 @@ def write_outputs_excel_or_csv(
             for i, col in enumerate(df_meta.columns):
                 width = min(60, max(10, int(df_meta[col].astype(str).str.len().max() if not df_meta.empty else len(col)) + 2))
                 ws_meta.set_column(i, i, width)
+            for i, col in enumerate(df_errors.columns):
+                width = min(60, max(10, int(df_errors[col].astype(str).str.len().max() if not df_errors.empty else len(col)) + 2))
+                ws_err.set_column(i, i, width)
 
         print(f"[DONE] Excel written -> {output_xlsx}")
         return
@@ -2718,6 +2753,7 @@ def write_outputs_excel_or_csv(
     # ---------- CSV fallback path ----------
     results_csv = csv_fallback_prefix.with_suffix(".results.csv")
     metadata_csv = csv_fallback_prefix.with_suffix(".metadata.csv")
+    errors_csv = csv_fallback_prefix.with_suffix(".errors.csv")
 
     # Build SN column set as above
     serials = set()
@@ -2737,7 +2773,7 @@ def write_outputs_excel_or_csv(
             writer.writerow(row)
 
     # Write "metadata" CSV
-    meta_cols = ["pdf_file", "serial_number", "term", "found", "page", "number", "context", "method_pipeline"]
+    meta_cols = ["pdf_file", "serial_number", "term", "found", "page", "number", "context", "method_pipeline", "error_reason"]
     with metadata_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(meta_cols)
@@ -2751,8 +2787,23 @@ def write_outputs_excel_or_csv(
                 r.get("number"),
                 r.get("context"),
                 r.get("method_pipeline"),
+                r.get("error_reason"),
             ])
-    print(f"[DONE] CSV fallback written -> {results_csv} and {metadata_csv}")
+    with errors_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["pdf_file", "serial_number", "term", "error", "method", "page", "column", "row"])
+        for r in errors_rows:
+            writer.writerow([
+                r.get("pdf_file"),
+                r.get("serial_number"),
+                r.get("term"),
+                r.get("error"),
+                r.get("method"),
+                r.get("page"),
+                r.get("column"),
+                r.get("row"),
+            ])
+    print(f"[DONE] CSV fallback written -> {results_csv}, {metadata_csv}, {errors_csv}")
 
 
 def run_scan(
@@ -2805,6 +2856,7 @@ def run_scan(
     results_matrix: Dict[str, Dict[str, Optional[str]]] = {t.term: {} for t in terms}  # term ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ {SN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ number}
     metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
     summary: List[Dict] = []        # JSON audit entries
+    errors_rows: List[Dict] = []    # rows for the errors report
 
     # Step 3: For each PDF, scan for each term
     for pdf_path in sorted(pdfs):
@@ -2867,8 +2919,36 @@ def run_scan(
                 res = scan_pdf_for_term_xy(pdf_path, serial_number, t, window_chars, case_sensitive)
             else:
                 res = scan_pdf_for_term_nearest(pdf_path, serial_number, t, window_chars, case_sensitive)
+            # Normalize units/value when found
+            ret_kind = (getattr(t, 'return_type', None) or 'number').strip().lower()
+            if res.found and ret_kind != 'string':
+                if res.number is not None:
+                    if res.units is None:
+                        res.units = extract_units(res.number)
+                    clean_number = numeric_only(res.number)
+                    if clean_number is not None:
+                        res.number = clean_number
+
             # Fill the matrix cell for this (term, serial_number)
-            results_matrix.setdefault(t.term, {})[serial_number] = numeric_only(res.number)
+            if res.found:
+                if ret_kind == 'string':
+                    cell_value = res.number
+                else:
+                    cell_value = res.number
+                results_matrix.setdefault(t.term, {})[serial_number] = cell_value
+            else:
+                err_msg = res.error_reason or "No match found"
+                results_matrix.setdefault(t.term, {})[serial_number] = f"ERROR: {err_msg}"
+                errors_rows.append({
+                    "pdf_file": res.pdf_file,
+                    "serial_number": res.serial_number,
+                    "term": res.term,
+                    "error": err_msg,
+                    "page": res.page,
+                    "method": res.method,
+                    "column": res.column_label,
+                    "row": res.row_label,
+                })
 
             # Build metadata record
             meta = {
@@ -2899,6 +2979,7 @@ def run_scan(
                 "return_type": getattr(t, 'return_type', None),
                 "group_after": getattr(t, 'group_after', None),
                 "value_format": getattr(t, 'value_format', None),
+                "error_reason": res.error_reason,
             }
             metadata_rows.append(meta)
             summary.append(meta)
@@ -2951,7 +3032,7 @@ def run_scan(
         "found", "page",
         "number", "range_min", "range_max", "units",
         "method_pipeline", "text_source", "confidence",
-        "group",
+        "group", "error_reason",
     ]
     wrote_xlsx = False
     if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
@@ -2976,11 +3057,16 @@ def run_scan(
                     "method_pipeline": row.get("method_pipeline"),
                     "text_source": row.get("text_source"),
                     "confidence": row.get("confidence"),
-                    "group": row.get("group_after") or ""
+                    "group": row.get("group_after") or "",
+                    "error_reason": row.get("error_reason") or "",
                 })
             df = _pd.DataFrame(rows_for_df, columns=cols_display)
+            df_errors = df[df["found"] == False].copy()
             with _pd.ExcelWriter(output_xlsx, engine="xlsxwriter") as writer:
                 df.to_excel(writer, sheet_name="extraction", index=False)
+                if df_errors.empty:
+                    df_errors = _pd.DataFrame(columns=cols_display)
+                df_errors.to_excel(writer, sheet_name="errors", index=False)
                 ws = writer.sheets["extraction"]
                 # Freeze header row
                 ws.freeze_panes(1, 0)
@@ -2991,6 +3077,14 @@ def run_scan(
                     except Exception:
                         max_len = len(col)
                     ws.set_column(i, i, min(60, max(10, max_len + 2)))
+                ws_err = writer.sheets["errors"]
+                ws_err.freeze_panes(1, 0)
+                for i, col in enumerate(df_errors.columns):
+                    try:
+                        max_len = int(df_errors[col].astype(str).map(len).max()) if not df_errors.empty else len(col)
+                    except Exception:
+                        max_len = len(col)
+                    ws_err.set_column(i, i, min(60, max(10, max_len + 2)))
             wrote_xlsx = True
             print(f"[DONE] Extraction table -> {output_xlsx}")
         except Exception as e:
@@ -3009,9 +3103,24 @@ def run_scan(
                         row.get("pdf_file"), row.get("serial_number"), row.get("term"),
                         row_val, col_val,
                         row.get("found"), row.get("page"), row.get("number"), row.get("range_min"), row.get("range_max"), row.get("units"), row.get("method_pipeline"),
-                        row.get("text_source"), row.get("confidence"), row.get("group_after") or ""
+                        row.get("text_source"), row.get("confidence"), row.get("group_after") or "", row.get("error_reason") or ""
                     ])
-            print(f"[DONE] Extraction table (CSV fallback) -> {fallback_csv}")
+            err_csv = output_xlsx.with_suffix(".errors.csv")
+            with err_csv.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(cols_display)
+                for row in summary:
+                    if row.get("found"):
+                        continue
+                    row_val = row.get("row_label") or row.get("line") or ""
+                    col_val = row.get("column_label") or row.get("column") or ""
+                    w.writerow([
+                        row.get("pdf_file"), row.get("serial_number"), row.get("term"),
+                        row_val, col_val,
+                        row.get("found"), row.get("page"), row.get("number"), row.get("range_min"), row.get("range_max"), row.get("units"), row.get("method_pipeline"),
+                        row.get("text_source"), row.get("confidence"), row.get("group_after") or "", row.get("error_reason") or ""
+                    ])
+            print(f"[DONE] Extraction table (CSV fallback) -> {fallback_csv}; errors -> {err_csv}")
         except Exception as e:
             print(f"[WARN] Could not write extraction table fallback: {e}")
 
