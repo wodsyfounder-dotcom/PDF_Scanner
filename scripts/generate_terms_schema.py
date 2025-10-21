@@ -27,13 +27,15 @@ def main() -> None:
 
     wb = Workbook()
     ws = wb.active
+    if ws is None:
+        ws = wb.create_sheet()
     ws.title = 'Template'
 
     # Headers
     headers = [
         'Term', 'Pages', 'Mode', 'Line (x)', 'Column (y)',
         'Anchor', 'FieldIndex', 'FieldSplit', 'Return',
-        'Units', 'Range (min)', 'Range (max)', 'Format', 'GroupAfter'
+        'Units', 'Range (min)', 'Range (max)', 'Format', 'GroupAfter', 'GroupBefore'
     ]
     ws.append(headers)
     header_font = Font(bold=True)
@@ -69,9 +71,9 @@ def main() -> None:
 
     # Example rows
     examples = [
-        ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000', '', 'Proof Pressure'],
-        ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', '', '', ''],
-        ['Test Plan', '1-2', 'nearest', '', '', '', '', '', 'string', '', '', '', 'tpl-xxxx', 'Qualification'],
+        ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000', '', 'Proof Pressure', 'Post Test'],
+        ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', '', '', '', ''],
+        ['Test Plan', '1-2', 'nearest', '', '', '', '', '', 'string', '', '', '', 'tpl-xxxx', 'Qualification', ''],
     ]
     for row in examples:
         ws.append(row)
@@ -99,6 +101,7 @@ def main() -> None:
         ' - Range (min)/(max): Numeric bounds (scientific notation allowed).',
         ' - Format: Optional value mask for string returns (e.g., tpl-xxxx) or /regex/ if needed.',
         ' - GroupAfter: Only search values after this anchor text appears.',
+        ' - GroupBefore: Stop searching once this anchor text is encountered (exclusive).',
     ]
     for i, t in enumerate(lines, start=2):
         inst[f'A{i}'] = t
