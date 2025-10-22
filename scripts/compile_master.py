@@ -176,8 +176,6 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
 
             if term not in term_map:
                 term_map[term] = {
-                    "group": "",
-                    "units": "",
                     "order": [],
                     "entries": {}
                 }
@@ -185,26 +183,27 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
             term_info = term_map[term]
 
             group_after = norm(row.get("group_after"))
-            if group_after and not term_info["group"]:
-                term_info["group"] = group_after
-
             units = extract_units(row)
-            if units and not term_info["units"]:
-                term_info["units"] = units
-
             row_label = norm(row.get("line") or row.get("row_label"))
             column_label = norm(row.get("column") or row.get("column_label"))
-            key = (row_label.lower(), column_label.lower())
+            group_key = group_after.lower()
+            entry_key = (row_label.lower(), column_label.lower(), group_key)
 
-            entries: Dict[Tuple[str, str], Dict[str, Any]] = term_info["entries"]
-            if key not in entries:
-                entries[key] = {
+            entries: Dict[Tuple[str, str, str], Dict[str, Any]] = term_info["entries"]
+            if entry_key not in entries:
+                entries[entry_key] = {
+                    "group": group_after,
                     "row_label": row_label,
                     "column_label": column_label,
+                    "units": units,
                     "values": {}
                 }
-                term_info["order"].append(key)
-            entry = entries[key]
+                term_info["order"].append(entry_key)
+            entry = entries[entry_key]
+            if not entry.get("group"):
+                entry["group"] = group_after
+            if units and not entry.get("units"):
+                entry["units"] = units
             entry["values"][sn] = value
 
     term_rows: List[Dict[str, Any]] = []
@@ -212,12 +211,12 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
         info = term_map.get(term)
         if not info:
             continue
-        for key in info["order"]:
-            entry = info["entries"][key]
+        for entry_key in info["order"]:
+            entry = info["entries"][entry_key]
             term_rows.append({
                 "term": term,
-                "group": info["group"],
-                "units": info["units"],
+                "group": entry.get("group", ""),
+                "units": entry.get("units", ""),
                 "row_label": entry["row_label"],
                 "column_label": entry["column_label"],
                 "values": entry["values"],

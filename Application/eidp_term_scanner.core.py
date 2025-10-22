@@ -1398,10 +1398,17 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
         # Find best row and column headers
         row_candidates = [(it, _fuzzy_ratio(it['text'], row_name)) for it in items if row_name]
         row_candidates = [t for t in row_candidates if t[1] >= fuzz]
+        sandwich_eps = 0.5
         if group_anchor_y is not None:
-            row_candidates = [t for t in row_candidates if t[0]['cy'] > group_anchor_y]
+            row_candidates = [
+                t for t in row_candidates
+                if float(t[0].get('y1', t[0].get('cy', 0.0))) > group_anchor_y + sandwich_eps
+            ]
         if group_upper_y is not None:
-            row_candidates = [t for t in row_candidates if t[0]['cy'] < group_upper_y]
+            row_candidates = [
+                t for t in row_candidates
+                if float(t[0].get('y0', t[0].get('cy', 0.0))) < group_upper_y - sandwich_eps
+            ]
         if not row_candidates:
             continue
         row_it, _ = max(row_candidates, key=lambda t: t[1])
@@ -2524,7 +2531,8 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             before_on_page = True
 
                     row_norm = norm(row_text) if row_text else ""
-                    best_row: Optional[Tuple[float, float, int, List[List[float]]]] = None
+                    best_row: Optional[Tuple[float, float, float, float, int, List[List[float]]]] = None
+                    sandwich_eps = 0.5
                     for ln, ws in lines_map.items():
                         sorted_ws = sorted(ws, key=lambda k: k[0])
                         if not row_text:
@@ -2535,23 +2543,27 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                         if not ((row_norm and row_norm in hay) or score >= row_thresh):
                             continue
                         row_cy_avg = sum(((float(w[1]) + float(w[3])) / 2.0) for w in sorted_ws) / max(1, len(sorted_ws))
-                        if group_anchor_y is not None and row_cy_avg <= group_anchor_y:
+                        row_tops = [float(w[1]) for w in sorted_ws if len(w) >= 2]
+                        row_bottoms = [float(w[3]) for w in sorted_ws if len(w) >= 4]
+                        row_top = min(row_tops) if row_tops else row_cy_avg
+                        row_bottom = max(row_bottoms) if row_bottoms else row_cy_avg
+                        if group_anchor_y is not None and row_bottom <= group_anchor_y + sandwich_eps:
                             continue
-                        if group_before_y is not None and row_cy_avg >= group_before_y:
+                        if group_before_y is not None and row_top >= group_before_y - sandwich_eps:
                             continue
                         if (
                             best_row is None
                             or score > best_row[0]
                             or (abs(score - best_row[0]) <= 0.02 and row_cy_avg < best_row[1])
                         ):
-                            best_row = (score, row_cy_avg, ln, sorted_ws)
+                            best_row = (score, row_cy_avg, row_top, row_bottom, ln, sorted_ws)
 
                     if best_row is None:
                         if before_on_page:
                             before_triggered = True
                         continue
 
-                    _, row_cy, target_ln, row_words_sorted = best_row
+                    _, row_cy, row_top, row_bottom, target_ln, row_words_sorted = best_row
                     row_words = row_words_sorted
 
                     row_label_word = None
@@ -2586,11 +2598,13 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                     for w2 in words:
                         if len(w2) < 4:
                             continue
-                        cy2 = (float(w2[1]) + float(w2[3])) / 2.0
-                        if group_anchor_y is not None and cy2 <= group_anchor_y:
+                        w2_top = float(w2[1])
+                        w2_bottom = float(w2[3])
+                        if group_anchor_y is not None and w2_bottom <= group_anchor_y + sandwich_eps:
                             continue
-                        if group_before_y is not None and cy2 >= group_before_y:
+                        if group_before_y is not None and w2_top >= group_before_y - sandwich_eps:
                             continue
+                        cy2 = (w2_top + w2_bottom) / 2.0
                         if abs(cy2 - row_cy) <= vertical_tolerance:
                             row_word_pool.append(w2)
                     if not row_word_pool:
