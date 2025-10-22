@@ -1341,10 +1341,19 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
                     txt_norm = _normalize_anchor_token(txt)
                     if anchor_norm and anchor_norm in txt_norm:
                         score = max(score, 0.99)
+                    else:
+                        try:
+                            norm_ratio = difflib.SequenceMatcher(None, txt_norm, anchor_norm).ratio() if anchor_norm else 0.0
+                        except Exception:
+                            norm_ratio = 0.0
+                        if norm_ratio >= 0.7:
+                            score = max(score, norm_ratio)
                     if score >= ga_thresh:
                         matches.append((it, score))
                 if matches:
-                    group_anchor_y = max(matches, key=lambda t: t[0]['cy'])[0]['cy']
+                    best_score = max(m[1] for m in matches)
+                    top_matches = [m for m in matches if m[1] >= best_score - 0.1]
+                    group_anchor_y = min(top_matches, key=lambda t: t[0]['cy'])[0]['cy']
                     after_found = True
             except Exception:
                 group_anchor_y = None
@@ -1359,10 +1368,21 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
                     txt_norm = _normalize_anchor_token(txt)
                     if anchor_norm and anchor_norm in txt_norm:
                         score = max(score, 0.99)
+                    else:
+                        try:
+                            norm_ratio = difflib.SequenceMatcher(None, txt_norm, anchor_norm).ratio() if anchor_norm else 0.0
+                        except Exception:
+                            norm_ratio = 0.0
+                        if norm_ratio >= 0.7:
+                            score = max(score, norm_ratio)
                     if score >= gb_thresh:
                         matches.append((it, score))
+                if matches and group_anchor_y is not None:
+                    matches = [m for m in matches if m[0]['cy'] > group_anchor_y + 1.0] or matches
                 if matches:
-                    group_upper_y = min(matches, key=lambda t: t[0]['cy'])[0]['cy']
+                    best_score = max(m[1] for m in matches)
+                    top_matches = [m for m in matches if m[1] >= best_score - 0.1]
+                    group_upper_y = min(top_matches, key=lambda t: t[0]['cy'])[0]['cy']
                     before_triggered = True
             except Exception:
                 group_upper_y = None
