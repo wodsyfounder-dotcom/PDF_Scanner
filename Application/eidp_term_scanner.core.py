@@ -1180,6 +1180,118 @@ def _first_numeric(text: str) -> Optional[str]:
     return nums[0] if nums else None
 
 
+def _split_fields_by_spacing(line: str) -> List[str]:
+    stripped = line.strip()
+    if not stripped:
+        return []
+    parts = [p.strip() for p in re.split(r"\s{2,}", stripped) if p.strip()]
+    if len(parts) <= 1:
+        parts = [p.strip() for p in re.split(r"\s+", stripped) if p.strip()]
+    return parts
+
+
+def _match_header_index(headers: List[str], col_alts: List[str]) -> int:
+    best_idx = -1
+    best_score = 0.0
+    for idx, header in enumerate(headers):
+        if not header:
+            continue
+        header_norm = _normalize_anchor_token(header)
+        for alt in col_alts:
+            if not alt:
+                continue
+            score = _fuzzy_ratio(header, alt)
+            alt_norm = _normalize_anchor_token(alt)
+            if alt_norm and alt_norm in header_norm:
+                score = max(score, 0.99)
+            if score > best_score:
+                best_idx = idx
+                best_score = score
+    return best_idx if best_score >= 0.6 else -1
+
+
+def _extract_value_from_text_table(text: str, row_text: str, column_text: str, case_sensitive: bool) -> Optional[Tuple[str, str, str]]:
+    if not row_text or not column_text:
+        return None
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    col_alts = [c.strip() for c in re.split(r"[|/]", column_text) if c.strip()] or [column_text]
+    row_norm_target = _normalize_anchor_token(row_text)
+    for idx, line in enumerate(lines):
+        headers = _split_fields_by_spacing(line)
+        if not headers:
+            continue
+        col_idx = _match_header_index(headers, col_alts)
+        if col_idx < 0:
+            continue
+        for row_line in lines[idx + 1:]:
+            if not row_line.strip():
+                break
+            score = _fuzzy_ratio(row_line, row_text)
+            row_norm_line = _normalize_anchor_token(row_line)
+            if row_norm_target and row_norm_target in row_norm_line:
+                score = max(score, 0.99)
+            if score < 0.6:
+                continue
+            fields = _split_fields_by_spacing(row_line)
+            if len(fields) <= col_idx:
+                continue
+            value = fields[col_idx].strip()
+            if value:
+                return value, row_line.strip(), headers[col_idx].strip()
+        # stop scanning further down once we hit a blank separator
+    return None
+
+
+def _slice_text_by_groups(text: str, group_after: Optional[str], group_before: Optional[str], case_sensitive: bool) -> Tuple[str, bool, bool]:
+    if not text:
+        return "", not bool(group_after), False
+    start_idx = 0
+    after_hit = not bool(group_after)
+    if group_after:
+        idx = _locate_group_anchor(text, group_after, case_sensitive, after=True)
+        if idx is None:
+            return "", False, False
+        start_idx = idx
+        after_hit = True
+    end_idx = len(text)
+    before_hit = False
+    if group_before:
+        idx = _locate_group_anchor(text[start_idx:], group_before, case_sensitive, after=False)
+        if idx is not None:
+            end_idx = start_idx + idx
+            before_hit = True
+    return text[start_idx:end_idx], after_hit, before_hit
+
+
+def _locate_group_anchor(text: str, anchor: Optional[str], case_sensitive: bool, *, after: bool) -> Optional[int]:
+    if not anchor:
+        return None
+    hay = text if case_sensitive else text.lower()
+    needle = anchor if case_sensitive else anchor.lower()
+    idx = hay.find(needle)
+    if idx >= 0:
+        return idx + (len(needle) if after else 0)
+    anchor_norm = _normalize_anchor_token(anchor)
+    best: Optional[Tuple[float, int, int]] = None  # score, offset, seg_len
+    offset = 0
+    for segment in text.splitlines(keepends=True):
+        raw = segment.rstrip("\r\n")
+        score = _fuzzy_ratio(raw, anchor)
+        seg_norm = _normalize_anchor_token(raw)
+        if anchor_norm and anchor_norm in seg_norm:
+            score = max(score, 0.99)
+        if score >= 0.6:
+            if best is None or score > best[0]:
+                best = (score, offset, len(segment))
+        offset += len(segment)
+    if not best:
+        return None
+    _, start, seg_len = best
+    return start + seg_len if after else start
+
+
 def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> Optional[MatchResult]:
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
         return None
@@ -1797,8 +1909,6 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
         page_text_map, pipeline = extract_pages_text(pdf_path, spec.pages if spec.pages else list(range(1, 10000)), do_ocr_fallback=False)
 
     # Prepare bounds for group_after/group_before
-    needle_after = spec.group_after if case_sensitive else (spec.group_after.lower() if spec.group_after else None)
-    needle_before = spec.group_before if case_sensitive else (spec.group_before.lower() if spec.group_before else None)
     after_found = not bool(spec.group_after)
     before_triggered = False
 
@@ -1838,30 +1948,68 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
         if before_triggered:
             break
         raw_text = page_text_map[p] or ''
-        text = raw_text
-        if not text:
+        if not raw_text:
             continue
-        hay = text if case_sensitive else text.lower()
-        start_idx = 0
-        if spec.group_after:
-            idx_after = hay.find(needle_after or "")
-            if idx_after >= 0:
-                after_found = True
-                newline = raw_text.find("\n", idx_after)
-                start_idx = newline + 1 if newline != -1 else idx_after + len(spec.group_after)
-            elif not after_found:
+        slice_group_after = spec.group_after if not after_found else None
+        slice_group_before = spec.group_before if not before_triggered else None
+        text, page_after_hit, page_before_hit = _slice_text_by_groups(raw_text, slice_group_after, slice_group_before, case_sensitive)
+        if spec.group_after and not after_found:
+            if not page_after_hit:
                 continue
-        end_idx = len(raw_text)
-        if spec.group_before:
-            search_from = start_idx if after_found else 0
-            idx_before = hay.find(needle_before or "", search_from)
-            if idx_before >= 0:
-                end_idx = idx_before
-                before_triggered = True
-        text = raw_text[start_idx:end_idx]
-        if not text:
+            after_found = True
+        else:
+            after_found = True
+        if page_before_hit:
+            before_triggered = True
+        if not text.strip():
+            if page_before_hit:
+                break
             continue
-        if (spec.return_type or 'number').lower() == 'string':
+
+        row_name = (spec.line or spec.term or '').strip()
+        column_name = (spec.column or '').strip()
+        ret_kind = (spec.return_type or 'number').strip().lower()
+        table_hit = None
+        if row_name and column_name:
+            table_hit = _extract_value_from_text_table(text, row_name, column_name, case_sensitive)
+        if table_hit:
+            val, row_line_ctx, header_label = table_hit
+            if ret_kind == 'string':
+                fmt_ok = True
+                if spec.value_format:
+                    fmt_pat = _compile_value_regex(spec.value_format)
+                    if fmt_pat and not fmt_pat.search(val):
+                        fmt_ok = False
+                if fmt_ok:
+                    return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
+                                       page=p, number=val, units=None, context=row_line_ctx[:200],
+                                       method="text:table", found=True, text_source='pdf',
+                                       row_label=row_name, column_label=header_label)
+            else:
+                numeric_candidate = _first_numeric(val) or _first_numeric(row_line_ctx)
+                if numeric_candidate:
+                    ok_rng = True
+                    if spec.range_min is not None or spec.range_max is not None:
+                        try:
+                            num_val = float((numeric_only(numeric_candidate) or '').replace(',', ''))
+                            if spec.range_min is not None and num_val < spec.range_min:
+                                ok_rng = False
+                            if spec.range_max is not None and num_val > spec.range_max:
+                                ok_rng = False
+                        except Exception:
+                            ok_rng = True
+                    ok_units = True
+                    if spec.units_hint:
+                        u = extract_units(numeric_candidate)
+                        ok_units = bool(u and any(u.lower() == h.lower() for h in spec.units_hint))
+                    if ok_rng and ok_units:
+                        return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
+                                           page=p, number=numeric_candidate, units=extract_units(numeric_candidate),
+                                           context=row_line_ctx[:200], method="text:table",
+                                           found=True, text_source='pdf',
+                                           row_label=row_name, column_label=header_label)
+
+        if ret_kind == 'string':
             val, ctx = _search_string_value(text, spec.term, spec.value_format)
             if val:
                 return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
@@ -2106,6 +2254,81 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                     if p < 1 or p > doc.page_count:
                         continue
                     page = doc.load_page(p - 1)
+                    try:
+                        page_text_raw = page.get_text("text") or ""
+                    except Exception:
+                        page_text_raw = ""
+                    slice_group_after = spec.group_after if not after_found else None
+                    slice_group_before = spec.group_before if not before_triggered else None
+                    slice_text, page_after_hit, page_before_hit = _slice_text_by_groups(page_text_raw, slice_group_after, slice_group_before, case_sensitive)
+                    if spec.group_after and not after_found:
+                        if not page_after_hit:
+                            continue
+                        after_found = True
+                    else:
+                        after_found = True
+                    if page_before_hit:
+                        before_triggered = True
+                    if not slice_text.strip():
+                        if page_before_hit:
+                            break
+                        continue
+                    text_table_hit: Optional[Tuple[str, str, str]] = None
+                    if row_text and spec.column:
+                        text_table_hit = _extract_value_from_text_table(slice_text, row_text, spec.column, case_sensitive)
+                    if text_table_hit:
+                        val_text, row_line_ctx, col_label = text_table_hit
+                        if ret_type == 'string':
+                            ok = True
+                            if fmt_pat and not fmt_pat.search(val_text):
+                                ok = False
+                            if ok:
+                                return MatchResult(
+                                    pdf_file=pdf_path.name,
+                                    serial_number=serial_number,
+                                    term=spec.term,
+                                    page=p,
+                                    number=val_text,
+                                    units=None,
+                                    context=row_line_ctx[:200],
+                                    method="pymupdf:text-table",
+                                    found=True,
+                                    text_source="pdf",
+                                    row_label=row_text,
+                                    column_label=col_label,
+                                )
+                        else:
+                            numeric_candidate = _first_numeric(val_text) or _first_numeric(row_line_ctx)
+                            if numeric_candidate:
+                                ok_rng = True
+                                if spec.range_min is not None or spec.range_max is not None:
+                                    try:
+                                        num_val = float((numeric_only(numeric_candidate) or '').replace(',', ''))
+                                        if spec.range_min is not None and num_val < spec.range_min:
+                                            ok_rng = False
+                                        if spec.range_max is not None and num_val > spec.range_max:
+                                            ok_rng = False
+                                    except Exception:
+                                        ok_rng = True
+                                ok_units = True
+                                if spec.units_hint:
+                                    u = extract_units(numeric_candidate)
+                                    ok_units = bool(u and any(u.lower() == h.lower() for h in spec.units_hint))
+                                if ok_rng and ok_units:
+                                    return MatchResult(
+                                        pdf_file=pdf_path.name,
+                                        serial_number=serial_number,
+                                        term=spec.term,
+                                        page=p,
+                                        number=numeric_candidate,
+                                        units=extract_units(numeric_candidate),
+                                        context=row_line_ctx[:200],
+                                        method="pymupdf:text-table",
+                                        found=True,
+                                        text_source="pdf",
+                                        row_label=row_text,
+                                        column_label=col_label,
+                                    )
                     words = page.get_text("words") or []
                     # Group words by line id
                     lines_map: Dict[int, List[List[float]]] = {}
@@ -2127,7 +2350,10 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             if anchor_norm and anchor_norm in line_norm:
                                 sc_ga = max(sc_ga, 0.99)
                             if sc_ga >= ga_thresh:
-                                cy = sum(((float(w[1]) + float(w[3])) / 2.0) for w in line_ws) / max(1, len(line_ws))
+                                cy_vals = [((float(w[1]) + float(w[3])) / 2.0) for w in line_ws]
+                                if not cy_vals:
+                                    continue
+                                cy = min(cy_vals)
                                 if (
                                     group_anchor_y is None
                                     or cy > group_anchor_y
@@ -2154,7 +2380,10 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             if anchor_norm and anchor_norm in line_norm:
                                 sc_gb = max(sc_gb, 0.99)
                             if sc_gb >= gb_thresh:
-                                cy = sum(((float(w[1]) + float(w[3])) / 2.0) for w in line_ws) / max(1, len(line_ws))
+                                cy_vals = [((float(w[1]) + float(w[3])) / 2.0) for w in line_ws]
+                                if not cy_vals:
+                                    continue
+                                cy = max(cy_vals)
                                 if (
                                     group_before_y is None
                                     or cy < group_before_y
@@ -2212,8 +2441,31 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                         label_candidates = [float(w[0]) for w in row_words if len(w) >= 3]
                         row_label_right = min(label_candidates) if label_candidates else float('-inf')
 
-                    row_heights = [float(w[3]) - float(w[1]) for w in row_words if len(w) >= 4]
-                    row_h = max(row_heights) if row_heights else 1.0
+                    if row_label_word is not None:
+                        row_cy = (float(row_label_word[1]) + float(row_label_word[3])) / 2.0
+                        row_h = float(row_label_word[3]) - float(row_label_word[1])
+                        if row_h <= 0:
+                            row_h = 1.0
+                    else:
+                        row_heights = [float(w[3]) - float(w[1]) for w in row_words if len(w) >= 4]
+                        row_h = max(row_heights) if row_heights else 1.0
+
+                    # Treat any words that sit on the same horizontal band as the row as part of the row,
+                    # regardless of PyMuPDF's line-id segmentation.
+                    vertical_tolerance = max(row_h * 0.8, 2.0)
+                    row_word_pool: List[List[float]] = []
+                    for w2 in words:
+                        if len(w2) < 4:
+                            continue
+                        cy2 = (float(w2[1]) + float(w2[3])) / 2.0
+                        if group_anchor_y is not None and cy2 <= group_anchor_y:
+                            continue
+                        if group_before_y is not None and cy2 >= group_before_y:
+                            continue
+                        if abs(cy2 - row_cy) <= vertical_tolerance:
+                            row_word_pool.append(w2)
+                    if not row_word_pool:
+                        row_word_pool = list(row_words)
 
                     # Locate the column header directly above (or nearest) to the row
                     best_header_x = None
@@ -2253,13 +2505,13 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                         if before_on_page:
                             before_triggered = True
                         continue
-
-                    ws_sorted = sorted(row_words, key=lambda k: k[0])
-                    row_context = " ".join(str(x[4]) for x in ws_sorted)[:200]
+                    row_context_words = sorted(row_words, key=lambda k: k[0])
+                    row_context = " ".join(str(x[4]) for x in row_context_words)[:200]
+                    row_cells_sorted = sorted(row_word_pool, key=lambda k: k[0])
 
                     if ret_type == 'string':
                         cand_s: List[Tuple[float, str]] = []
-                        for w in ws_sorted:
+                        for w in row_cells_sorted:
                             if len(w) < 4:
                                 continue
                             tok = str(w[4]) if len(w) > 4 else ""
@@ -2280,7 +2532,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             break
                     else:
                         candidates: List[Tuple[float, str]] = []
-                        for w in ws_sorted:
+                        for w in row_cells_sorted:
                             if len(w) < 4:
                                 continue
                             tok = str(w[4]) if len(w) > 4 else ""
@@ -2805,7 +3057,6 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
         return fields
 
     needle_after_line = spec.group_after if case_sensitive else (spec.group_after.lower() if spec.group_after else None)
-    needle_before_line = spec.group_before if case_sensitive else (spec.group_before.lower() if spec.group_before else None)
     after_found_line = not bool(spec.group_after)
     before_triggered_line = False
 
@@ -2815,25 +3066,23 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
         text = page_text_map[p] or ""
         if not text:
             continue
-        hay_full = text if case_sensitive else text.lower()
         start_idx = 0
         if spec.group_after:
-            idx_ga = hay_full.find(needle_after_line or "")
-            if idx_ga >= 0:
+            idx_ga = _locate_group_anchor(text, spec.group_after, case_sensitive, after=True)
+            if idx_ga is not None:
                 after_found_line = True
-                cut_pos = text.find("\n", idx_ga)
-                start_idx = cut_pos + 1 if cut_pos != -1 else idx_ga + len(spec.group_after)
+                start_idx = idx_ga
             elif not after_found_line:
                 continue
         end_idx = len(text)
         if spec.group_before:
-            search_from = start_idx if after_found_line else 0
-            idx_gb = hay_full.find(needle_before_line or "", search_from)
-            if idx_gb >= 0:
-                end_idx = idx_gb
+            search_segment = text[start_idx:]
+            idx_gb = _locate_group_anchor(search_segment, spec.group_before, case_sensitive, after=False)
+            if idx_gb is not None:
+                end_idx = start_idx + idx_gb
                 before_triggered_line = True
         text_segment = text[start_idx:end_idx]
-        if not text_segment:
+        if not text_segment.strip():
             continue
         lines = text_segment.splitlines()
         best = None  # (fields, line)
