@@ -2,11 +2,11 @@
 """
 Simple native GUI (Tkinter) launcher for the EIDP Term Scanner.
 
-- Pure Python standard library (Tkinter) — no external EXEs or downloads.
-- Loads env from user_inputs/scanner.env
-- Lets you pick Terms file, PDFs folder, Scanned folder
-- Runs the scanner in a background thread, streams stdout/stderr to the UI
-- Buttons to Stop run and Open last run folder
+- Pure Python standard library (Tkinter) - no external EXEs or downloads.
+- Loads env from user_inputs/scanner.env.
+- Lets you pick Terms file, PDFs folder, Scanned folder.
+- Runs the scanner in a background thread, streams stdout/stderr to the UI.
+- Provides shortcuts for terms template management and run output workbooks.
 
 Usage:
   python gui.py
@@ -17,7 +17,7 @@ import os
 import sys
 import threading
 import subprocess
-import queue
+import shutil
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -144,62 +144,123 @@ class Runner:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("EIDP Scanner GUI")
-        self.geometry("900x600")
+        self.title("EIDP Term Scanner")
+        self.geometry("960x640")
+        self.minsize(880, 560)
+        self.style = ttk.Style(self)
+        self.style.configure("Section.TLabelframe", padding=(12, 10))
+        self.style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+        self.style.configure("Primary.TButton", padding=(12, 6), font=("Segoe UI", 10))
+        self.style.configure("Secondary.TButton", padding=(12, 6), font=("Segoe UI", 10))
+        self.style.configure("Danger.TButton", padding=(12, 6), font=("Segoe UI", 10))
+        self.style.map("Danger.TButton", foreground=[("!disabled", "#b00020")])
         self.runner = Runner(self.append_log)
+        self._run_active = False
         self._env_cache: dict[str, str] = parse_scanner_env(SCANNER_ENV)
         self._build_ui()
+        self.after(500, self._poll_runner)
 
     def _build_ui(self):
-        pad = {"padx": 8, "pady": 6}
+        pad = {"padx": 12, "pady": 10}
 
-        frm = ttk.Frame(self)
-        frm.pack(fill=tk.X, **pad)
-
-        # Terms file
-        ttk.Label(frm, text="Terms file (.xlsx/.csv):").grid(row=0, column=0, sticky=tk.W)
-        self.var_terms = tk.StringVar(value=str(DEFAULT_TERMS_XLSX))
-        ent_terms = ttk.Entry(frm, textvariable=self.var_terms, width=80)
-        ent_terms.grid(row=0, column=1, sticky=tk.EW)
-        ttk.Button(frm, text="Browse", command=self._pick_terms).grid(row=0, column=2)
+        inputs = ttk.LabelFrame(self, text="Scanner Inputs", style="Section.TLabelframe")
+        inputs.pack(fill=tk.X, **pad)
 
         # PDFs folder
-        ttk.Label(frm, text="PDFs folder:").grid(row=1, column=0, sticky=tk.W)
+        ttk.Label(inputs, text="PDFs folder:").grid(row=0, column=0, sticky=tk.W)
         self.var_pdfs = tk.StringVar(value=str(DEFAULT_PDF_DIR))
-        ent_pdfs = ttk.Entry(frm, textvariable=self.var_pdfs, width=80)
-        ent_pdfs.grid(row=1, column=1, sticky=tk.EW)
-        ttk.Button(frm, text="Browse", command=self._pick_pdfs).grid(row=1, column=2)
+        ent_pdfs = ttk.Entry(inputs, textvariable=self.var_pdfs, width=80)
+        ent_pdfs.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        ttk.Button(inputs, text="Browse", command=self._pick_pdfs).grid(row=0, column=2)
 
         # Scanned folder
-        ttk.Label(frm, text="Scanned folder:").grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(inputs, text="Scanned folder:").grid(row=1, column=0, sticky=tk.W)
         self.var_scanned = tk.StringVar(value=str(DEFAULT_SCANNED_DIR))
-        ent_sc = ttk.Entry(frm, textvariable=self.var_scanned, width=80)
-        ent_sc.grid(row=2, column=1, sticky=tk.EW)
-        ttk.Button(frm, text="Browse", command=self._pick_scanned).grid(row=2, column=2)
+        ent_sc = ttk.Entry(inputs, textvariable=self.var_scanned, width=80)
+        ent_sc.grid(row=1, column=1, sticky=tk.EW, padx=(0, 6))
+        ttk.Button(inputs, text="Browse", command=self._pick_scanned).grid(row=1, column=2)
 
-        frm.columnconfigure(1, weight=1)
+        inputs.columnconfigure(1, weight=1)
 
-        # Controls
-        btns = ttk.Frame(self)
-        btns.pack(fill=tk.X, **pad)
-        self.btn_run = ttk.Button(btns, text="Run", command=self._run)
-        self.btn_run.pack(side=tk.LEFT)
-        self.btn_stop = ttk.Button(btns, text="Stop", command=self._stop, state=tk.DISABLED)
-        self.btn_stop.pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(btns, text="Settings", command=self._open_settings).pack(side=tk.LEFT, padx=(16, 0))
-        ttk.Button(btns, text="Open Last Run Folder", command=self._open_last_run).pack(side=tk.LEFT, padx=(16, 0))
-        ttk.Button(btns, text="Open Run Registry", command=self._open_registry).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(btns, text="Compile Master", command=self._compile_master).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(btns, text="Open Master", command=self._open_master).pack(side=tk.LEFT, padx=(8, 0))
+        # Run controls
+        controls = ttk.Frame(self)
+        controls.pack(fill=tk.X, padx=12, pady=(0, 6))
+        controls.columnconfigure((0, 1, 2, 3), weight=1, uniform="controls")
+        self.btn_run = ttk.Button(controls, text="Start Scan", command=self._run, style="Primary.TButton")
+        self.btn_run.grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
+        self.btn_stop = ttk.Button(
+            controls,
+            text="Stop Scan",
+            command=self._stop,
+            state=tk.DISABLED,
+            style="Danger.TButton"
+        )
+        self.btn_stop.grid(row=0, column=1, sticky=tk.EW, padx=8)
+        ttk.Button(
+            controls,
+            text="Settings",
+            command=self._open_settings,
+            style="Secondary.TButton"
+        ).grid(row=0, column=2, sticky=tk.EW, padx=8)
+        ttk.Button(
+            controls,
+            text="Open Last Run Folder",
+            command=self._open_last_run,
+            style="Secondary.TButton"
+        ).grid(row=0, column=3, sticky=tk.EW, padx=(8, 0))
+
+        # Terms helpers
+        self.var_terms = tk.StringVar(value=str(DEFAULT_TERMS_XLSX))
+        terms_tools = ttk.LabelFrame(self, text="Terms Spreadsheet", style="Section.TLabelframe")
+        terms_tools.pack(fill=tk.X, padx=12, pady=(0, 6))
+        terms_tools.columnconfigure(1, weight=1)
+        ttk.Label(terms_tools, text="Spreadsheet path:").grid(row=0, column=0, sticky=tk.W, padx=(8, 6), pady=6)
+        ent_terms = ttk.Entry(terms_tools, textvariable=self.var_terms, width=80)
+        ent_terms.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=6)
+        ttk.Button(
+            terms_tools,
+            text="Browse",
+            command=self._pick_terms,
+            style="Secondary.TButton"
+        ).grid(row=0, column=2, padx=(0, 6), pady=6, sticky=tk.EW)
+        ttk.Button(
+            terms_tools,
+            text="Open Spreadsheet",
+            command=self._open_terms_spreadsheet,
+            style="Secondary.TButton"
+        ).grid(row=0, column=3, padx=(0, 8), pady=6, sticky=tk.EW)
+        ttk.Button(
+            terms_tools,
+            text="Create / Refresh",
+            command=self._generate_terms_spreadsheet,
+            style="Primary.TButton"
+        ).grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(0, 8))
+
+        # Output shortcuts
+        outputs = ttk.LabelFrame(self, text="Data Outputs", style="Section.TLabelframe")
+        outputs.pack(fill=tk.X, padx=12, pady=(0, 10))
+        outputs.columnconfigure((0, 1, 2), weight=1, uniform="outputs")
+        output_buttons = [
+            ("Open Run Registry", self._open_run_registry),
+            ("Compile Master Workbook", self._compile_master),
+            ("Open Master Workbook", self._open_master),
+        ]
+        for idx, (label, handler) in enumerate(output_buttons):
+            btn = ttk.Button(outputs, text=label, command=handler, style="Secondary.TButton")
+            btn.grid(row=0, column=idx, sticky=tk.EW, padx=6, pady=6)
 
         # Log area
-        self.txt = tk.Text(self, wrap="word", height=24)
-        self.txt.pack(fill=tk.BOTH, expand=True, **pad)
-        self.txt.configure(state=tk.DISABLED)
+        log_frame = ttk.Frame(self, padding=(12, 0, 12, 10))
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        self.txt = tk.Text(log_frame, wrap="word", height=24, borderwidth=1, relief=tk.SOLID, font=("Consolas", 10))
+        self.txt.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        scroll_y = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.txt.yview)
+        scroll_y.pack(fill=tk.Y, side=tk.RIGHT)
+        self.txt.configure(state=tk.DISABLED, yscrollcommand=scroll_y.set)
 
         # Status bar
-        self.status = tk.StringVar(value="Ready.")
-        ttk.Label(self, textvariable=self.status, anchor=tk.W).pack(fill=tk.X)
+        self.status = tk.StringVar(value="Ready to scan.")
+        ttk.Label(self, textvariable=self.status, anchor=tk.W).pack(fill=tk.X, padx=12, pady=(0, 10))
 
     def append_log(self, s: str):
         self.txt.configure(state=tk.NORMAL)
@@ -240,6 +301,7 @@ class App(tk.Tk):
         except Exception:
             pass
         self.status.set("Running...")
+        self._run_active = True
         self.btn_run.configure(state=tk.DISABLED)
         self.btn_stop.configure(state=tk.NORMAL)
         self.append_log(f"[GUI] Starting run with terms={terms}, pdfs={pdfs}\n")
@@ -247,6 +309,7 @@ class App(tk.Tk):
 
     def _stop(self):
         self.runner.stop()
+        self._run_active = False
         self.status.set("Stopped (requested).")
         self.btn_run.configure(state=tk.NORMAL)
         self.btn_stop.configure(state=tk.DISABLED)
@@ -260,16 +323,18 @@ class App(tk.Tk):
             if not latest:
                 messagebox.showinfo("No runs", "No run folders found")
                 return
+            self.status.set("Opening last run folder...")
             if sys.platform.startswith("win"):
                 os.startfile(str(latest))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(latest)])
             else:
                 subprocess.Popen(["xdg-open", str(latest)])
+            self.status.set("Last run folder opened.")
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
 
-    def _open_registry(self):
+    def _open_run_registry(self):
         try:
             reg_xlsx = ROOT / "Product_Data_File" / "run_registry.xlsx"
             reg_csv = ROOT / "Product_Data_File" / "run_registry.csv"
@@ -281,14 +346,115 @@ class App(tk.Tk):
             else:
                 messagebox.showinfo("No registry", "No run_registry.xlsx found yet. Run once to create it.")
                 return
+            self.status.set("Opening run registry...")
             if sys.platform.startswith("win"):
                 os.startfile(str(target))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(target)])
             else:
                 subprocess.Popen(["xdg-open", str(target)])
+            self.status.set("Run registry opened.")
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
+
+    def _generate_terms_spreadsheet(self):
+        script = ROOT / "scripts" / "generate_terms_schema.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find generator at:\n{script}")
+            return
+        dest_path = DEFAULT_TERMS_XLSX
+        schema_path = dest_path.parent / "terms.schema.xlsx"
+        self.status.set("Creating terms spreadsheet...")
+        self.append_log("[GUI] Generating terms spreadsheet...\n")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, str(script)],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except Exception as exc:
+            self.status.set("Ready to scan.")
+            messagebox.showerror("Generation failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Terms generator reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc != 0:
+                    self.status.set("Terms generation failed.")
+                    messagebox.showerror("Generation failed", f"Generator exited with code {rc}")
+                    return
+                try:
+                    if schema_path.exists():
+                        try:
+                            schema_path.replace(dest_path)
+                        except Exception:
+                            shutil.copyfile(schema_path, dest_path)
+                            try:
+                                schema_path.unlink()
+                            except Exception:
+                                pass
+                    if dest_path.exists():
+                        self.var_terms.set(str(dest_path))
+                        self.status.set("Terms spreadsheet ready.")
+                        self.append_log(f"[GUI] Terms spreadsheet available: {dest_path}\n")
+                    else:
+                        self.status.set("Ready to scan.")
+                        messagebox.showwarning(
+                            "Generation incomplete",
+                            f"Generator completed but {dest_path} was not created.",
+                        )
+                except Exception as exc:
+                    self.status.set("Ready to scan.")
+                    messagebox.showerror("Post-processing failed", str(exc))
+
+        threading.Thread(target=_pump, daemon=True).start()
+
+    def _open_terms_spreadsheet(self):
+        path = Path(self.var_terms.get()).expanduser()
+        if not path.exists():
+            messagebox.showinfo(
+                "Terms spreadsheet missing",
+                f"Terms spreadsheet not found at:\n{path}\n\nCreate it first.",
+            )
+            return
+        try:
+            self.status.set("Opening terms spreadsheet...")
+            if sys.platform.startswith("win"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+            self.status.set("Terms spreadsheet opened.")
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _poll_runner(self):
+        running = self.runner.proc is not None
+        if running:
+            self._run_active = True
+        else:
+            if self._run_active:
+                self._run_active = False
+                self.status.set("Scan finished.")
+                self.btn_run.configure(state=tk.NORMAL)
+                self.btn_stop.configure(state=tk.DISABLED)
+        self.after(750, self._poll_runner)
 
     # --- Settings (env knobs) ---
     def _open_settings(self):
@@ -407,17 +573,25 @@ class App(tk.Tk):
             proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             self.append_log("[GUI] Compiling master...\n")
             def _pump():
+                rc = 0
                 try:
-                    for line in proc.stdout:  # type: ignore[arg-type]
-                        self.append_log(line)
+                    stream = proc.stdout
+                    if stream is not None:
+                        for line in stream:
+                            self.append_log(line)
+                    rc = proc.wait()
                 except Exception as e:
                     self.append_log(f"[WARN] Master compile reader error: {e}\n")
-                finally:
                     try:
-                        proc.wait(timeout=1)
+                        rc = proc.wait(timeout=1)
                     except Exception:
-                        pass
-                    self.status.set("Master compile finished.")
+                        rc = 1
+                finally:
+                    if rc == 0:
+                        self.status.set("Master compile finished.")
+                    else:
+                        self.status.set("Master compile failed.")
+                        messagebox.showerror("Compile failed", f"compile_master.py exited with code {rc}")
             threading.Thread(target=_pump, daemon=True).start()
         except Exception as e:
             messagebox.showerror("Compile failed", str(e))
@@ -430,12 +604,14 @@ class App(tk.Tk):
             if not target:
                 messagebox.showinfo("No master", "No master workbook found yet. Compile it first.")
                 return
+            self.status.set("Opening master workbook...")
             if sys.platform.startswith("win"):
                 os.startfile(str(target))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(target)])
             else:
                 subprocess.Popen(["xdg-open", str(target)])
+            self.status.set("Master workbook opened.")
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
 

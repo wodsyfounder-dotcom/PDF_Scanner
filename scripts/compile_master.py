@@ -11,6 +11,10 @@ Output:
   - Product_Data_File/master.xlsx (preferred, pandas + xlsxwriter)
   - Fallback: Product_Data_File/master.csv
 
+Workbook layout:
+  - Leading rows reserved for "Program" and "Space Vehicle" metadata.
+  - Columns include Grouping (group_after), Units, Row Label, and Column Label to align multi-row terms.
+
 No external executables required. Uses pandas/xlsxwriter if available; otherwise falls back to CSV.
 """
 from __future__ import annotations
@@ -19,7 +23,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,69 +105,171 @@ def load_results_json(run_folder: Path) -> List[Dict]:
         return []
 
 
-def build_master() -> Tuple[List[str], Dict[str, Dict[str, Optional[str]]]]:
-    """Return (serials, matrix) where matrix[term][sn] = value string or None."""
+def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
+    """Return (serials, rows) including per-term row/column breakdown and captured values."""
     reg = load_registry()
     if not reg:
         print("[WARN] No registry entries found. Nothing to compile.")
-        return [], {}
+        return [], []
 
     # Keep last occurrence per SN (registry is already latest-first, but be safe)
     last_for_sn: Dict[str, Path] = {}
     for sn, rf in reg:
         last_for_sn[sn] = rf
 
+    serials = list(last_for_sn.keys())
     terms_order: List[str] = []
-    matrix: Dict[str, Dict[str, Optional[str]]] = {}
+    term_map: Dict[str, Dict[str, Any]] = {}
+
+    def norm(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        return str(value).strip()
+
+    def extract_units(entry: Dict[str, Any]) -> str:
+        direct = norm(entry.get("units"))
+        if direct:
+            return direct
+        hints = entry.get("units_hint")
+        if isinstance(hints, (list, tuple)):
+            parts = [norm(h) for h in hints if norm(h)]
+            if parts:
+                # Deduplicate while preserving order
+                unique: List[str] = []
+                seen: set[str] = set()
+                for part in parts:
+                    key = part.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    unique.append(part)
+                return " | ".join(unique)
+        return ""
+
+    def extract_value(entry: Dict[str, Any]) -> Optional[str]:
+        for key in ("number", "text", "string", "value"):
+            if key in entry:
+                val = entry.get(key)
+                if val is None:
+                    continue
+                text = norm(val)
+                return text
+        return None
 
     for sn, rf in last_for_sn.items():
         rows = load_results_json(rf)
         if not rows:
             print(f"[WARN] No scan_results.json in {rf}")
             continue
-        # Build a best-value per term for this SN (first occurrence wins per run)
-        seen_terms = set()
+        # Capture every row for this SN, grouped by term with row/column detail
         for row in rows:
             if (row.get("serial_number") or "").strip() != sn:
                 continue
             term = (row.get("term") or "").strip()
-            if not term or term in seen_terms:
+            if not term:
                 continue
-            val = row.get("number")
-            seen_terms.add(term)
-            if term not in matrix:
-                matrix[term] = {}
+            value = extract_value(row)
+            if value is None:
+                value = ""
+
+            if term not in term_map:
+                term_map[term] = {
+                    "group": "",
+                    "units": "",
+                    "order": [],
+                    "entries": {}
+                }
                 terms_order.append(term)
-            matrix[term][sn] = val
+            term_info = term_map[term]
 
-    serials = list(last_for_sn.keys())
-    return serials, matrix
+            group_after = norm(row.get("group_after"))
+            if group_after and not term_info["group"]:
+                term_info["group"] = group_after
+
+            units = extract_units(row)
+            if units and not term_info["units"]:
+                term_info["units"] = units
+
+            row_label = norm(row.get("line") or row.get("row_label"))
+            column_label = norm(row.get("column") or row.get("column_label"))
+            key = (row_label.lower(), column_label.lower())
+
+            entries: Dict[Tuple[str, str], Dict[str, Any]] = term_info["entries"]
+            if key not in entries:
+                entries[key] = {
+                    "row_label": row_label,
+                    "column_label": column_label,
+                    "values": {}
+                }
+                term_info["order"].append(key)
+            entry = entries[key]
+            entry["values"][sn] = value
+
+    term_rows: List[Dict[str, Any]] = []
+    for term in terms_order:
+        info = term_map.get(term)
+        if not info:
+            continue
+        for key in info["order"]:
+            entry = info["entries"][key]
+            term_rows.append({
+                "term": term,
+                "group": info["group"],
+                "units": info["units"],
+                "row_label": entry["row_label"],
+                "column_label": entry["column_label"],
+                "values": entry["values"],
+            })
+
+    return serials, term_rows
 
 
-def write_master(serials: List[str], matrix: Dict[str, Dict[str, Optional[str]]]) -> None:
+def write_master(serials: List[str], term_rows: List[Dict[str, Any]]) -> None:
     EXPORTS.mkdir(parents=True, exist_ok=True)
+    base_columns = ["Term", "Grouping", "Units", "Row Label", "Column Label"]
+    header = base_columns + serials
+
+    def blank_meta(label: str) -> Dict[str, Any]:
+        row = {col: "" for col in header}
+        row["Term"] = label
+        return row
+
+    structured_rows: List[Dict[str, Any]] = [
+        blank_meta("Program"),
+        blank_meta("Space Vehicle"),
+    ]
+
+    for entry in term_rows:
+        row: Dict[str, Any] = {col: "" for col in header}
+        row["Term"] = entry.get("term", "")
+        row["Grouping"] = entry.get("group", "")
+        row["Units"] = entry.get("units", "")
+        row["Row Label"] = entry.get("row_label", "")
+        row["Column Label"] = entry.get("column_label", "")
+        values = entry.get("values", {}) or {}
+        for sn in serials:
+            row[sn] = values.get(sn, "")
+        structured_rows.append(row)
+
     # Try Excel via pandas/xlsxwriter
     try:
         import pandas as pd  # type: ignore
         import xlsxwriter  # noqa: F401
-        rows = []
-        for term in matrix.keys():
-            row = {"Term": term}
-            for sn in serials:
-                row[sn] = matrix.get(term, {}).get(sn)
-            rows.append(row)
-        df = pd.DataFrame(rows, columns=["Term"] + serials)
+        df = pd.DataFrame(structured_rows, columns=header)
         with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="master", index=False)
             ws = writer.sheets["master"]
-            ws.freeze_panes(1, 1)
+            # Freeze header + Program/Space Vehicle rows, and keep core columns visible.
+            ws.freeze_panes(3, 3)
             # Auto-size columns
             for i, col in enumerate(df.columns):
                 try:
                     max_len = int(df[col].astype(str).map(len).max()) if not df.empty else len(col)
                 except Exception:
                     max_len = len(col)
-                ws.set_column(i, i, min(60, max(10, max_len + 2)))
+                ws.set_column(i, i, min(60, max(12, max_len + 2)))
         print(f"[DONE] Master workbook -> {OUT_XLSX}")
         return
     except Exception as e:
@@ -173,11 +279,9 @@ def write_master(serials: List[str], matrix: Dict[str, Dict[str, Optional[str]]]
     try:
         with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["Term"] + serials)
-            for term in matrix.keys():
-                row = [term]
-                for sn in serials:
-                    row.append(matrix.get(term, {}).get(sn))
+            w.writerow(header)
+            for row_dict in structured_rows:
+                row = [row_dict.get(col, "") for col in header]
                 w.writerow(row)
         print(f"[DONE] Master CSV -> {OUT_CSV}")
     except Exception as e:
@@ -185,10 +289,10 @@ def write_master(serials: List[str], matrix: Dict[str, Dict[str, Optional[str]]]
 
 
 def main() -> None:
-    serials, matrix = build_master()
+    serials, rows = build_master()
     if not serials:
         sys.exit(0)
-    write_master(serials, matrix)
+    write_master(serials, rows)
 
 
 if __name__ == "__main__":
