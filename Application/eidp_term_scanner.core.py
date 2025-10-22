@@ -1295,10 +1295,6 @@ def _locate_group_anchor(text: str, anchor: Optional[str], case_sensitive: bool,
 def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> Optional[MatchResult]:
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
         return None
-    try:
-        dpi = int(os.environ.get('OCR_DPI', '700'))
-    except Exception:
-        dpi = 700
     langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
     langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
     try:
@@ -1313,19 +1309,29 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
     fmt_pat = _compile_value_regex(spec.value_format or '') if spec.value_format else None
 
     try:
+        dpi_base = int(os.environ.get('OCR_DPI', '700'))
+    except Exception:
+        dpi_base = 700
+    dpi_candidates = [dpi_base]
+    if dpi_base > 700:
+        dpi_candidates.append(700)
+
+    try:
         doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
     except Exception:
         doc = None
 
     pages = spec.pages if spec.pages else ([] if doc is None else list(range(1, doc.page_count + 1)))
-    after_found = not bool(spec.group_after)
-    before_triggered = False
-    for p in pages:
-        if before_triggered:
-            break
-        items = _easyocr_boxes_for_pages(pdf_path, [p], dpi=dpi, langs=langs).get(p, [])
-        if not items:
-            continue
+
+    for dpi in dpi_candidates:
+        after_found = not bool(spec.group_after)
+        before_triggered = False
+        for p in pages:
+            if before_triggered:
+                break
+            items = _easyocr_boxes_for_pages(pdf_path, [p], dpi=dpi, langs=langs).get(p, [])
+            if not items:
+                continue
 
         # Optional grouping anchor: require row below this text if provided
         group_anchor_y = None
@@ -1392,13 +1398,13 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
         # Find best row and column headers
         row_candidates = [(it, _fuzzy_ratio(it['text'], row_name)) for it in items if row_name]
         row_candidates = [t for t in row_candidates if t[1] >= fuzz]
+        if group_anchor_y is not None:
+            row_candidates = [t for t in row_candidates if t[0]['cy'] > group_anchor_y]
+        if group_upper_y is not None:
+            row_candidates = [t for t in row_candidates if t[0]['cy'] < group_upper_y]
         if not row_candidates:
             continue
         row_it, _ = max(row_candidates, key=lambda t: t[1])
-        if group_anchor_y is not None and not (row_it['cy'] > group_anchor_y):
-            continue
-        if group_upper_y is not None and not (row_it['cy'] < group_upper_y):
-            continue
 
         row_label_right = float(row_it.get('x1', row_it.get('cx', 0.0) or 0.0))
 
@@ -1428,6 +1434,23 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
 
         col_cands.sort(key=lambda t: (t[0], t[1]))
         _, _, hdr = col_cands[0]
+
+        next_row_y = None
+        for cand in items:
+            try:
+                cx_cand = cand.get('cx', 0.0)
+                cy_cand = cand.get('cy', 0.0)
+            except Exception:
+                continue
+            if cx_cand >= row_label_right:
+                continue
+            if cy_cand <= row_it.get('cy', 0.0):
+                continue
+            txt_c = str(cand.get('text') or '')
+            if not txt_c or not any(ch.isalpha() for ch in txt_c):
+                continue
+            if next_row_y is None or cy_cand < next_row_y:
+                next_row_y = cy_cand
 
         row_h = max(1.0, (row_it['y1'] - row_it['y0']))
         col_w = max(1.0, (hdr['x1'] - hdr['x0']))
@@ -1506,6 +1529,56 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
                 column_label=str(hdr.get('text', '') or ''),
                 text_source="ocr",
             )
+        else:
+            fallback_tokens: List[Dict[str, float]] = []
+            row_band = max(row_h * 6.0, 250.0)
+            lower_bound = row_it['cy'] - row_band
+            upper_bound = row_it['cy'] + row_band
+            upper_cut = None
+            if group_upper_y is not None:
+                upper_cut = group_upper_y
+            if next_row_y is not None:
+                upper_cut = min(upper_cut, next_row_y) if upper_cut is not None else next_row_y
+            for it in items:
+                txt = str(it.get('text') or '')
+                num = _first_numeric(txt)
+                if not num:
+                    continue
+                if it.get('cx', 0.0) <= row_label_right:
+                    continue
+                if group_anchor_y is not None and it.get('cy', 0.0) <= group_anchor_y:
+                    continue
+                if upper_cut is not None and it.get('cy', 0.0) >= upper_cut:
+                    continue
+                if not (lower_bound <= it.get('cy', 0.0) <= upper_bound):
+                    continue
+                fallback_tokens.append(it)
+            if fallback_tokens:
+                fallback_tokens.sort(key=lambda it: (abs(it.get('cx', 0.0) - hdr.get('cx', 0.0)),
+                                                     abs(it.get('cy', 0.0) - row_it.get('cy', 0.0))))
+                best_candidate = fallback_tokens[0]
+                best_val = _first_numeric(str(best_candidate.get('text') or ''))
+                if best_val:
+                    if doc:
+                        try:
+                            doc.close()
+                        except Exception:
+                            pass
+                    return MatchResult(
+                        pdf_file=pdf_path.name,
+                        serial_number=serial_number,
+                        term=spec.term,
+                        page=p,
+                        number=best_val,
+                        units=(None if ret_type == 'string' else extract_units(best_val)),
+                        context="row='{}' col='{}'".format(row_it.get('text',''), hdr.get('text','')),
+                        method="easyocr:xy(dpi={})".format(dpi),
+                        found=True,
+                        confidence=float(best_candidate.get('conf', 0.0)),
+                        row_label=str(row_it.get('text', '') or ''),
+                        column_label=str(hdr.get('text', '') or ''),
+                        text_source="ocr",
+                    )
 
     if doc:
         try:
