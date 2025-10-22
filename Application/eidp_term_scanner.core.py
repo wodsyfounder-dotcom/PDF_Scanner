@@ -2435,25 +2435,43 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                         anchor_norm = _normalize_anchor_token(spec.group_after)
                         ga_thresh = max(0.45, fuzz - 0.2)
                         best_ga_score = -1.0
-                        for ln_ga, ws_ga in lines_map.items():
-                            line_ws = sorted(ws_ga, key=lambda k: k[0])
-                            line_txt = " ".join(str(x[4]) for x in line_ws)
-                            sc_ga = _fuzzy_ratio(line_txt, spec.group_after)
-                            line_norm = _normalize_anchor_token(line_txt)
-                            if anchor_norm and anchor_norm in line_norm:
-                                sc_ga = max(sc_ga, 0.99)
-                            if sc_ga >= ga_thresh:
-                                cy_vals = [((float(w[1]) + float(w[3])) / 2.0) for w in line_ws]
-                                if not cy_vals:
-                                    continue
-                                cy = min(cy_vals)
-                                if (
-                                    group_anchor_y is None
-                                    or cy > group_anchor_y
-                                    or (abs((group_anchor_y or 0.0) - cy) <= 0.5 and sc_ga > best_ga_score)
-                                ):
-                                    group_anchor_y = cy
-                                    best_ga_score = sc_ga
+                    anchor_tokens = [
+                        _normalize_anchor_token(tok)
+                        for tok in re.split(r"\s+", spec.group_after)
+                        if tok.strip()
+                    ]
+                    anchor_primary = anchor_tokens[0] if anchor_tokens else None
+                    for ln_ga, ws_ga in lines_map.items():
+                        line_ws = sorted(ws_ga, key=lambda k: k[0])
+                        line_txt = " ".join(str(x[4]) for x in line_ws)
+                        sc_ga = _fuzzy_ratio(line_txt, spec.group_after)
+                        line_norm = _normalize_anchor_token(line_txt)
+                        if anchor_norm and anchor_norm in line_norm:
+                            sc_ga = max(sc_ga, 0.99)
+                        if sc_ga >= ga_thresh:
+                            cy_vals = []
+                            for w in line_ws:
+                                try:
+                                    txt = str(w[4]) or ""
+                                except Exception:
+                                    txt = ""
+                                tok_norm = _normalize_anchor_token(txt)
+                                cy_word = (float(w[1]) + float(w[3])) / 2.0
+                                if tok_norm:
+                                    if anchor_primary and tok_norm == anchor_primary:
+                                        cy_vals.append(cy_word)
+                                    elif not anchor_primary and anchor_norm and tok_norm == anchor_norm:
+                                        cy_vals.append(cy_word)
+                            if not cy_vals:
+                                continue
+                            cy = max(cy_vals)
+                            if (
+                                group_anchor_y is None
+                                or cy > group_anchor_y
+                                or (abs((group_anchor_y or 0.0) - cy) <= 0.5 and sc_ga > best_ga_score)
+                            ):
+                                group_anchor_y = cy
+                                best_ga_score = sc_ga
                         if group_anchor_y is not None:
                             after_found = True
                     if spec.group_after and not after_found:
@@ -2465,6 +2483,12 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                         anchor_norm = _normalize_anchor_token(spec.group_before)
                         gb_thresh = max(0.45, fuzz - 0.2)
                         best_gb_score = -1.0
+                        anchor_tokens_before = [
+                            _normalize_anchor_token(tok)
+                            for tok in re.split(r"\s+", spec.group_before or "")
+                            if tok.strip()
+                        ]
+                        anchor_primary_before = anchor_tokens_before[0] if anchor_tokens_before else None
                         for ln_gb, ws_gb in lines_map.items():
                             line_ws = sorted(ws_gb, key=lambda k: k[0])
                             line_txt = " ".join(str(x[4]) for x in line_ws)
@@ -2473,10 +2497,22 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
                             if anchor_norm and anchor_norm in line_norm:
                                 sc_gb = max(sc_gb, 0.99)
                             if sc_gb >= gb_thresh:
-                                cy_vals = [((float(w[1]) + float(w[3])) / 2.0) for w in line_ws]
+                                cy_vals = []
+                                for w in line_ws:
+                                    try:
+                                        txt = str(w[4]) or ""
+                                    except Exception:
+                                        txt = ""
+                                    tok_norm = _normalize_anchor_token(txt)
+                                    cy_word = (float(w[1]) + float(w[3])) / 2.0
+                                    if tok_norm:
+                                        if anchor_primary_before and tok_norm == anchor_primary_before:
+                                            cy_vals.append(cy_word)
+                                        elif not anchor_primary_before and anchor_norm and tok_norm == anchor_norm:
+                                            cy_vals.append(cy_word)
                                 if not cy_vals:
                                     continue
-                                cy = max(cy_vals)
+                                cy = min(cy_vals)
                                 if (
                                     group_before_y is None
                                     or cy < group_before_y
