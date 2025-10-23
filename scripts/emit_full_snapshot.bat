@@ -21,9 +21,12 @@ call :PRINT_FILE "gui.py"
 call :PRINT_FILE "Application\eidp_term_scanner.py"
 call :PRINT_FILE "Application\eidp_term_scanner.core.py"
 call :PRINT_FILE "user_inputs\scanner.env"
+call :PRINT_FILE "scripts\ocr_page_to_excel.py"
 
 for %%F in ("scripts\*.py") do (
-  call :PRINT_FILE "%%~fF"
+  if /I not "%%~nxF"=="ocr_page_to_excel.py" (
+    call :PRINT_FILE "%%~fF"
+  )
 )
 
 >> "%OUT%" echo ===== END OF SNAPSHOT =====
