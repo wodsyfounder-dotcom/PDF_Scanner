@@ -1983,162 +1983,565 @@ def _compile_value_regex(fmt: str) -> Optional[re.Pattern]:
         return None
 
 
+
+
+
 def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> MatchResult:
-    # Prepare page text map (prefer cache)
-    key = _pdf_cache_key(pdf_path)
-    if key in _PAGE_TEXT_CACHE:
-        full_map, pipeline, _pc = _PAGE_TEXT_CACHE[key]
-        page_text_map = {p: (full_map.get(p) or '') for p in (spec.pages or full_map.keys())}
-    else:
-        page_text_map, pipeline = extract_pages_text(pdf_path, spec.pages if spec.pages else list(range(1, 10000)), do_ocr_fallback=False)
+    anchor_text = (spec.anchor or spec.term or '').strip()
+    ret_kind = (spec.return_type or 'number').strip().lower()
+    fmt_pat = _compile_value_regex(spec.value_format or '') if spec.value_format else None
+    anchor_tokens = [tok for tok in re.split(r"\s+", anchor_text) if tok]
+    anchor_tokens_lower = [tok.lower() for tok in anchor_tokens]
+    anchor_tokens_norm = [_normalize_anchor_token(tok) for tok in anchor_tokens]
+    anchor_lower_set = set(anchor_tokens_lower)
+    anchor_norm_set = {tok for tok in anchor_tokens_norm if tok}
 
-    # Prepare bounds for group_after/group_before
-    after_found = not bool(spec.group_after)
-    before_triggered = False
+    def _is_anchor_duplicate(token: str) -> bool:
+        if not token:
+            return False
+        token_norm = _normalize_anchor_token(token)
+        if case_sensitive:
+            if token in anchor_tokens:
+                return True
+            if token_norm and token_norm in anchor_norm_set:
+                return True
+            return False
+        if token.lower() in anchor_lower_set:
+            return True
+        if token_norm and token_norm in anchor_norm_set:
+            return True
+        return False
 
-    def _search_string_value(text: str, term: str, fmt: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-        if not text:
-            return None, None
-        pat = _compile_value_regex(fmt or '') if fmt else None
-        src = text
-        hay = src if case_sensitive else src.lower()
-        needle = term if case_sensitive else term.lower()
-        start = 0
-        while True:
-            pos = hay.find(needle, start)
-            if pos < 0:
+    def _match_anchor(token_texts: List[str], token_norms: List[str]) -> Optional[Tuple[int, int]]:
+        if not anchor_tokens:
+            return None
+        comparables = token_texts if case_sensitive else [t.lower() for t in token_texts]
+        span = len(anchor_tokens)
+        for idx in range(0, len(token_texts) - span + 1):
+            ok = True
+            for j in range(span):
+                expected = anchor_tokens[j] if case_sensitive else anchor_tokens_lower[j]
+                current = comparables[idx + j]
+                if current != expected:
+                    expected_norm = anchor_tokens_norm[j]
+                    if not expected_norm or token_norms[idx + j] != expected_norm:
+                        ok = False
+                        break
+            if ok:
+                return idx, idx + span - 1
+        return None
+
+    def _annotate_number(raw_value: str) -> Tuple[str, Optional[str]]:
+        number_out = raw_value.strip()
+        numeric_clean = numeric_only(raw_value)
+        numeric_val: Optional[float] = None
+        if numeric_clean is not None:
+            try:
+                numeric_val = float(numeric_clean.replace(',', ''))
+            except Exception:
+                numeric_val = None
+        range_violation = False
+        if numeric_val is not None and (spec.range_min is not None or spec.range_max is not None):
+            if spec.range_min is not None and numeric_val < spec.range_min:
+                range_violation = True
+            if spec.range_max is not None and numeric_val > spec.range_max:
+                range_violation = True
+        if range_violation and not number_out.rstrip().endswith('(range violation)'):
+            number_out = f"{number_out} (range violation)"
+        return number_out, extract_units(raw_value)
+
+    def _search_with_pymupdf() -> Tuple[Optional[MatchResult], bool, Optional[str]]:
+        if not _HAVE_PYMUPDF:
+            return None, False, None
+        if not anchor_tokens:
+            return None, False, "No anchor text specified for nearest-line mode"
+        try:
+            doc = fitz.open(str(pdf_path))
+        except Exception:
+            return None, False, None
+        anchor_seen = False
+        failure_local: Optional[str] = None
+        try:
+            total_pages = getattr(doc, 'page_count', 0)
+            target_pages = spec.pages if spec.pages else list(range(1, total_pages + 1))
+            for p in target_pages:
+                if p < 1 or (total_pages and p > total_pages):
+                    continue
+                try:
+                    page = doc.load_page(p - 1)
+                except Exception:
+                    continue
+                words = page.get_text("words") or []
+                if not words:
+                    continue
+                lines_map: Dict[int, List[List[float]]] = {}
+                for w in words:
+                    line_id = w[6] if len(w) >= 7 else round(float(w[1]))
+                    lines_map.setdefault(line_id, []).append(w)
+                group_after_y: Optional[float] = None
+                if spec.group_after:
+                    pattern = spec.group_after if case_sensitive else spec.group_after.lower()
+                    for ws in lines_map.values():
+                        ordered = sorted(ws, key=lambda k: k[0])
+                        line_text = " ".join(str(x[4]) for x in ordered)
+                        cmp_text = line_text if case_sensitive else line_text.lower()
+                        if pattern in cmp_text:
+                            cy_vals = [(float(w[1]) + float(w[3])) / 2.0 for w in ordered]
+                            if cy_vals:
+                                candidate = max(cy_vals)
+                                if group_after_y is None or candidate > group_after_y:
+                                    group_after_y = candidate
+                group_before_y: Optional[float] = None
+                if spec.group_before:
+                    pattern = spec.group_before if case_sensitive else spec.group_before.lower()
+                    for ws in lines_map.values():
+                        ordered = sorted(ws, key=lambda k: k[0])
+                        line_text = " ".join(str(x[4]) for x in ordered)
+                        cmp_text = line_text if case_sensitive else line_text.lower()
+                        if pattern in cmp_text:
+                            cy_vals = [(float(w[1]) + float(w[3])) / 2.0 for w in ordered]
+                            if cy_vals:
+                                candidate = min(cy_vals)
+                                if group_before_y is None or candidate < group_before_y:
+                                    group_before_y = candidate
+                sorted_lines = sorted(
+                    (
+                        (line_id, sorted(ws, key=lambda k: k[0]))
+                        for line_id, ws in lines_map.items()
+                        if ws
+                    ),
+                    key=lambda item: min((float(w[1]) + float(w[3])) / 2.0 for w in item[1])
+                )
+                for _, row_words in sorted_lines:
+                    token_texts = [str(w[4]) if len(w) > 4 else '' for w in row_words]
+                    token_norms = [_normalize_anchor_token(t) for t in token_texts]
+                    cy_vals = [(float(w[1]) + float(w[3])) / 2.0 for w in row_words if len(w) >= 4]
+                    if not cy_vals:
+                        continue
+                    row_cy = sum(cy_vals) / len(cy_vals)
+                    if group_after_y is not None and row_cy <= group_after_y:
+                        continue
+                    if group_before_y is not None and row_cy >= group_before_y:
+                        continue
+                    match_span = _match_anchor(token_texts, token_norms)
+                    if not match_span:
+                        continue
+                    anchor_seen = True
+                    start_idx, end_idx = match_span
+                    tail_candidates: List[Tuple[str, List[float]]] = []
+                    for w in row_words[end_idx + 1:]:
+                        if len(w) < 5:
+                            continue
+                        token = str(w[4]).strip()
+                        if not token:
+                            continue
+                        if _is_anchor_duplicate(token):
+                            continue
+                        tail_candidates.append((token, w))
+                    if not tail_candidates:
+                        failure_local = "No value to the right of anchor on same line"
+                        continue
+                    line_text = " ".join(token_texts).strip()
+                    if ret_kind == 'string':
+                        value_text = None
+                        if fmt_pat:
+                            for token, _ in tail_candidates:
+                                m = fmt_pat.search(token)
+                                if m:
+                                    value_text = m.group(0)
+                                    break
+                        if value_text is None:
+                            for token, _ in tail_candidates:
+                                num = _first_numeric(token)
+                                if num:
+                                    value_text = num
+                                    break
+                        if value_text is None and tail_candidates:
+                            value_text = tail_candidates[0][0]
+                        if value_text:
+                            return MatchResult(
+                                pdf_file=pdf_path.name,
+                                serial_number=serial_number,
+                                term=spec.term,
+                                page=p,
+                                number=value_text,
+                                units=None,
+                                context=line_text[:200],
+                                method="pymupdf:nearest-line",
+                                found=True,
+                                confidence=None,
+                                row_label=None,
+                                column_label=None,
+                                text_source="pdf",
+                            ), True, None
+                        failure_local = "No value to the right of anchor on same line"
+                        continue
+                    number_data = None
+                    for token, _word in tail_candidates:
+                        numeric_candidate = _first_numeric(token)
+                        if not numeric_candidate:
+                            continue
+                        number_data = _annotate_number(numeric_candidate)
+                        break
+                    if number_data:
+                        number_out, units_value = number_data
+                        return MatchResult(
+                            pdf_file=pdf_path.name,
+                            serial_number=serial_number,
+                            term=spec.term,
+                            page=p,
+                            number=number_out,
+                            units=units_value,
+                            context=line_text[:200],
+                            method="pymupdf:nearest-line",
+                            found=True,
+                            confidence=None,
+                            row_label=None,
+                            column_label=None,
+                            text_source="pdf",
+                        ), True, None
+                    failure_local = "No value to the right of anchor on same line"
+        finally:
+            try:
+                doc.close()
+            except Exception:
+                pass
+        return None, anchor_seen, failure_local
+
+    def _search_with_pdf_text() -> Tuple[Optional[MatchResult], bool, Optional[str]]:
+        if not anchor_tokens:
+            return None, False, "No anchor text specified for nearest-line mode"
+        try:
+            page_count = get_pdf_page_count(pdf_path)
+        except Exception:
+            page_count = 0
+        target_pages = spec.pages if spec.pages else (list(range(1, page_count + 1)) if page_count else [1])
+        try:
+            page_text_map, pipeline = extract_pages_text(pdf_path, target_pages, do_ocr_fallback=False)
+        except Exception:
+            page_text_map, pipeline = {}, "text"
+        else:
+            pipeline = pipeline or "text"
+        after_found = not bool(spec.group_after)
+        before_triggered = False
+        anchor_seen = False
+        failure_local: Optional[str] = None
+        for p in target_pages:
+            if before_triggered:
                 break
-            lb = src.rfind(chr(10), 0, pos) + 1
-            rb = src.find(chr(10), pos)
-            if rb == -1:
-                rb = len(src)
-            tail = src[pos:rb]
-            region = tail
-            if pat:
-                m = pat.search(region)
-                if m:
-                    return m.group(0), region[max(0,m.start()-30):min(len(region), m.end()+30)]
-            right = region[len(term):]
-            toks = [t for t in re.split(r"\s+", right) if t]
-            if toks:
-                v = toks[0]
-                return v, region[:min(len(region), len(term)+len(v)+30)]
-            start = pos + max(1, len(needle))
-        return None, None
-
-    failure_reason = None
-
-    for p in sorted(page_text_map.keys()):
-        if before_triggered:
-            break
-        raw_text = page_text_map[p] or ''
-        if not raw_text:
-            continue
-        slice_group_after = spec.group_after if not after_found else None
-        slice_group_before = spec.group_before if not before_triggered else None
-        text, page_after_hit, page_before_hit = _slice_text_by_groups(raw_text, slice_group_after, slice_group_before, case_sensitive)
-        if spec.group_after and not after_found:
-            if not page_after_hit:
+            raw_text = page_text_map.get(p, '')
+            if not raw_text:
                 continue
-            after_found = True
-        else:
-            after_found = True
-        if page_before_hit:
-            before_triggered = True
-        if not text.strip():
-            if page_before_hit:
-                break
-            continue
-
-        row_name = (spec.line or spec.term or '').strip()
-        column_name = (spec.column or '').strip()
-        ret_kind = (spec.return_type or 'number').strip().lower()
-        table_hit = None
-        if row_name and column_name:
-            table_hit = _extract_value_from_text_table(text, row_name, column_name, case_sensitive)
-        if table_hit:
-            val, row_line_ctx, header_label = table_hit
-            if ret_kind == 'string':
-                fmt_ok = True
-                if spec.value_format:
-                    fmt_pat = _compile_value_regex(spec.value_format)
-                    if fmt_pat and not fmt_pat.search(val):
-                        fmt_ok = False
-                if fmt_ok:
-                    return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                                       page=p, number=val, units=None, context=row_line_ctx[:200],
-                                       method="text:table", found=True, text_source='pdf',
-                                       row_label=row_name, column_label=header_label)
+            slice_after = spec.group_after if not after_found else None
+            slice_before = spec.group_before if not before_triggered else None
+            text_section, after_hit, before_hit = _slice_text_by_groups(raw_text, slice_after, slice_before, case_sensitive)
+            if spec.group_after and not after_found:
+                if not after_hit:
+                    continue
+                after_found = True
             else:
-                numeric_candidate = _first_numeric(val) or _first_numeric(row_line_ctx)
-                if numeric_candidate:
-                    range_violation = False
-                    if spec.range_min is not None or spec.range_max is not None:
+                after_found = True
+            if before_hit:
+                before_triggered = True
+            if not text_section.strip():
+                if before_hit:
+                    break
+                continue
+            for line in text_section.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                tokens = re.findall(r"\S+", line)
+                if not tokens:
+                    continue
+                token_norms = [_normalize_anchor_token(t) for t in tokens]
+                match_span = _match_anchor(tokens, token_norms)
+                if not match_span:
+                    continue
+                anchor_seen = True
+                start_idx, end_idx = match_span
+                tail_tokens = []
+                for tok in tokens[end_idx + 1:]:
+                    if _is_anchor_duplicate(tok):
+                        continue
+                    tail_tokens.append(tok)
+                if not tail_tokens:
+                    failure_local = "No value to the right of anchor on same line"
+                    continue
+                if ret_kind == 'string':
+                    value_text = None
+                    if fmt_pat:
+                        for tok in tail_tokens:
+                            m = fmt_pat.search(tok)
+                            if m:
+                                value_text = m.group(0)
+                                break
+                    if value_text is None:
+                        for tok in tail_tokens:
+                            num = _first_numeric(tok)
+                            if num:
+                                value_text = num
+                                break
+                    if value_text is None and tail_tokens:
+                        value_text = tail_tokens[0]
+                    if value_text:
+                        return MatchResult(
+                            pdf_file=pdf_path.name,
+                            serial_number=serial_number,
+                            term=spec.term,
+                            page=p,
+                            number=value_text,
+                            units=None,
+                            context=line[:200],
+                            method="text:nearest-line",
+                            found=True,
+                            confidence=None,
+                            row_label=None,
+                            column_label=None,
+                            text_source="pdf",
+                        ), True, None
+                    failure_local = "No value to the right of anchor on same line"
+                    continue
+                number_data = None
+                for tok in tail_tokens:
+                    numeric_candidate = _first_numeric(tok)
+                    if numeric_candidate:
+                        number_data = _annotate_number(numeric_candidate)
+                        break
+                if number_data:
+                    number_out, units_value = number_data
+                    return MatchResult(
+                        pdf_file=pdf_path.name,
+                        serial_number=serial_number,
+                        term=spec.term,
+                        page=p,
+                        number=number_out,
+                        units=units_value,
+                        context=line[:200],
+                        method="text:nearest-line",
+                        found=True,
+                        confidence=None,
+                        row_label=None,
+                        column_label=None,
+                        text_source="pdf",
+                    ), True, None
+                failure_local = "No value to the right of anchor on same line"
+        return None, anchor_seen, failure_local
+
+    def _group_easyocr_rows(items: List[Dict[str, float]]) -> List[Dict[str, object]]:
+        rows: List[Dict[str, object]] = []
+        for it in sorted(items, key=lambda d: (float(d.get('cy', 0.0)), float(d.get('cx', 0.0)))):
+            cy = float(it.get('cy', 0.0))
+            if not rows or abs(cy - float(rows[-1]['cy'])) > 8.0:
+                rows.append({'cy': cy, 'items': [it]})
+            else:
+                rows[-1]['items'].append(it)
+        for row in rows:
+            row_items = row['items']  # type: ignore[assignment]
+            row_items.sort(key=lambda d: float(d.get('cx', 0.0)))
+            row['text'] = " ".join(str(d.get('text', '') or '') for d in row_items).strip()
+        return rows
+
+    def _search_with_easyocr() -> Tuple[Optional[MatchResult], bool, Optional[str]]:
+        if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
+            return None, False, None
+        if not anchor_tokens:
+            return None, False, "No anchor text specified for nearest-line mode"
+        langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+        langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+        try:
+            dpi_base = int(os.environ.get('OCR_DPI', '700'))
+        except Exception:
+            dpi_base = 700
+        dpi_candidates = [dpi_base]
+        if dpi_base > 700:
+            dpi_candidates.append(700)
+        try:
+            doc = fitz.open(str(pdf_path))
+            total_pages = getattr(doc, 'page_count', 0)
+        except Exception:
+            doc = None
+            total_pages = 0
+        if doc:
+            try:
+                doc.close()
+            except Exception:
+                pass
+        target_pages = spec.pages if spec.pages else list(range(1, total_pages + 1))
+        if not target_pages:
+            return None, False, None
+        anchor_seen = False
+        failure_local: Optional[str] = None
+        for dpi in dpi_candidates:
+            boxes_by_page = _easyocr_boxes_for_pages(pdf_path, target_pages, dpi=dpi, langs=langs)
+            for p in target_pages:
+                items = boxes_by_page.get(p, [])
+                if not items:
+                    continue
+                rows = _group_easyocr_rows(items)
+                group_after_y: Optional[float] = None
+                if spec.group_after:
+                    pattern = spec.group_after if case_sensitive else spec.group_after.lower()
+                    for row in rows:
+                        text_row = row['text']  # type: ignore[index]
+                        cmp_text = text_row if case_sensitive else text_row.lower()
+                        if pattern in cmp_text:
+                            if group_after_y is None or float(row['cy']) > group_after_y:
+                                group_after_y = float(row['cy'])
+                group_before_y: Optional[float] = None
+                if spec.group_before:
+                    pattern = spec.group_before if case_sensitive else spec.group_before.lower()
+                    for row in rows:
+                        text_row = row['text']  # type: ignore[index]
+                        cmp_text = text_row if case_sensitive else text_row.lower()
+                        if pattern in cmp_text:
+                            if group_before_y is None or float(row['cy']) < group_before_y:
+                                group_before_y = float(row['cy'])
+                for row in rows:
+                    row_cy = float(row['cy'])  # type: ignore[index]
+                    if group_after_y is not None and row_cy <= group_after_y:
+                        continue
+                    if group_before_y is not None and row_cy >= group_before_y:
+                        continue
+                    row_items = row['items']  # type: ignore[index]
+                    token_texts = [str(it.get('text', '') or '') for it in row_items]
+                    token_norms = [_normalize_anchor_token(t) for t in token_texts]
+                    match_span = _match_anchor(token_texts, token_norms)
+                    if not match_span:
+                        continue
+                    anchor_seen = True
+                    start_idx, end_idx = match_span
+                    tail_candidates: List[Tuple[str, Dict[str, float]]] = []
+                    for idx in range(end_idx + 1, len(row_items)):
+                        token = str(row_items[idx].get('text', '') or '').strip()
+                        if not token:
+                            continue
+                        if _is_anchor_duplicate(token):
+                            continue
+                        tail_candidates.append((token, row_items[idx]))
+                    if not tail_candidates:
+                        failure_local = "No value to the right of anchor on same line"
+                        continue
+                    row_text = row['text']  # type: ignore[index]
+                    context_text = row_text[:200] if isinstance(row_text, str) else ''
+                    if ret_kind == 'string':
+                        value_text = None
+                        if fmt_pat:
+                            for token, _ in tail_candidates:
+                                m = fmt_pat.search(token)
+                                if m:
+                                    value_text = m.group(0)
+                                    break
+                        if value_text is None:
+                            for token, _ in tail_candidates:
+                                num = _first_numeric(token)
+                                if num:
+                                    value_text = num
+                                    break
+                        if value_text is None and tail_candidates:
+                            value_text = tail_candidates[0][0]
+                        if value_text:
+                            try:
+                                conf_val = float(tail_candidates[0][1].get('conf', 0.0) or 0.0)
+                            except Exception:
+                                conf_val = 0.0
+                            return MatchResult(
+                                pdf_file=pdf_path.name,
+                                serial_number=serial_number,
+                                term=spec.term,
+                                page=p,
+                                number=value_text,
+                                units=None,
+                                context=context_text,
+                                method=f"easyocr:nearest-line(dpi={dpi})",
+                                found=True,
+                                confidence=conf_val,
+                                row_label=None,
+                                column_label=None,
+                                text_source="ocr",
+                            ), True, None
+                        failure_local = "No value to the right of anchor on same line"
+                        continue
+                    number_data = None
+                    idx_used: Optional[int] = None
+                    for token, item in tail_candidates:
+                        numeric_candidate = _first_numeric(token)
+                        if not numeric_candidate:
+                            continue
+                        number_data = _annotate_number(numeric_candidate)
+                        idx_used = item
+                        break
+                    if number_data and idx_used is not None:
+                        number_out, units_value = number_data
                         try:
-                            num_val = float((numeric_only(numeric_candidate) or '').replace(',', ''))
-                            if spec.range_min is not None and num_val < spec.range_min:
-                                range_violation = True
-                            if spec.range_max is not None and num_val > spec.range_max:
-                                range_violation = True
+                            conf_val = float(idx_used.get('conf', 0.0) or 0.0)
                         except Exception:
-                            range_violation = False
-                    number_out = numeric_candidate.strip()
-                    if range_violation and not number_out.rstrip().endswith('(range violation)'):
-                        number_out = f"{number_out} (range violation)"
-                    return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                                       page=p, number=number_out, units=extract_units(numeric_candidate),
-                                       context=row_line_ctx[:200], method="text:table",
-                                       found=True, text_source='pdf',
-                                       row_label=row_name, column_label=header_label)
+                            conf_val = 0.0
+                        return MatchResult(
+                            pdf_file=pdf_path.name,
+                            serial_number=serial_number,
+                            term=spec.term,
+                            page=p,
+                            number=number_out,
+                            units=units_value,
+                            context=context_text,
+                            method=f"easyocr:nearest-line(dpi={dpi})",
+                            found=True,
+                            confidence=conf_val,
+                            row_label=None,
+                            column_label=None,
+                            text_source="ocr",
+                        ), True, None
+                    failure_local = "No value to the right of anchor on same line"
+        return None, anchor_seen, failure_local
 
-        if ret_kind == 'string':
-            val, ctx = _search_string_value(text, spec.term, spec.value_format)
-            if val:
-                return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                                   page=p, number=val, units=None, context=ctx or '', method=pipeline,
-                                   found=True, text_source='pdf')
-            failure_reason = "No string value matched the term to the right"
+    pdf_result, pdf_anchor_seen, pdf_failure = _search_with_pymupdf()
+    if pdf_result:
+        return pdf_result
+
+    text_result, text_anchor_seen, text_failure = _search_with_pdf_text()
+    if text_result:
+        return text_result
+
+    ocr_result, ocr_anchor_seen, ocr_failure = _search_with_easyocr()
+    if ocr_result:
+        return ocr_result
+
+    failure_reason = pdf_failure or text_failure or ocr_failure
+    if failure_reason is None:
+        if anchor_tokens:
+            failure_reason = "Anchor not located for nearest-line mode"
         else:
-            number, ctx, reason = find_closest_number_in_text(text, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                             units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
-            if number:
-                return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                                   page=p, number=number, units=extract_units(number), context=ctx or '',
-                                   method=pipeline, found=True, text_source='pdf')
-            if reason:
-                failure_reason = reason
+            failure_reason = "No anchor text specified for nearest-line mode"
+    if ocr_anchor_seen:
+        method_label = "easyocr:nearest-line"
+    elif text_anchor_seen:
+        method_label = "text:nearest-line"
+    elif pdf_anchor_seen:
+        method_label = "pymupdf:nearest-line"
+    else:
+        method_label = "nearest-line"
+    return MatchResult(
+        pdf_file=pdf_path.name,
+        serial_number=serial_number,
+        term=spec.term,
+        page=None,
+        number=None,
+        units=None,
+        context="",
+        method=method_label,
+        found=False,
+        confidence=None,
+        row_label=None,
+        column_label=None,
+        text_source=None,
+        error_reason=failure_reason,
+    )
 
-    # OCR fallback for empty pages only (numbers)
-    if (spec.return_type or 'number').lower() != 'string':
-        _mode = _get_ocr_mode()
-        pages_list = list(sorted(page_text_map.keys()))
-        empty_pages = [p for p in pages_list if (page_text_map.get(p, '').strip() == '')]
-        if (_mode != 'no_ocr') and empty_pages:
-            pt4, m4 = ocr_pages_with_easyocr(pdf_path, empty_pages)
-            if pt4:
-                for p in empty_pages:
-                    t = (pt4.get(p) or '')
-                    if t:
-                        number, ctx, reason = find_closest_number_in_text(t, spec.term, window_chars=window_chars, case_sensitive=case_sensitive,
-                                                                         units_hint=spec.units_hint, range_filter=(spec.range_min, spec.range_max), accept_dates=True)
-                        if number:
-                            return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                                               page=p, number=number, units=extract_units(number), context=ctx or '',
-                                               method=m4, found=True, text_source='ocr')
-                        if reason:
-                            failure_reason = reason
-                if failure_reason is None:
-                    failure_reason = "OCR fallback found no numeric value to the right"
-    return MatchResult(pdf_file=pdf_path.name, serial_number=serial_number, term=spec.term,
-                       page=None, number=None, units=None, context='', method=pipeline, found=False,
-                       error_reason=failure_reason or "No value found for term")
 
 def get_serial_number_from_filename(pdf_path: Path) -> str:
-    """
-    Extract the serial number from the PDF filename using SN_REGEX.
-    Returns a string like "SN 1234". If no match is found,
-    returns a fallback based on the basename (e.g., "SN_<stem>").
-    """
+    """Extract the serial number from the PDF filename using SN_REGEX.
+    Returns a string like "SN 1234". If no match is found, returns a fallback based on the basename."""
     name = pdf_path.stem
     m = SN_REGEX.search(name)
     if m:
