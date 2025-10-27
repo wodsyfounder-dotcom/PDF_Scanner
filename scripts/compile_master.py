@@ -105,7 +105,7 @@ def load_results_json(run_folder: Path) -> List[Dict]:
         return []
 
 
-def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
+def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str]]:
     """Return (serials, rows) including per-term row/column breakdown and captured values."""
     reg = load_registry()
     if not reg:
@@ -120,6 +120,8 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
     serials = list(last_for_sn.keys())
     terms_order: List[str] = []
     term_map: Dict[str, Dict[str, Any]] = {}
+    program_by_sn: Dict[str, str] = {}
+    sv_by_sn: Dict[str, str] = {}
 
     def norm(value: Any) -> str:
         if value is None:
@@ -167,6 +169,46 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
         for row in rows:
             if (row.get("serial_number") or "").strip() != sn:
                 continue
+            # Capture metadata per SN if present (or derive from filename)
+            prog = norm(row.get("program"))
+            sv = norm(row.get("space_vehicle"))
+            if not prog:
+                # Derive from filename
+                pdf_file = norm(row.get("pdf_file"))
+                stem = Path(pdf_file).stem if pdf_file else ""
+                # simple parse mirroring enrich script behavior
+                if stem:
+                    if "_" in stem:
+                        parts = [p.strip() for p in stem.split("_") if p.strip()]
+                        # find SN part index
+                        sn_idx = None
+                        for i, p in enumerate(parts):
+                            if re.search(r"\bSN\b", p, flags=re.IGNORECASE) or re.search(r"\bSN\W*", p, flags=re.IGNORECASE):
+                                sn_idx = i
+                                break
+                        if sn_idx is None:
+                            sn_idx = len(parts)
+                        if sn_idx >= 2:
+                            prog = parts[0]
+                            sv = " ".join(parts[1:sn_idx])
+                    else:
+                        toks = [t for t in re.split(r"\s+", stem) if t]
+                        # locate token matching SN*
+                        si = None
+                        for i, t in enumerate(toks):
+                            if t.lower().startswith("sn"):
+                                si = i
+                                break
+                        if si is None and len(toks) >= 2:
+                            prog = toks[0]
+                            sv = " ".join(toks[1:])
+                        elif si is not None and si >= 2:
+                            prog = toks[0]
+                            sv = " ".join(toks[1:si])
+            if prog and sn not in program_by_sn:
+                program_by_sn[sn] = prog
+            if sv and sn not in sv_by_sn:
+                sv_by_sn[sn] = sv
             term = (row.get("term") or "").strip()
             if not term:
                 continue
@@ -222,10 +264,10 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]]]:
                 "values": entry["values"],
             })
 
-    return serials, term_rows
+    return serials, term_rows, program_by_sn, sv_by_sn
 
 
-def write_master(serials: List[str], term_rows: List[Dict[str, Any]]) -> None:
+def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by_sn: Dict[str, str] | None = None, sv_by_sn: Dict[str, str] | None = None) -> None:
     EXPORTS.mkdir(parents=True, exist_ok=True)
     base_columns = ["Term", "Grouping", "Units", "Row Label", "Column Label"]
     header = base_columns + serials
@@ -235,10 +277,15 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]]) -> None:
         row["Term"] = label
         return row
 
-    structured_rows: List[Dict[str, Any]] = [
-        blank_meta("Program"),
-        blank_meta("Space Vehicle"),
-    ]
+    structured_rows: List[Dict[str, Any]] = [blank_meta("Program"), blank_meta("Space Vehicle")]
+
+    # Fill Program / Space Vehicle rows per serial
+    program_by_sn = program_by_sn or {}
+    sv_by_sn = sv_by_sn or {}
+    # Row 0 -> Program, Row 1 -> Space Vehicle
+    for sn in serials:
+        structured_rows[0][sn] = program_by_sn.get(sn, "")
+        structured_rows[1][sn] = sv_by_sn.get(sn, "")
 
     for entry in term_rows:
         row: Dict[str, Any] = {col: "" for col in header}
@@ -288,10 +335,10 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    serials, rows = build_master()
+    serials, rows, prog_map, sv_map = build_master()
     if not serials:
         sys.exit(0)
-    write_master(serials, rows)
+    write_master(serials, rows, program_by_sn=prog_map, sv_by_sn=sv_map)
 
 
 if __name__ == "__main__":

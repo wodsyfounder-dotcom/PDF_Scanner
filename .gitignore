@@ -22,8 +22,10 @@ Thumbs.db
 # Local Python site-packages (if present)
 Lib/
 
-# Generated run outputs
-Product_Data_File/
+# Generated outputs (ignore all by default, but keep master reports)
+Product_Data_File/*
+!Product_Data_File/master.xlsx
+!Product_Data_File/master.csv
 
 # Do not track input or scanned PDFs
 user_inputs/EIDP_Import_Docs/**
