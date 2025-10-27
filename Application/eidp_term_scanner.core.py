@@ -2152,12 +2152,12 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
                                     break
                         if value_text is None:
                             for token, _ in tail_candidates:
-                                num = _first_numeric(token)
-                                if num:
-                                    value_text = num
+                                token_clean = token.strip()
+                                if token_clean:
+                                    value_text = token_clean
                                     break
                         if value_text is None and tail_candidates:
-                            value_text = tail_candidates[0][0]
+                            value_text = spec.column or spec.term or tail_candidates[0][0]
                         if value_text:
                             return MatchResult(
                                 pdf_file=pdf_path.name,
@@ -2276,14 +2276,28 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
                             if m:
                                 value_text = m.group(0)
                                 break
+                        if value_text is None:
+                            for tok in next_line_tokens:
+                                m = fmt_pat.search(tok)
+                                if m:
+                                    value_text = m.group(0)
+                                    break
                     if value_text is None:
                         for tok in tail_tokens:
-                            num = _first_numeric(tok)
-                            if num:
-                                value_text = num
+                            tok_clean = tok.strip()
+                            if tok_clean:
+                                value_text = tok_clean
                                 break
-                    if value_text is None and tail_tokens:
-                        value_text = tail_tokens[0]
+                    if value_text is None:
+                        for tok in next_line_tokens:
+                            tok_clean = tok.strip()
+                            if tok_clean:
+                                value_text = tok_clean
+                                break
+                    if value_text is None:
+                        fallback_tokens = tail_tokens or next_line_tokens
+                        if fallback_tokens:
+                            value_text = spec.column or spec.term or fallback_tokens[0]
                     if value_text:
                         return MatchResult(
                             pdf_file=pdf_path.name,
