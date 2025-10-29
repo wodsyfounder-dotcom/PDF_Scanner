@@ -25,11 +25,40 @@ from tkinter import ttk, filedialog, messagebox
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.xlsx"
+DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
 DEFAULT_SCANNED_DIR = ROOT / "user_inputs" / "Scanned_Docs"
 SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
 APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
 RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
+PLOTS_DIR = ROOT / "Product_Data_File" / "plots"
+
+def _resolve_project_python() -> str:
+    """Pick the Python interpreter to run helper scripts.
+
+    Priority:
+      1) VENV_DIR from scanner.env if it contains a Python
+      2) Project .venv if present
+      3) Current interpreter (sys.executable)
+    """
+    try:
+        env = parse_scanner_env(SCANNER_ENV)
+    except Exception:
+        env = {}
+    vdir = env.get("VENV_DIR", "").strip()
+    def vpy(path: Path) -> Path:
+        if os.name == "nt":
+            return path / "Scripts" / "python.exe"
+        return path / "bin" / "python"
+    if vdir:
+        cand = vpy(Path(vdir))
+        if cand.exists():
+            return str(cand)
+    # default .venv
+    cand = vpy(ROOT / ".venv")
+    if cand.exists():
+        return str(cand)
+    return sys.executable
 
 
 def parse_scanner_env(path: Path) -> dict[str, str]:
@@ -145,11 +174,18 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("EIDP Term Scanner")
-        self.geometry("960x640")
-        self.minsize(880, 560)
+        self.geometry("1040x720")
+        self.minsize(920, 600)
         self.style = ttk.Style(self)
+        try:
+            if sys.platform.startswith("win") and "vista" in self.style.theme_names():
+                self.style.theme_use("vista")
+            elif "clam" in self.style.theme_names():
+                self.style.theme_use("clam")
+        except Exception:
+            pass
         self.style.configure("Section.TLabelframe", padding=(12, 10))
-        self.style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+        self.style.configure("Section.TLabelframe.Label", font=("Segoe UI", 11, "bold"))
         self.style.configure("Primary.TButton", padding=(12, 6), font=("Segoe UI", 10))
         self.style.configure("Secondary.TButton", padding=(12, 6), font=("Segoe UI", 10))
         self.style.configure("Danger.TButton", padding=(12, 6), font=("Segoe UI", 10))
@@ -161,93 +197,87 @@ class App(tk.Tk):
         self.after(500, self._poll_runner)
 
     def _build_ui(self):
-        pad = {"padx": 12, "pady": 10}
+        padx, pady = 12, 10
 
-        inputs = ttk.LabelFrame(self, text="Scanner Inputs", style="Section.TLabelframe")
-        inputs.pack(fill=tk.X, **pad)
+        # Header bar
+        header = ttk.Frame(self)
+        header.pack(fill=tk.X, padx=12, pady=(10, 0))
+        ttk.Label(header, text="EIDP Term Scanner", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, sticky=tk.W)
+        self.var_interp = tk.StringVar(value=_resolve_project_python())
+        ttk.Label(header, textvariable=self.var_interp).grid(row=0, column=1, sticky=tk.E, padx=(8,0))
+        header.columnconfigure(0, weight=1)
 
-        # PDFs folder
-        ttk.Label(inputs, text="PDFs folder:").grid(row=0, column=0, sticky=tk.W)
+        # Notebook with clear sections
+        nb = ttk.Notebook(self)
+        nb.pack(fill=tk.X, padx=12, pady=(8, 6))
+        tab_setup = ttk.Frame(nb)
+        tab_plot = ttk.Frame(nb)
+        tab_out = ttk.Frame(nb)
+        nb.add(tab_setup, text="Setup & Scan")
+        nb.add(tab_plot, text="Plotting")
+        nb.add(tab_out, text="Outputs")
+
+        # Setup & Scan
+        lf_env = ttk.LabelFrame(tab_setup, text="1) Environment", style="Section.TLabelframe")
+        lf_env.pack(fill=tk.X, padx=padx, pady=pady)
+        ttk.Button(lf_env, text="Install Environment", command=self._install_full, style="Primary.TButton").grid(row=0, column=0, padx=(0,8), pady=6)
+        ttk.Button(lf_env, text="Open scanner.env", command=self._open_scanner_env, style="Secondary.TButton").grid(row=0, column=1, padx=8, pady=6)
+
+        lf_inputs = ttk.LabelFrame(tab_setup, text="2) Scanner Inputs", style="Section.TLabelframe")
+        lf_inputs.pack(fill=tk.X, padx=padx, pady=pady)
+        ttk.Label(lf_inputs, text="PDFs folder:").grid(row=0, column=0, sticky=tk.W)
         self.var_pdfs = tk.StringVar(value=str(DEFAULT_PDF_DIR))
-        ent_pdfs = ttk.Entry(inputs, textvariable=self.var_pdfs, width=80)
-        ent_pdfs.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
-        ttk.Button(inputs, text="Browse", command=self._pick_pdfs).grid(row=0, column=2)
-
-        # Scanned folder
-        ttk.Label(inputs, text="Scanned folder:").grid(row=1, column=0, sticky=tk.W)
+        ttk.Entry(lf_inputs, textvariable=self.var_pdfs, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0, 6))
+        ttk.Button(lf_inputs, text="Browse", command=self._pick_pdfs).grid(row=0, column=2)
+        ttk.Label(lf_inputs, text="Scanned folder:").grid(row=1, column=0, sticky=tk.W)
         self.var_scanned = tk.StringVar(value=str(DEFAULT_SCANNED_DIR))
-        ent_sc = ttk.Entry(inputs, textvariable=self.var_scanned, width=80)
-        ent_sc.grid(row=1, column=1, sticky=tk.EW, padx=(0, 6))
-        ttk.Button(inputs, text="Browse", command=self._pick_scanned).grid(row=1, column=2)
+        ttk.Entry(lf_inputs, textvariable=self.var_scanned, width=80).grid(row=1, column=1, sticky=tk.EW, padx=(0, 6))
+        ttk.Button(lf_inputs, text="Browse", command=self._pick_scanned).grid(row=1, column=2)
+        lf_inputs.columnconfigure(1, weight=1)
 
-        inputs.columnconfigure(1, weight=1)
-
-        # Run controls
-        controls = ttk.Frame(self)
-        controls.pack(fill=tk.X, padx=12, pady=(0, 6))
-        controls.columnconfigure((0, 1, 2, 3), weight=1, uniform="controls")
-        self.btn_run = ttk.Button(controls, text="Start Scan", command=self._run, style="Primary.TButton")
-        self.btn_run.grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
-        self.btn_stop = ttk.Button(
-            controls,
-            text="Stop Scan",
-            command=self._stop,
-            state=tk.DISABLED,
-            style="Danger.TButton"
-        )
-        self.btn_stop.grid(row=0, column=1, sticky=tk.EW, padx=8)
-        ttk.Button(
-            controls,
-            text="Settings",
-            command=self._open_settings,
-            style="Secondary.TButton"
-        ).grid(row=0, column=2, sticky=tk.EW, padx=8)
-        ttk.Button(
-            controls,
-            text="Open Last Run Folder",
-            command=self._open_last_run,
-            style="Secondary.TButton"
-        ).grid(row=0, column=3, sticky=tk.EW, padx=(8, 0))
-
-        # Terms helpers
+        lf_terms = ttk.LabelFrame(tab_setup, text="3) Terms Spreadsheet", style="Section.TLabelframe")
+        lf_terms.pack(fill=tk.X, padx=padx, pady=pady)
         self.var_terms = tk.StringVar(value=str(DEFAULT_TERMS_XLSX))
-        terms_tools = ttk.LabelFrame(self, text="Terms Spreadsheet", style="Section.TLabelframe")
-        terms_tools.pack(fill=tk.X, padx=12, pady=(0, 6))
-        terms_tools.columnconfigure(1, weight=1)
-        ttk.Label(terms_tools, text="Spreadsheet path:").grid(row=0, column=0, sticky=tk.W, padx=(8, 6), pady=6)
-        ent_terms = ttk.Entry(terms_tools, textvariable=self.var_terms, width=80)
-        ent_terms.grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=6)
-        ttk.Button(
-            terms_tools,
-            text="Browse",
-            command=self._pick_terms,
-            style="Secondary.TButton"
-        ).grid(row=0, column=2, padx=(0, 6), pady=6, sticky=tk.EW)
-        ttk.Button(
-            terms_tools,
-            text="Open Spreadsheet",
-            command=self._open_terms_spreadsheet,
-            style="Secondary.TButton"
-        ).grid(row=0, column=3, padx=(0, 8), pady=6, sticky=tk.EW)
-        ttk.Button(
-            terms_tools,
-            text="Create / Refresh",
-            command=self._generate_terms_spreadsheet,
-            style="Primary.TButton"
-        ).grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(0, 8))
+        ttk.Label(lf_terms, text="Spreadsheet path:").grid(row=0, column=0, sticky=tk.W, padx=(8, 6), pady=6)
+        ttk.Entry(lf_terms, textvariable=self.var_terms, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=6)
+        ttk.Button(lf_terms, text="Browse", command=self._pick_terms, style="Secondary.TButton").grid(row=0, column=2, padx=(0, 6), pady=6, sticky=tk.EW)
+        ttk.Button(lf_terms, text="Open Spreadsheet", command=self._open_terms_spreadsheet, style="Secondary.TButton").grid(row=0, column=3, padx=(0, 8), pady=6, sticky=tk.EW)
+        ttk.Button(lf_terms, text="Create / Refresh", command=self._generate_terms_spreadsheet, style="Primary.TButton").grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(0, 8))
 
-        # Output shortcuts
-        outputs = ttk.LabelFrame(self, text="Data Outputs", style="Section.TLabelframe")
-        outputs.pack(fill=tk.X, padx=12, pady=(0, 10))
+        lf_run = ttk.LabelFrame(tab_setup, text="4) Run Scan", style="Section.TLabelframe")
+        lf_run.pack(fill=tk.X, padx=padx, pady=pady)
+        lf_run.columnconfigure((0, 1, 2, 3), weight=1, uniform="run")
+        self.btn_run = ttk.Button(lf_run, text="Start Scan", command=self._run, style="Primary.TButton")
+        self.btn_run.grid(row=0, column=0, sticky=tk.EW, padx=(0, 8))
+        self.btn_stop = ttk.Button(lf_run, text="Stop Scan", command=self._stop, state=tk.DISABLED, style="Danger.TButton")
+        self.btn_stop.grid(row=0, column=1, sticky=tk.EW, padx=8)
+        ttk.Button(lf_run, text="Settings", command=self._open_settings, style="Secondary.TButton").grid(row=0, column=2, sticky=tk.EW, padx=8)
+        ttk.Button(lf_run, text="Open Last Run Folder", command=self._open_last_run, style="Secondary.TButton").grid(row=0, column=3, sticky=tk.EW, padx=(8, 0))
+
+        # Plotting tab
+        plotting = ttk.LabelFrame(tab_plot, text="Plotting", style="Section.TLabelframe")
+        plotting.pack(fill=tk.X, padx=padx, pady=pady)
+        plotting.columnconfigure(1, weight=1)
+        self.var_plot_terms = tk.StringVar(value=str(DEFAULT_PLOT_TERMS_XLSX))
+        ttk.Label(plotting, text="Plot terms file:").grid(row=0, column=0, sticky=tk.W, padx=(8,6), pady=6)
+        ttk.Entry(plotting, textvariable=self.var_plot_terms, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0,6), pady=6)
+        ttk.Button(plotting, text="Open", command=self._open_plot_terms, style="Secondary.TButton").grid(row=0, column=2, padx=(0,6), pady=6, sticky=tk.EW)
+        ttk.Button(plotting, text="Create / Refresh", command=self._generate_plot_terms, style="Primary.TButton").grid(row=1, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
+        ttk.Button(plotting, text="Generate Plots", command=self._generate_plots, style="Primary.TButton").grid(row=1, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
+        ttk.Button(plotting, text="Open Plots Folder", command=self._open_plots_folder, style="Secondary.TButton").grid(row=1, column=3, sticky=tk.EW, padx=(0,8), pady=(0,8))
+        ttk.Button(plotting, text="Create Plot Summary", command=self._export_plot_summary, style="Primary.TButton").grid(row=2, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
+        ttk.Button(plotting, text="Open Plot Summary", command=self._open_plot_summary, style="Secondary.TButton").grid(row=2, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
+
+        # Outputs tab
+        outputs = ttk.LabelFrame(tab_out, text="Outputs", style="Section.TLabelframe")
+        outputs.pack(fill=tk.X, padx=padx, pady=pady)
         outputs.columnconfigure((0, 1, 2), weight=1, uniform="outputs")
-        output_buttons = [
+        for idx, (label, handler) in enumerate([
             ("Open Run Registry", self._open_run_registry),
             ("Compile Master Workbook", self._compile_master),
             ("Open Master Workbook", self._open_master),
-        ]
-        for idx, (label, handler) in enumerate(output_buttons):
-            btn = ttk.Button(outputs, text=label, command=handler, style="Secondary.TButton")
-            btn.grid(row=0, column=idx, sticky=tk.EW, padx=6, pady=6)
+        ]):
+            ttk.Button(outputs, text=label, command=handler, style="Secondary.TButton").grid(row=0, column=idx, sticky=tk.EW, padx=6, pady=6)
 
         # Log area
         log_frame = ttk.Frame(self, padding=(12, 0, 12, 10))
@@ -259,7 +289,7 @@ class App(tk.Tk):
         self.txt.configure(state=tk.DISABLED, yscrollcommand=scroll_y.set)
 
         # Status bar
-        self.status = tk.StringVar(value="Ready to scan.")
+        self.status = tk.StringVar(value="Ready.")
         ttk.Label(self, textvariable=self.status, anchor=tk.W).pack(fill=tk.X, padx=12, pady=(0, 10))
 
     def append_log(self, s: str):
@@ -367,10 +397,19 @@ class App(tk.Tk):
         self.status.set("Creating terms spreadsheet...")
         self.append_log("[GUI] Generating terms spreadsheet...\n")
         env = os.environ.copy()
+        # Prefer project venv python if available
+        py = _resolve_project_python()
+        # Ensure vendored packages are visible as fallback
         env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        # Prepend venv Scripts/bin to PATH for helper tools
+        try:
+            scripts_dir = str(Path(py).parent)
+            env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+        except Exception:
+            pass
         try:
             proc = subprocess.Popen(
-                [sys.executable, str(script)],
+                [py, str(script)],
                 cwd=str(ROOT),
                 env=env,
                 stdout=subprocess.PIPE,
@@ -566,10 +605,16 @@ class App(tk.Tk):
         try:
             self.status.set("Compiling master...")
             # Launch compile script; stream output to log
-            cmd = [sys.executable, str(ROOT / "scripts" / "compile_master.py")]
+            py = _resolve_project_python()
+            cmd = [py, str(ROOT / "scripts" / "compile_master.py")]
             env = os.environ.copy()
             # Ensure vendored packages (openpyxl/xlsxwriter/pandas) are visible
             env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+            try:
+                scripts_dir = str(Path(py).parent)
+                env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+            except Exception:
+                pass
             proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             self.append_log("[GUI] Compiling master...\n")
             def _pump():
@@ -612,6 +657,302 @@ class App(tk.Tk):
             else:
                 subprocess.Popen(["xdg-open", str(target)])
             self.status.set("Master workbook opened.")
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    # --- Setup / Install ---
+    def _open_scanner_env(self):
+        try:
+            path = SCANNER_ENV
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("# Scanner configuration (KEY=VALUE)\nQUIET=1\n", encoding="utf-8")
+            if sys.platform.startswith("win"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _install_full(self):
+        # Run install.bat which sets up venv + vendored site-packages
+        self.status.set("Installing (full)...")
+        self.append_log("[GUI] Installing environment (full)...\n")
+        if not sys.platform.startswith("win"):
+            messagebox.showinfo("Windows only", "install.bat is for Windows. Use init venv on non-Windows.")
+            return
+        script = ROOT / "install.bat"
+        if not script.exists():
+            messagebox.showerror("Missing installer", f"Could not find install.bat at:\n{script}")
+            return
+        try:
+            proc = subprocess.Popen([
+                "cmd.exe", "/c", str(script)
+            ], cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except Exception as exc:
+            self.status.set("Ready.")
+            messagebox.showerror("Install failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Installer reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    self.status.set("Install completed.")
+                    # Refresh interpreter label
+                    self.var_interp.set(_resolve_project_python())
+                else:
+                    self.status.set("Install failed.")
+                    messagebox.showerror("Install failed", f"install.bat exited with code {rc}")
+        threading.Thread(target=_pump, daemon=True).start()
+
+    def _init_venv_minimal(self):
+        self._run_init_venv(args=[])
+
+    def _init_venv_full(self):
+        self._run_init_venv(args=["--full", "--write-env"]) 
+
+    def _run_init_venv(self, args: list[str]):
+        script = ROOT / "scripts" / "init_venv.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find init_venv.py at:\n{script}")
+            return
+        self.status.set("Initializing venv...")
+        self.append_log("[GUI] Initializing venv...\n")
+        py = sys.executable  # use current Python to bootstrap venv
+        try:
+            proc = subprocess.Popen([py, str(script), "--dir", str(ROOT / ".venv"), *args], cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except Exception as exc:
+            self.status.set("Ready.")
+            messagebox.showerror("Init failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Venv init reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    self.status.set("Venv ready.")
+                    self.var_interp.set(_resolve_project_python())
+                else:
+                    self.status.set("Venv init failed.")
+                    messagebox.showerror("Init failed", f"init_venv.py exited with code {rc}")
+
+    # --- Plotting helpers ---
+    def _generate_plot_terms(self):
+        script = ROOT / "scripts" / "generate_plot_terms.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find generator at:\n{script}")
+            return
+        self.status.set("Creating plot terms...")
+        self.append_log("[GUI] Generating plot terms...\n")
+        env = os.environ.copy()
+        py = _resolve_project_python()
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        try:
+            scripts_dir = str(Path(py).parent)
+            env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+        except Exception:
+            pass
+        try:
+            proc = subprocess.Popen(
+                [py, str(script)],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except Exception as exc:
+            self.status.set("Ready to scan.")
+            messagebox.showerror("Generation failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Plot terms generator reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    dest_path = DEFAULT_PLOT_TERMS_XLSX if DEFAULT_PLOT_TERMS_XLSX.exists() else (DEFAULT_PLOT_TERMS_XLSX.with_suffix('.csv'))
+                    if dest_path.exists():
+                        self.var_plot_terms.set(str(dest_path))
+                    self.status.set("Plot terms ready.")
+                else:
+                    self.status.set("Plot terms generation failed.")
+                    messagebox.showerror("Generation failed", f"generate_plot_terms.py exited with code {rc}")
+        threading.Thread(target=_pump, daemon=True).start()
+
+    def _open_plot_terms(self):
+        path = Path(self.var_plot_terms.get()).expanduser()
+        if not path.exists():
+            messagebox.showinfo(
+                "Plot terms missing",
+                f"Plot terms file not found at:\n{path}\n\nCreate it first.",
+            )
+            return
+        try:
+            self.status.set("Opening plot terms...")
+            if sys.platform.startswith("win"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+            self.status.set("Plot terms opened.")
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _generate_plots(self):
+        script = ROOT / "scripts" / "plot_from_master.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find plotter at:\n{script}")
+            return
+        self.status.set("Generating plots...")
+        self.append_log("[GUI] Generating plots...\n")
+        env = os.environ.copy()
+        py = _resolve_project_python()
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        try:
+            scripts_dir = str(Path(py).parent)
+            env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+        except Exception:
+            pass
+        try:
+            proc = subprocess.Popen(
+                [py, str(script)],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except Exception as exc:
+            self.status.set("Ready to scan.")
+            messagebox.showerror("Plotting failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Plotter reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    self.status.set("Plots generated.")
+                else:
+                    self.status.set("Plotting failed.")
+                    messagebox.showerror("Plotting failed", f"plot_from_master.py exited with code {rc}")
+        threading.Thread(target=_pump, daemon=True).start()
+
+    def _open_plots_folder(self):
+        try:
+            PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+            self.status.set("Opening plots folder...")
+            if sys.platform.startswith("win"):
+                os.startfile(str(PLOTS_DIR))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(PLOTS_DIR)])
+            else:
+                subprocess.Popen(["xdg-open", str(PLOTS_DIR)])
+            self.status.set("Plots folder opened.")
+        except Exception as e:
+            messagebox.showwarning("Open failed", str(e))
+
+    def _export_plot_summary(self):
+        script = ROOT / "scripts" / "plots_to_excel_summary.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find exporter at:\n{script}")
+            return
+        self.status.set("Creating plots summary...")
+        self.append_log("[GUI] Creating plots summary...\n")
+        env = os.environ.copy()
+        py = _resolve_project_python()
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        try:
+            scripts_dir = str(Path(py).parent)
+            env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+        except Exception:
+            pass
+        try:
+            proc = subprocess.Popen(
+                [py, str(script)],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except Exception as exc:
+            self.status.set("Ready to scan.")
+            messagebox.showerror("Export failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Plots summary reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    self.status.set("Plot summary created.")
+                else:
+                    self.status.set("Plot summary failed.")
+                    messagebox.showerror("Export failed", f"plots_to_excel_summary.py exited with code {rc}")
+        threading.Thread(target=_pump, daemon=True).start()
+
+    def _open_plot_summary(self):
+        try:
+            target = ROOT / "Product_Data_File" / "plots_summary.xlsx"
+            if not target.exists():
+                messagebox.showinfo("No summary", "No plots_summary.xlsx found yet. Create it first.")
+                return
+            self.status.set("Opening plot summary...")
+            if sys.platform.startswith("win"):
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+            self.status.set("Plot summary opened.")
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
 

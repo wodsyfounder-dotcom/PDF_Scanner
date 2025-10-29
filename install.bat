@@ -30,6 +30,7 @@ echo [SETUP] Installing required Python packages (minimal)...
   pymupdf ^
   pandas ^
   openpyxl ^
+  matplotlib ^
   opencv-python-headless
 if errorlevel 1 (
   echo [ERROR] Package install failed.
@@ -52,9 +53,9 @@ rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv run
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
 echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
-echo         pymupdf, pandas, openpyxl, opencv-python-headless, easyocr, torch, torchvision
+echo         pymupdf, pandas, openpyxl, matplotlib, opencv-python-headless, easyocr, torch, torchvision
 "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
-  pymupdf pandas openpyxl opencv-python-headless easyocr
+  pymupdf pandas openpyxl matplotlib opencv-python-headless easyocr
 "%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
   torch torchvision
 if errorlevel 1 (
