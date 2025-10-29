@@ -1,7 +1,5 @@
-# Track only Python sources and Windows executables/batch files
-*
-!.gitignore
-!*/
-!**/*.py
-!**/*.exe
-!**/*.bat
+# Track everything except root-level vendored site-packages and venv
+/Lib/
+/.venv/
+__pycache__/
+*.pdf

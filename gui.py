@@ -61,6 +61,45 @@ def _resolve_project_python() -> str:
     return sys.executable
 
 
+class Tooltip:
+    def __init__(self, widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        self.widget.bind("<Enter>", self._show)
+        self.widget.bind("<Leave>", self._hide)
+        self.widget.bind("<Motion>", self._move)
+
+    def _show(self, event=None):
+        if self.tip or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        lbl = tk.Label(self.tip, text=self.text, justify=tk.LEFT,
+                       background="#333", foreground="#fff",
+                       relief=tk.SOLID, borderwidth=1,
+                       font=("Segoe UI", 9), padx=8, pady=4)
+        lbl.pack()
+
+    def _hide(self, event=None):
+        if self.tip is not None:
+            try:
+                self.tip.destroy()
+            except Exception:
+                pass
+            self.tip = None
+
+    def _move(self, event):
+        if self.tip is None:
+            return
+        x = event.x_root + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip.wm_geometry(f"+{x}+{y}")
+
+
 def parse_scanner_env(path: Path) -> dict[str, str]:
     env: dict[str, str] = {}
     if not path.exists():
@@ -218,10 +257,38 @@ class App(tk.Tk):
         nb.add(tab_out, text="Outputs")
 
         # Setup & Scan
+        # Start Here (checklist)
+        start = ttk.LabelFrame(tab_setup, text="Start Here", style="Section.TLabelframe")
+        start.pack(fill=tk.X, padx=12, pady=10)
+        ttk.Label(start, text="1) Install environment →", font=("Segoe UI", 10)).grid(row=0, column=0, sticky=tk.W, padx=(8,6), pady=4)
+        btn = ttk.Button(start, text="Install", command=self._install_full, style="Primary.TButton")
+        btn.grid(row=0, column=1, padx=6, pady=4, sticky=tk.W)
+        Tooltip(btn, "Creates a project venv (.venv) and installs packages.")
+        ttk.Label(start, text="2) Pick folders →", font=("Segoe UI", 10)).grid(row=1, column=0, sticky=tk.W, padx=(8,6), pady=4)
+        btn = ttk.Button(start, text="Set Inputs", command=self._pick_pdfs, style="Secondary.TButton")
+        btn.grid(row=1, column=1, padx=6, pady=4, sticky=tk.W)
+        Tooltip(btn, "Choose PDFs folder (scanned dest auto-filled).")
+        ttk.Label(start, text="3) Create/Open terms →", font=("Segoe UI", 10)).grid(row=2, column=0, sticky=tk.W, padx=(8,6), pady=4)
+        btn = ttk.Button(start, text="Open Terms", command=self._open_terms_spreadsheet, style="Secondary.TButton")
+        btn.grid(row=2, column=1, padx=6, pady=4, sticky=tk.W)
+        Tooltip(btn, "Open terms.xlsx to review/edit terms and pages.")
+        ttk.Label(start, text="4) Run scan →", font=("Segoe UI", 10)).grid(row=3, column=0, sticky=tk.W, padx=(8,6), pady=4)
+        btn = ttk.Button(start, text="Start Scan", command=self._run, style="Primary.TButton")
+        btn.grid(row=3, column=1, padx=6, pady=4, sticky=tk.W)
+        Tooltip(btn, "Scan PDFs for terms and write run results.")
+        ttk.Label(start, text="5) Compile master →", font=("Segoe UI", 10)).grid(row=4, column=0, sticky=tk.W, padx=(8,6), pady=4)
+        btn = ttk.Button(start, text="Compile", command=self._compile_master, style="Secondary.TButton")
+        btn.grid(row=4, column=1, padx=6, pady=4, sticky=tk.W)
+        Tooltip(btn, "Build master.xlsx from run history.")
+
         lf_env = ttk.LabelFrame(tab_setup, text="1) Environment", style="Section.TLabelframe")
         lf_env.pack(fill=tk.X, padx=padx, pady=pady)
-        ttk.Button(lf_env, text="Install Environment", command=self._install_full, style="Primary.TButton").grid(row=0, column=0, padx=(0,8), pady=6)
+        self.btn_install = ttk.Button(lf_env, text="Install Environment", command=self._install_full, style="Primary.TButton")
+        self.btn_install.grid(row=0, column=0, padx=(0,8), pady=6)
+        Tooltip(self.btn_install, "Creates .venv and installs packages via install.bat.")
         ttk.Button(lf_env, text="Open scanner.env", command=self._open_scanner_env, style="Secondary.TButton").grid(row=0, column=1, padx=8, pady=6)
+        self.lbl_env_status = ttk.Label(lf_env, text="Env: Unknown", foreground="#5b6b7a")
+        self.lbl_env_status.grid(row=0, column=2, padx=8, pady=6, sticky=tk.W)
 
         lf_inputs = ttk.LabelFrame(tab_setup, text="2) Scanner Inputs", style="Section.TLabelframe")
         lf_inputs.pack(fill=tk.X, padx=padx, pady=pady)
@@ -242,7 +309,11 @@ class App(tk.Tk):
         ttk.Entry(lf_terms, textvariable=self.var_terms, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0, 6), pady=6)
         ttk.Button(lf_terms, text="Browse", command=self._pick_terms, style="Secondary.TButton").grid(row=0, column=2, padx=(0, 6), pady=6, sticky=tk.EW)
         ttk.Button(lf_terms, text="Open Spreadsheet", command=self._open_terms_spreadsheet, style="Secondary.TButton").grid(row=0, column=3, padx=(0, 8), pady=6, sticky=tk.EW)
-        ttk.Button(lf_terms, text="Create / Refresh", command=self._generate_terms_spreadsheet, style="Primary.TButton").grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(0, 8))
+        self.btn_terms_create = ttk.Button(lf_terms, text="Create / Refresh", command=self._generate_terms_spreadsheet, style="Primary.TButton")
+        self.btn_terms_create.grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(0, 8))
+        Tooltip(self.btn_terms_create, "Generate a terms.xlsx template under user_inputs.")
+        self.lbl_terms_status = ttk.Label(lf_terms, text="Terms: Not found", foreground="#a12d2d")
+        self.lbl_terms_status.grid(row=2, column=1, sticky=tk.W, padx=(0,8), pady=(0,4))
 
         lf_run = ttk.LabelFrame(tab_setup, text="4) Run Scan", style="Section.TLabelframe")
         lf_run.pack(fill=tk.X, padx=padx, pady=pady)
@@ -262,22 +333,57 @@ class App(tk.Tk):
         ttk.Label(plotting, text="Plot terms file:").grid(row=0, column=0, sticky=tk.W, padx=(8,6), pady=6)
         ttk.Entry(plotting, textvariable=self.var_plot_terms, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0,6), pady=6)
         ttk.Button(plotting, text="Open", command=self._open_plot_terms, style="Secondary.TButton").grid(row=0, column=2, padx=(0,6), pady=6, sticky=tk.EW)
-        ttk.Button(plotting, text="Create / Refresh", command=self._generate_plot_terms, style="Primary.TButton").grid(row=1, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
-        ttk.Button(plotting, text="Generate Plots", command=self._generate_plots, style="Primary.TButton").grid(row=1, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
-        ttk.Button(plotting, text="Open Plots Folder", command=self._open_plots_folder, style="Secondary.TButton").grid(row=1, column=3, sticky=tk.EW, padx=(0,8), pady=(0,8))
-        ttk.Button(plotting, text="Create Plot Summary", command=self._export_plot_summary, style="Primary.TButton").grid(row=2, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
-        ttk.Button(plotting, text="Open Plot Summary", command=self._open_plot_summary, style="Secondary.TButton").grid(row=2, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
+        self.btn_plot_terms_create = ttk.Button(plotting, text="Create / Refresh", command=self._generate_plot_terms, style="Primary.TButton")
+        self.btn_plot_terms_create.grid(row=1, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
+        Tooltip(self.btn_plot_terms_create, "Create plot_terms.xlsx from master.xlsx.")
+        self.btn_plot_generate = ttk.Button(plotting, text="Generate Plots", command=self._generate_plots, style="Primary.TButton")
+        self.btn_plot_generate.grid(row=1, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
+        Tooltip(self.btn_plot_generate, "Read plot_terms and master to produce PNG plots.")
+        self.btn_plots_open = ttk.Button(plotting, text="Open Plots Folder", command=self._open_plots_folder, style="Secondary.TButton")
+        self.btn_plots_open.grid(row=1, column=3, sticky=tk.EW, padx=(0,8), pady=(0,8))
+        self.btn_plot_summary = ttk.Button(plotting, text="Create Plot Summary", command=self._export_plot_summary, style="Primary.TButton")
+        self.btn_plot_summary.grid(row=2, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
+        Tooltip(self.btn_plot_summary, "Embed generated plots into plots_summary.xlsx.")
+        self.btn_open_plot_summary = ttk.Button(plotting, text="Open Plot Summary", command=self._open_plot_summary, style="Secondary.TButton")
+        self.btn_open_plot_summary.grid(row=2, column=2, sticky=tk.EW, padx=(0,6), pady=(0,8))
+        self.lbl_plot_cfg_status = ttk.Label(plotting, text="Plot Config: Not created", foreground="#a12d2d")
+        self.lbl_plot_cfg_status.grid(row=2, column=3, sticky=tk.E, padx=(0,8))
+
+        # Page Table Extraction
+        lf_tables = ttk.LabelFrame(tab_plot, text="Page Table Extraction", style="Section.TLabelframe")
+        lf_tables.pack(fill=tk.X, padx=padx, pady=pady)
+        lf_tables.columnconfigure(1, weight=1)
+        try:
+            first_pdf = next((p for p in (DEFAULT_PDF_DIR).glob("*.pdf")), None)
+            default_pdf = str(first_pdf) if first_pdf else ""
+        except Exception:
+            default_pdf = ""
+        self.var_ext_pdf = tk.StringVar(value=default_pdf)
+        self.var_ext_pages = tk.StringVar(value="1")
+        ttk.Label(lf_tables, text="PDF (from EIDP_Import_Docs):").grid(row=0, column=0, sticky=tk.W, padx=(8,6), pady=6)
+        ttk.Entry(lf_tables, textvariable=self.var_ext_pdf, width=80).grid(row=0, column=1, sticky=tk.EW, padx=(0,6), pady=6)
+        ttk.Button(lf_tables, text="Browse", command=self._pick_ext_pdf, style="Secondary.TButton").grid(row=0, column=2, padx=(0,6), pady=6, sticky=tk.EW)
+        ttk.Label(lf_tables, text="Pages (e.g., 1 or 1,3-5):").grid(row=1, column=0, sticky=tk.W, padx=(8,6), pady=6)
+        ttk.Entry(lf_tables, textvariable=self.var_ext_pages, width=30).grid(row=1, column=1, sticky=tk.W, padx=(0,6), pady=6)
+        self.btn_extract_tables = ttk.Button(lf_tables, text="Extract Page Tables", command=self._extract_page_tables, style="Primary.TButton")
+        self.btn_extract_tables.grid(row=2, column=1, sticky=tk.W, padx=(0,8), pady=(0,8))
+        Tooltip(self.btn_extract_tables, "Parse selected pages into Product_Data_File/tables/<name>_tables.xlsx")
 
         # Outputs tab
         outputs = ttk.LabelFrame(tab_out, text="Outputs", style="Section.TLabelframe")
         outputs.pack(fill=tk.X, padx=padx, pady=pady)
         outputs.columnconfigure((0, 1, 2), weight=1, uniform="outputs")
-        for idx, (label, handler) in enumerate([
-            ("Open Run Registry", self._open_run_registry),
-            ("Compile Master Workbook", self._compile_master),
-            ("Open Master Workbook", self._open_master),
-        ]):
-            ttk.Button(outputs, text=label, command=handler, style="Secondary.TButton").grid(row=0, column=idx, sticky=tk.EW, padx=6, pady=6)
+        self.btn_open_registry = ttk.Button(outputs, text="Open Run Registry", command=self._open_run_registry, style="Secondary.TButton")
+        self.btn_open_registry.grid(row=0, column=0, sticky=tk.EW, padx=6, pady=6)
+        Tooltip(self.btn_open_registry, "Open Product_Data_File/run_registry.xlsx")
+        self.btn_compile_master = ttk.Button(outputs, text="Compile Master Workbook", command=self._compile_master, style="Secondary.TButton")
+        self.btn_compile_master.grid(row=0, column=1, sticky=tk.EW, padx=6, pady=6)
+        Tooltip(self.btn_compile_master, "Build Product_Data_File/master.xlsx from run history.")
+        self.btn_open_master = ttk.Button(outputs, text="Open Master Workbook", command=self._open_master, style="Secondary.TButton")
+        self.btn_open_master.grid(row=0, column=2, sticky=tk.EW, padx=6, pady=6)
+        Tooltip(self.btn_open_master, "Open Product_Data_File/master.xlsx")
+        self.lbl_master_status = ttk.Label(outputs, text="Master: Not built", foreground="#a12d2d")
+        self.lbl_master_status.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=6)
 
         # Log area
         log_frame = ttk.Frame(self, padding=(12, 0, 12, 10))
@@ -291,6 +397,15 @@ class App(tk.Tk):
         # Status bar
         self.status = tk.StringVar(value="Ready.")
         ttk.Label(self, textvariable=self.status, anchor=tk.W).pack(fill=tk.X, padx=12, pady=(0, 10))
+
+        # Wire path changes to live refresh
+        self.var_terms.trace_add('write', lambda *_: self._refresh_ui_state())
+        self.var_pdfs.trace_add('write', lambda *_: self._refresh_ui_state())
+        self.var_scanned.trace_add('write', lambda *_: self._refresh_ui_state())
+        self.var_plot_terms.trace_add('write', lambda *_: self._refresh_ui_state())
+        self.var_ext_pdf.trace_add('write', lambda *_: self._refresh_ui_state())
+        self.var_ext_pages.trace_add('write', lambda *_: self._refresh_ui_state())
+        self._refresh_ui_state()
 
     def append_log(self, s: str):
         self.txt.configure(state=tk.NORMAL)
@@ -493,6 +608,11 @@ class App(tk.Tk):
                 self.status.set("Scan finished.")
                 self.btn_run.configure(state=tk.NORMAL)
                 self.btn_stop.configure(state=tk.DISABLED)
+        # Periodically refresh UI state (prereqs, statuses)
+        try:
+            self._refresh_ui_state()
+        except Exception:
+            pass
         self.after(750, self._poll_runner)
 
     # --- Settings (env knobs) ---
@@ -717,45 +837,6 @@ class App(tk.Tk):
                     messagebox.showerror("Install failed", f"install.bat exited with code {rc}")
         threading.Thread(target=_pump, daemon=True).start()
 
-    def _init_venv_minimal(self):
-        self._run_init_venv(args=[])
-
-    def _init_venv_full(self):
-        self._run_init_venv(args=["--full", "--write-env"]) 
-
-    def _run_init_venv(self, args: list[str]):
-        script = ROOT / "scripts" / "init_venv.py"
-        if not script.exists():
-            messagebox.showerror("Missing script", f"Could not find init_venv.py at:\n{script}")
-            return
-        self.status.set("Initializing venv...")
-        self.append_log("[GUI] Initializing venv...\n")
-        py = sys.executable  # use current Python to bootstrap venv
-        try:
-            proc = subprocess.Popen([py, str(script), "--dir", str(ROOT / ".venv"), *args], cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        except Exception as exc:
-            self.status.set("Ready.")
-            messagebox.showerror("Init failed", str(exc))
-            return
-
-        def _pump():
-            rc = 0
-            try:
-                stream = proc.stdout
-                if stream is not None:
-                    for line in stream:
-                        self.append_log(line)
-                rc = proc.wait()
-            except Exception as exc:
-                self.append_log(f"[WARN] Venv init reader error: {exc}\n")
-                rc = 1
-            finally:
-                if rc == 0:
-                    self.status.set("Venv ready.")
-                    self.var_interp.set(_resolve_project_python())
-                else:
-                    self.status.set("Venv init failed.")
-                    messagebox.showerror("Init failed", f"init_venv.py exited with code {rc}")
 
     # --- Plotting helpers ---
     def _generate_plot_terms(self):
@@ -955,6 +1036,151 @@ class App(tk.Tk):
             self.status.set("Plot summary opened.")
         except Exception as e:
             messagebox.showwarning("Open failed", str(e))
+
+    # --- Dynamic UI state ---
+    def _refresh_ui_state(self):
+        # Paths
+        terms_path = Path(self.var_terms.get()).expanduser()
+        pdfs_dir = Path(self.var_pdfs.get()).expanduser()
+        scanned_dir = Path(self.var_scanned.get()).expanduser()
+        master_xlsx = ROOT / "Product_Data_File" / "master.xlsx"
+        master_csv = ROOT / "Product_Data_File" / "master.csv"
+        registry_xlsx = ROOT / "Product_Data_File" / "run_registry.xlsx"
+        registry_csv = ROOT / "Product_Data_File" / "run_registry.csv"
+        plot_terms_xlsx = ROOT / "user_inputs" / "plot_terms.xlsx"
+        plot_terms_csv = ROOT / "user_inputs" / "plot_terms.csv"
+        plots_summary = ROOT / "Product_Data_File" / "plots_summary.xlsx"
+
+        # Status helpers
+        def exists(p: Path) -> bool:
+            try:
+                return p.exists()
+            except Exception:
+                return False
+
+        def fmt_status(prefix: str, p: Path) -> tuple[str, str]:
+            if exists(p):
+                try:
+                    ts = p.stat().st_mtime
+                    import datetime as _dt
+                    stamp = _dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    stamp = ""
+                return f"{prefix}: OK {('('+stamp+')') if stamp else ''}", "#1b5e20"
+            return f"{prefix}: Not found", "#a12d2d"
+
+        # Environment status
+        py = _resolve_project_python()
+        env_ok = Path(py).exists()
+        env_text = f"Env: {'OK' if env_ok else 'Not Installed'} ({py})"
+        env_color = "#1b5e20" if env_ok else "#a12d2d"
+        try:
+            self.lbl_env_status.configure(text=env_text, foreground=env_color)
+        except Exception:
+            pass
+
+        # Terms status
+        try:
+            t_text, t_col = fmt_status("Terms", terms_path)
+            self.lbl_terms_status.configure(text=t_text, foreground=t_col)
+        except Exception:
+            pass
+
+        # Master status
+        master_path = master_xlsx if exists(master_xlsx) else master_csv
+        try:
+            m_text, m_col = fmt_status("Master", master_path)
+            self.lbl_master_status.configure(text=m_text, foreground=m_col)
+        except Exception:
+            pass
+
+        # Plot config status
+        plot_cfg_path = plot_terms_xlsx if exists(plot_terms_xlsx) else plot_terms_csv
+        try:
+            p_text, p_col = fmt_status("Plot Config", plot_cfg_path)
+            self.lbl_plot_cfg_status.configure(text=p_text, foreground=p_col)
+        except Exception:
+            pass
+
+        # Enable/disable actions based on prereqs
+        running = self.runner.proc is not None
+        can_run = exists(pdfs_dir) and exists(terms_path) and not running
+        self.btn_run.configure(state=(tk.NORMAL if can_run else tk.DISABLED))
+        # Compile master requires some run data or registry
+        has_registry = exists(registry_xlsx) or exists(registry_csv)
+        has_run_data = any(d.is_dir() for d in (ROOT/"Product_Data_File"/"run_data").glob("*/")) if (ROOT/"Product_Data_File"/"run_data").exists() else False
+        self.btn_compile_master.configure(state=(tk.NORMAL if (has_registry or has_run_data) else tk.DISABLED))
+        # Open master enabled if present
+        self.btn_open_master.configure(state=(tk.NORMAL if exists(master_path) else tk.DISABLED))
+        # Open registry
+        self.btn_open_registry.configure(state=(tk.NORMAL if has_registry else tk.DISABLED))
+        # Plotting prereqs
+        has_master = exists(master_xlsx) or exists(master_csv)
+        has_plot_cfg = exists(plot_cfg_path)
+        has_plots = any((PLOTS_DIR).glob("*.png")) if PLOTS_DIR.exists() else False
+        self.btn_plot_terms_create.configure(state=(tk.NORMAL if has_master else tk.DISABLED))
+        self.btn_plot_generate.configure(state=(tk.NORMAL if (has_master and has_plot_cfg) else tk.DISABLED))
+        self.btn_plot_summary.configure(state=(tk.NORMAL if has_plots else tk.DISABLED))
+        self.btn_open_plot_summary.configure(state=(tk.NORMAL if exists(plots_summary) else tk.DISABLED))
+        # Extract tables prereqs
+        ext_pdf_ok = exists(Path(self.var_ext_pdf.get()))
+        self.btn_plots_open.configure(state=tk.NORMAL)
+        try:
+            self.btn_extract_tables.configure(state=(tk.NORMAL if ext_pdf_ok else tk.DISABLED))
+        except Exception:
+            pass
+
+
+    # --- Page Table Extraction ---
+    def _pick_ext_pdf(self):
+        initial = str(DEFAULT_PDF_DIR)
+        path = filedialog.askopenfilename(title="Select PDF", initialdir=initial, filetypes=[("PDF", "*.pdf"), ("All", "*.*")])
+        if path:
+            self.var_ext_pdf.set(path)
+
+    def _extract_page_tables(self):
+        script = ROOT / "scripts" / "extract_page_tables.py"
+        if not script.exists():
+            messagebox.showerror("Missing script", f"Could not find extractor at:\n{script}")
+            return
+        pdf = Path(self.var_ext_pdf.get()).expanduser()
+        if not pdf.exists():
+            messagebox.showerror("Missing PDF", f"Select a valid PDF under:\n{DEFAULT_PDF_DIR}")
+            return
+        pages = (self.var_ext_pages.get() or "").strip()
+        self.status.set("Extracting page tables...")
+        self.append_log(f"[GUI] Extracting tables from {pdf.name} pages='{pages}'...\n")
+        env = os.environ.copy()
+        py = _resolve_project_python()
+        env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+        cmd = [py, str(script), "--pdf", str(pdf)]
+        if pages:
+            cmd += ["--pages", pages]
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except Exception as exc:
+            self.status.set("Ready.")
+            messagebox.showerror("Extraction failed", str(exc))
+            return
+
+        def _pump():
+            rc = 0
+            try:
+                stream = proc.stdout
+                if stream is not None:
+                    for line in stream:
+                        self.append_log(line)
+                rc = proc.wait()
+            except Exception as exc:
+                self.append_log(f"[WARN] Extractor reader error: {exc}\n")
+                rc = 1
+            finally:
+                if rc == 0:
+                    self.status.set("Page tables extracted.")
+                else:
+                    self.status.set("Table extraction failed.")
+                    messagebox.showerror("Extraction failed", f"extract_page_tables.py exited with code {rc}")
+        threading.Thread(target=_pump, daemon=True).start()
 
 
 if __name__ == "__main__":
