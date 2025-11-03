@@ -296,19 +296,44 @@ def read_plot_terms_table() -> list[dict]:
 
 
 def write_plot_terms_table(rows: list[dict]) -> None:
-    """Write plot terms table back to CSV for robustness.
+    """Write plot terms table to Excel (preferred), fallback to CSV.
 
-    We prefer not to depend on Excel writers here; the plotting script
-    accepts CSV as well.
+    Primary target: user_inputs/plot_terms.xlsx
+    Fallback mirror: user_inputs/plot_terms.csv (kept for compatibility)
     """
-    target = DEFAULT_PLOT_TERMS_XLSX.with_suffix(".csv")
-    import csv as _csv
+    xlsx = DEFAULT_PLOT_TERMS_XLSX
+    csvp = xlsx.with_suffix(".csv")
     if not rows:
         # Ensure header exists if empty write attempted
-        rows = [{"Plot?": "", "Plot Name": "", "Tie To Plot": "", "X Axis": "SN", **{k: "" for k in ID_COLS}, "Min": "", "Max": "", "Series Label": ""}]
+        rows = [{
+            "Plot?": "",
+            "Plot Name": "",
+            "Tie To Plot": "",
+            "X Axis": "SN",
+            **{k: "" for k in ID_COLS},
+            "Min": "",
+            "Max": "",
+            "Series Label": "",
+        }]
     keys: list[str] = list(rows[0].keys())
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with open(target, "w", newline="", encoding="utf-8") as f:
+    xlsx.parent.mkdir(parents=True, exist_ok=True)
+    # Try pandas Excel (xlsxwriter or openpyxl)
+    try:
+        import pandas as _pd  # type: ignore
+        df = _pd.DataFrame(rows, columns=keys)
+        try:
+            import xlsxwriter  # noqa: F401
+            engine = "xlsxwriter"
+        except Exception:
+            engine = "openpyxl"
+        with _pd.ExcelWriter(xlsx, engine=engine) as writer:  # type: ignore[arg-type]
+            df.to_excel(writer, sheet_name="plot_terms", index=False)
+        return
+    except Exception:
+        pass
+    # CSV fallback
+    import csv as _csv
+    with open(csvp, "w", newline="", encoding="utf-8") as f:
         w = _csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         for row in rows:

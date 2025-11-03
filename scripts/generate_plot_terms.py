@@ -150,10 +150,19 @@ def write_sheet(rows: List[Dict[str, Any]]) -> None:
         print(f"[DONE] Plot terms workbook -> {OUT_XLSX}")
         return
     except Exception as e:
-        print(f"[WARN] Excel writer unavailable ({e}); falling back to CSV")
-    try:
-        df.to_csv(OUT_CSV, index=False)
-        print(f"[DONE] Plot terms CSV -> {OUT_CSV}")
+        # Fallback: write Excel via openpyxl engine (no validations)
+        try:
+            with pd.ExcelWriter(OUT_XLSX, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="plot_terms", index=False)
+            print(f"[DONE] Plot terms workbook -> {OUT_XLSX}")
+            return
+        except Exception as e2:
+            print(f"[WARN] Excel write unavailable ({e2}); falling back to CSV")
+        try:
+            df.to_csv(OUT_CSV, index=False)
+            print(f"[DONE] Plot terms CSV -> {OUT_CSV}")
+        except Exception as e3:
+            print(f"[ERROR] Could not write plot terms CSV: {e3}")
     except Exception as e:
         print(f"[ERROR] Could not write plot terms CSV: {e}")
 
@@ -206,4 +215,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
