@@ -1,0 +1,9 @@
+Plot?,Plot Name,Tie To Plot,X Axis,Term,Grouping,Row Label,Column Label,Units,Min,Max,Series Label
+N,pre test - resistance,,SN,resistance,pre test,resistance,value,,,,resistance - resistance - value
+N,pre test - resistance,,SN,resistance,pre test,resistance,min,,,,resistance - resistance - min
+Y,pre test - isp,,SN,isp,pre test,isp,value,,1.0,8.0,isp - isp - value
+N,pre test - isp,,SN,isp,pre test,isp,min,,,,isp - isp - min
+N,pre test - isp,,SN,isp,pre test,isp,max,,,,isp - isp - max
+N,pre test - Thrust,,SN,Thrust,pre test,Thrust,value,,,,Thrust - Thrust - value
+N,post test - Thrust,pre test - Thrust,SN,Thrust,post test,Thrust,min,,,,Thrust - Thrust - min
+N,post test - Thrust,,SN,Thrust,post test,Thrust,max,,,,Thrust - Thrust - max
