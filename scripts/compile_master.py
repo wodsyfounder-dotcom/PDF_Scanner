@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Compile a master extraction workbook from the per-run caches recorded in run_registry.
 
@@ -20,6 +20,7 @@ No external executables required. Uses pandas/xlsxwriter if available; otherwise
 from __future__ import annotations
 
 import csv
+import re
 import json
 import sys
 from pathlib import Path
@@ -343,3 +344,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

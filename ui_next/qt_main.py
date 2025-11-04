@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 import threading
@@ -111,15 +111,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QMainWindow { background: #f7f9fc; }
             QLabel { color: #1f2937; }
             QLabel.subtle { color: #5b6b7a; font-size: 12px; }
-            QGroupBox { font-weight: 700; font-size: 15px; border: 1px solid #e1e6ef; border-radius: 8px; margin-top: 16px; background: #ffffff; }
-            /* Make group titles more pronounced and allow alignment control */
-            QGroupBox::title { subcontrol-origin: margin; background: transparent; padding: 0 6px; }
-            /* Tabs styling and centering */
-            QTabBar { qproperty-drawBase: 0; }
-            QTabBar::tab { padding: 10px 18px; margin: 0 8px; font-weight: 600; color: #17324d; }
-            QTabBar::tab:selected { color: #113a70; border-bottom: 2px solid #113a70; }
-            QTabBar::tab:hover { color: #0f335f; }
-
+            QGroupBox { font-weight: 700; font-size: 15px; border: 1px solid #e1e6ef; border-radius: 8px; margin-top: 26px; background: #ffffff; }
+            /* Make group titles pronounced, black, centered, and add padding below */
+            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; color: #000000; background: #ffffff; padding: 2px 8px 6px 8px; }
             QPushButton { padding: 10px 16px; border-radius: 6px; background: #ffffff; color: #17324d; border: 1px solid #d1dae6; }
             QPushButton:hover { background: #f1f4f9; }
             QPushButton[variant="primary"] { background: #113a70; color: #ffffff; border: 1px solid #0f335f; }
@@ -155,6 +149,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Header
         header = QtWidgets.QFrame()
         hbox = QtWidgets.QHBoxLayout(header)
+        logo = QtWidgets.QLabel()
+        logo_pix = self._build_logo_pixmap()
+        logo.setPixmap(logo_pix)
+        logo.setFixedSize(logo_pix.size())
+        hbox.addWidget(logo)
+
         title = QtWidgets.QLabel("EIDAT")
         font = title.font(); font.setPointSize(20); font.setBold(True); title.setFont(font)
         subtitle = QtWidgets.QLabel("Engineering End Item Data Analysis Tool"); subtitle.setStyleSheet("color:#5b6b7a; font-size: 12px;")
@@ -178,6 +178,30 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
+        self._tab_style_template = (
+            "QTabWidget::pane { border: none; margin-top: -2px; background: transparent; border-top: 3px solid rgba(16, 52, 90, 0.85); }\n"
+            "QTabWidget::tab-bar { alignment: center; }\n"
+            "QTabBar { qproperty-drawBase: 0; }\n"
+            "QTabBar::tab {\n"
+            "    padding: 18px 0;\n"
+            "    margin: 0;\n"
+            "    font-weight: 700;\n"
+            "    letter-spacing: 0.5px;\n"
+            "    color: #ffffff;\n"
+            "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #173761, stop:1 #2c68af);\n"
+            "    border: none;\n"
+            "    border-right: 1px solid rgba(255,255,255,0.25);\n"
+            "    border-bottom: 4px solid rgba(0, 0, 0, 0.12);\n"
+            "    min-width: {width}px;\n"
+            "}\n"
+            "QTabBar::tab:last { border-right: none; }\n"
+            "QTabBar::tab:selected { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0d2a48, stop:1 #1b4d85); border-bottom: 4px solid rgba(255,255,255,0.45); }\n"
+            "QTabBar::tab:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4c82, stop:1 #2d79bd); }\n"
+        )
+
+        self._apply_tab_widths()
+        QtCore.QTimer.singleShot(0, self._apply_tab_widths)
+
         self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumBlockCount(5000)
         self.status_bar = self.statusBar()
 
@@ -194,15 +218,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Runtime
         self._worker: ProcWorker | None = None
         self._enrich_after_run: bool = False
+        self._registry_cache: tuple[list[str], list[list[str]]] | None = None
         self._scan_refresh()
-        # Auto-refresh registry view regularly
-        try:
-            self._reg_timer = QtCore.QTimer(self)
-            self._reg_timer.setInterval(2000)
-            self._reg_timer.timeout.connect(self._refresh_run_registry)
-            self._reg_timer.start()
-        except Exception:
-            pass
 
     # Tabs
     def _setup_tab_setup(self):
@@ -316,10 +333,10 @@ class MainWindow(QtWidgets.QMainWindow):
         grp_inputs = QtWidgets.QGroupBox("Define Inputs")
         li = QtWidgets.QGridLayout(grp_inputs)
         self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
-        btn_browse_terms = QtWidgets.QPushButton("Browse…")
+        btn_browse_terms = QtWidgets.QPushButton("Browse...")
         btn_browse_terms.clicked.connect(lambda: self._browse_file(self.ed_terms, be.DEFAULT_TERMS_XLSX.parent, "Terms files (*.xlsx *.csv);;All files (*.*)"))
-        self.btn_terms_create = QtWidgets.QPushButton("Create New terms.xlsx")
-        self.btn_terms_open = QtWidgets.QPushButton("Open Existing Spreadsheet")
+        self.btn_terms_create = QtWidgets.QPushButton("Create A New Spreadsheet for Defining Input Terms (terms.xlsx)")
+        self.btn_terms_open = QtWidgets.QPushButton("Open/Edit Existing Terms Spreadsheet")
         self.btn_terms_create.clicked.connect(self._act_generate_terms)
         self.btn_terms_open.clicked.connect(lambda: be.open_terms_file(Path(self.ed_terms.text())))
         self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
@@ -360,8 +377,8 @@ class MainWindow(QtWidgets.QMainWindow):
         rl.addLayout(bbar)
         up.addWidget(right_box, 0, 1)
         cbar = QtWidgets.QHBoxLayout();
-        self.btn_add_files = QtWidgets.QPushButton("Add Files…"); self.btn_add_files.clicked.connect(self._act_add_files)
-        self.btn_add_folder = QtWidgets.QPushButton("Add Folder…"); self.btn_add_folder.clicked.connect(self._act_add_folder)
+        self.btn_add_files = QtWidgets.QPushButton("Add Files..."); self.btn_add_files.clicked.connect(self._act_add_files)
+        self.btn_add_folder = QtWidgets.QPushButton("Add Folder..."); self.btn_add_folder.clicked.connect(self._act_add_folder)
         cbar.addWidget(self.btn_add_files); cbar.addWidget(self.btn_add_folder); cbar.addStretch(1)
         up.addLayout(cbar, 1, 0, 1, 2)
 
@@ -401,29 +418,43 @@ class MainWindow(QtWidgets.QMainWindow):
         grid = QtWidgets.QGridLayout(self.tab_plot)
         grp_dash = QtWidgets.QGroupBox("Plotting Dashboard")
         ld = QtWidgets.QGridLayout(grp_dash)
-        self.btn_plot_terms_create = QtWidgets.QPushButton("Generate Available Term List"); self.btn_plot_terms_create.clicked.connect(self._act_generate_plot_terms)
-        self.lbl_plot_sel = QtWidgets.QLabel("0 selected")
-        ld.addWidget(self.btn_plot_terms_create, 0, 0); ld.addWidget(self.lbl_plot_sel, 0, 1)
-        ld.addWidget(QtWidgets.QLabel("Plot Terms"), 1, 0)
-        self.list_plot_terms = QtWidgets.QListWidget(); self.list_plot_terms.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection); self.list_plot_terms.itemChanged.connect(self._on_plot_term_toggled)
-        ld.addWidget(self.list_plot_terms, 2, 0, 1, 2)
+        self.btn_plot_terms_create = QtWidgets.QPushButton("Generate Available Term List")
+        self.btn_plot_terms_create.clicked.connect(self._act_generate_plot_terms)
+        self.btn_open_plot_terms = QtWidgets.QPushButton("View Terms List")
+        self.btn_open_plot_terms.clicked.connect(lambda: self._safe_open(lambda: be.open_path(be.DEFAULT_PLOT_TERMS_XLSX)))
+        ld.addWidget(self.btn_plot_terms_create, 0, 0)
+        ld.addWidget(self.btn_open_plot_terms, 0, 1)
+
+        grp_gen = QtWidgets.QGroupBox("Proposed Plots")
+        lg = QtWidgets.QGridLayout(grp_gen)
+        self.list_plot_names = QtWidgets.QListWidget()
+        self.list_plot_names.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
+        self.list_plot_names.itemChanged.connect(self._on_plot_name_toggled)
+        lg.addWidget(self.list_plot_names, 0, 0, 1, 2)
+        self.btn_apply_plot_names = QtWidgets.QPushButton("Use Selection")
+        self.btn_apply_plot_names.clicked.connect(self._apply_plot_name_selection)
+        self.btn_refresh_plot_names = QtWidgets.QPushButton("Refresh")
+        self.btn_refresh_plot_names.clicked.connect(self._load_plot_names_list)
+        lg.addWidget(self.btn_apply_plot_names, 1, 0)
+        lg.addWidget(self.btn_refresh_plot_names, 1, 1)
 
         grp_ops = QtWidgets.QGroupBox("Generate Plots")
         lo = QtWidgets.QHBoxLayout(grp_ops)
-        self.btn_plots_generate = QtWidgets.QPushButton("Generate Plots"); self.btn_plots_generate.setProperty("variant", "primary"); self.btn_plots_generate.clicked.connect(self._act_generate_plots_save_selection)
-        self.btn_plot_summary = QtWidgets.QPushButton("Plot Summary Report"); self.btn_plot_summary.clicked.connect(self._act_export_plot_summary)
-        self.btn_plots_open_folder = QtWidgets.QPushButton("Open Plots Folder"); self.btn_plots_open_folder.clicked.connect(lambda: self._safe_open(be.open_plots_folder))
-        lo.addWidget(self.btn_plots_generate); lo.addWidget(self.btn_plot_summary); lo.addStretch(1); lo.addWidget(self.btn_plots_open_folder)
-
-        grp_gen = QtWidgets.QGroupBox("Generated Plots")
-        lg = QtWidgets.QGridLayout(grp_gen)
-        self.list_generated = QtWidgets.QListWidget()
-        self.btn_open_plots2 = QtWidgets.QPushButton("Open Folder"); self.btn_open_plots2.clicked.connect(lambda: self._safe_open(be.open_plots_folder))
-        lg.addWidget(self.list_generated, 0, 0); lg.addWidget(self.btn_open_plots2, 0, 1)
+        self.btn_plots_generate = QtWidgets.QPushButton("Generate Plots")
+        self.btn_plots_generate.setProperty("variant", "primary")
+        self.btn_plots_generate.clicked.connect(self._act_generate_plots_save_selection)
+        self.btn_plot_summary = QtWidgets.QPushButton("Plot Summary Report")
+        self.btn_plot_summary.clicked.connect(self._act_export_plot_summary)
+        self.btn_plots_open_folder = QtWidgets.QPushButton("Open Plots Folder")
+        self.btn_plots_open_folder.clicked.connect(lambda: self._safe_open(be.open_plots_folder))
+        lo.addWidget(self.btn_plots_generate)
+        lo.addWidget(self.btn_plot_summary)
+        lo.addStretch(1)
+        lo.addWidget(self.btn_plots_open_folder)
 
         grid.addWidget(grp_dash, 0, 0, 1, 2)
-        grid.addWidget(grp_ops, 1, 0, 1, 2)
-        grid.addWidget(grp_gen, 2, 0, 1, 2)
+        grid.addWidget(grp_gen, 1, 0, 1, 2)
+        grid.addWidget(grp_ops, 2, 0, 1, 2)
         grid.setRowStretch(3, 1)
 
     def _setup_tab_outputs(self):
@@ -434,8 +465,9 @@ class MainWindow(QtWidgets.QMainWindow):
     # Actions & helpers
     def _on_tab_changed(self, idx: int):
         try:
+            self._apply_tab_widths()
             if self.tabs.widget(idx) is self.tab_plot:
-                self._load_plot_terms_into_list(); self._refresh_generated_plots_list()
+                self._load_plot_names_list()
             if self.tabs.widget(idx) is self.tab_process or self.tabs.widget(idx) is self.tab_outputs:
                 self._refresh_run_registry()
         except Exception:
@@ -458,12 +490,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_worker_done(self, rc: int):
         self.status_bar.showMessage("Ready.", 3000)
         self._append_log(f"[INFO] Process finished with code {rc}")
-        # Only kick enrichment immediately after a scan; otherwise just refresh UI
+        # Refresh UI after a scan; no post-run enrichment step
         if getattr(self, "_enrich_after_run", False):
             self._enrich_after_run = False
             try:
-                self._start_worker(be.enrich_run_registry, status_msg="Updating run registry metadata...")
-                return
+                self._refresh_run_registry()
             except Exception:
                 pass
         self._scan_refresh()
@@ -534,32 +565,22 @@ class MainWindow(QtWidgets.QMainWindow):
     def _act_generate_plot_terms(self):
         self._start_worker(be.generate_plot_terms, status_msg="Generating plot terms...")
 
-    def _act_open_selected_registry(self):
-        try:
-            text = self.cmb_run_registry.currentText()
-            if not text:
-                return
-            p = Path(text)
-            if not p.is_absolute():
-                base = (be.ROOT / "Product_Data_File").resolve() if hasattr(be, "ROOT") else Path.cwd()
-                p = (base / text).resolve()
-            if not p.exists():
-                QtWidgets.QMessageBox.warning(self, "Not found", f"File not found:\n{p}")
-                return
-            be.open_path(p)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Open failed", str(e))
-
     def _act_generate_plots_save_selection(self):
-        try:
-            active = self._selected_plot_active_keys()
-            if active:
-                be.set_plot_flags(active)
-        except Exception:
-            pass
+        # Persist plot name selection before generating
+        self._apply_plot_name_selection(show_status=False)
         self._act_generate_plots()
 
     def _act_generate_plots(self):
+        try:
+            plots_dir = be.PLOTS_DIR
+            if plots_dir.exists():
+                for img in plots_dir.glob("*.png"):
+                    try:
+                        img.unlink()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         self._start_worker(be.generate_plots, status_msg="Generating plots...")
 
     def _act_export_plot_summary(self):
@@ -586,13 +607,18 @@ class MainWindow(QtWidgets.QMainWindow):
                     import openpyxl  # type: ignore
                     wb = openpyxl.load_workbook(str(p_xlsx), read_only=True, data_only=True)
                     ws = wb.active
-                    it = ws.iter_rows(values_only=True)
-                    try:
-                        headers = [str(x) if x is not None else "" for x in next(it)]
-                    except StopIteration:
+                    if ws is None:
+                        # No active worksheet; treat as empty workbook
                         headers = []
-                    for r in it:
-                        rows.append([str(x) if x is not None else "" for x in r])
+                        rows = []
+                    else:
+                        it = ws.iter_rows(values_only=True)
+                        try:
+                            headers = [str(x) if x is not None else "" for x in next(it)]
+                        except StopIteration:
+                            headers = []
+                        for r in it:
+                            rows.append([str(x) if x is not None else "" for x in r])
                 except Exception:
                     headers = ["Run Registry"]
                     rows = [[f"Preview requires CSV or openpyxl: {p_xlsx.name}"]]
@@ -667,24 +693,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _refresh_run_registry(self):
         try:
-            if not hasattr(self, "tbl_registry"):
-                return
-            headers, rows = self._get_registry_table_data()
-            self.tbl_registry.setRowCount(0)
-            self.tbl_registry.setColumnCount(len(headers))
-            if headers:
-                self.tbl_registry.setHorizontalHeaderLabels(headers)
-            for r, row in enumerate(rows):
-                self.tbl_registry.insertRow(r)
-                for c, val in enumerate(row[: len(headers) or len(row)]):
-                    self.tbl_registry.setItem(r, c, QtWidgets.QTableWidgetItem(val))
-            self.tbl_registry.resizeColumnsToContents()
+            self._registry_cache = self._get_registry_table_data()
         except Exception:
-            pass
+            self._registry_cache = ([], [])
 
     def _show_registry_popup(self):
         try:
-            headers, rows = self._get_registry_table_data()
+            cache = getattr(self, "_registry_cache", None)
+            if not cache:
+                cache = self._get_registry_table_data()
+            headers, rows = cache
             dlg = QtWidgets.QDialog(self)
             dlg.setWindowTitle("Run Registry")
             dlg.resize(900, 500)
@@ -802,9 +820,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_upload_list()
         self.drop_zone.set_hint(f"Drop PDFs here\n-> {self.ed_pdfs.text()}")
 
-        # Plotting lists
-        self._load_plot_terms_into_list()
-        self._refresh_generated_plots_list()
+        # Plotting selection\n        self._load_plot_names_list()
         # Inline viewer removed; popup will build data on demand
 
     # Upload ingestion
@@ -909,7 +925,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not files:
             return
         names = "\n".join(p.name for p in files[:10])
-        extra = "" if len(files) <= 10 else f"\n…and {len(files)-10} more"
+        extra = "" if len(files) <= 10 else f"\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦and {len(files)-10} more"
         if (
             QtWidgets.QMessageBox.question(
                 self, "Remove files", f"Delete these from PDFs folder?\n\n{names}{extra}"
@@ -958,73 +974,98 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self._ingest_paths([path])
 
-    # Plot terms helpers
-    def _load_plot_terms_into_list(self):
-        if not hasattr(self, "list_plot_terms"):
+    # Plot selection helpers
+    def _load_plot_names_list(self):
+        if not hasattr(self, "list_plot_names"):
             return
-        rows = be.read_plot_terms_table()
-        self.list_plot_terms.blockSignals(True)
-        self.list_plot_terms.clear()
-        count_sel = 0
-        for r in rows:
-            term = str(r.get("Term") or "").strip()
-            grouping = str(r.get("Grouping") or "").strip()
-            label = term if not grouping else f"{term}  ({grouping})"
-            it = QtWidgets.QListWidgetItem(label)
-            it.setFlags(
-                it.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable
-            )
-            checked = str(r.get("Plot?") or "").strip().upper() == "Y"
-            it.setCheckState(
-                QtCore.Qt.CheckState.Checked
-                if checked
-                else QtCore.Qt.CheckState.Unchecked
-            )
-            key = (
-                str(r.get("Term") or ""),
-                str(r.get("Grouping") or ""),
-                str(r.get("Row Label") or ""),
-                str(r.get("Column Label") or ""),
-                str(r.get("Units") or ""),
-            )
-            it.setData(QtCore.Qt.ItemDataRole.UserRole, key)
-            self.list_plot_terms.addItem(it)
-            if checked:
-                count_sel += 1
-        self.list_plot_terms.blockSignals(False)
-        if hasattr(self, "lbl_plot_sel"):
-            self.lbl_plot_sel.setText(f"{count_sel} selected")
+        try:
+            items = be.read_plot_names()
+        except Exception:
+            items = []
+        self.list_plot_names.blockSignals(True)
+        self.list_plot_names.clear()
+        for name, selected in items:
+            it = QtWidgets.QListWidgetItem(name)
+            it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(QtCore.Qt.CheckState.Checked if selected else QtCore.Qt.CheckState.Unchecked)
+            self.list_plot_names.addItem(it)
+        self.list_plot_names.blockSignals(False)
 
-    def _on_plot_term_toggled(self, item: QtWidgets.QListWidgetItem):
-        if not hasattr(self, "list_plot_terms") or not hasattr(self, "lbl_plot_sel"):
+    def _on_plot_name_toggled(self, item: QtWidgets.QListWidgetItem):
+        self._apply_plot_name_selection(show_status=False)
+
+    def _apply_plot_name_selection(self, *, show_status: bool = True):
+        if not hasattr(self, "list_plot_names"):
             return
-        count_sel = 0
-        for i in range(self.list_plot_terms.count()):
-            item = self.list_plot_terms.item(i)
-            if item and item.checkState() == QtCore.Qt.CheckState.Checked:
-                count_sel += 1
-        self.lbl_plot_sel.setText(f"{count_sel} selected")
-
-    def _selected_plot_active_keys(self) -> set[tuple[str, str, str, str, str]]:
-        out: set[tuple[str, str, str, str, str]] = set()
-        if not hasattr(self, "list_plot_terms"):
-            return out
-        for i in range(self.list_plot_terms.count()):
-            it = self.list_plot_terms.item(i)
+        selected: set[str] = set()
+        for i in range(self.list_plot_names.count()):
+            it = self.list_plot_names.item(i)
             if it and it.checkState() == QtCore.Qt.CheckState.Checked:
-                key = it.data(QtCore.Qt.ItemDataRole.UserRole)
-                if key is not None:
-                    out.add(tuple(key))
-        return out
+                selected.add(it.text())
+        try:
+            be.set_plot_flags_by_plot_names(selected)
+            if show_status and hasattr(self, "status_bar"):
+                self.status_bar.showMessage("Plot selection saved", 1500)
+        except Exception:
+            pass
 
-    def _refresh_generated_plots_list(self):
-        if not hasattr(self, "list_generated"):
+    def _apply_tab_widths(self) -> None:
+        if not hasattr(self, "_tab_style_template"):
             return
-        self.list_generated.clear()
-        p = be.PLOTS_DIR
-        if p.exists():
-            for f in sorted(p.glob("*.pdf")):
-                self.list_generated.addItem(f.name)
+        try:
+            bar = self.tabs.tabBar()
+        except Exception:
+            bar = None
+        if not bar:
+            return
+        count = max(1, bar.count())
+        width = max(80, self.tabs.width() // count)
+        css = self._tab_style_template.replace("{width}", str(width))
+        self.tabs.setStyleSheet(css)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        try:
+            self._apply_tab_widths()
+        except Exception:
+            pass
+
+    def _build_logo_pixmap(self, size: int = 52) -> QtGui.QPixmap:
+        pix = QtGui.QPixmap(size, size)
+        pix.fill(QtCore.Qt.GlobalColor.transparent)
+        painter = QtGui.QPainter(pix)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Background disk
+        gradient = QtGui.QConicalGradient(size / 2, size / 2, 45)
+        gradient.setColorAt(0.0, QtGui.QColor("#1f5c9a"))
+        gradient.setColorAt(0.5, QtGui.QColor("#0f3258"))
+        gradient.setColorAt(1.0, QtGui.QColor("#1f5c9a"))
+        painter.setBrush(QtGui.QBrush(gradient))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, size - 1, size - 1)
+
+        # Inner ring
+        ring_color = QtGui.QColor(255, 255, 255, 80)
+        pen = QtGui.QPen(ring_color, size * 0.08)
+        painter.setPen(pen)
+        inset = size * 0.16
+        painter.drawEllipse(QtCore.QRectF(inset, inset, size - inset * 2, size - inset * 2))
+
+        # Flight lines
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 140), size * 0.06, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap))
+        painter.drawArc(int(size * 0.18), int(size * 0.36), int(size * 0.64), int(size * 0.40), 30 * 16, 120 * 16)
+        painter.drawArc(int(size * 0.10), int(size * 0.18), int(size * 0.80), int(size * 0.64), -40 * 16, -120 * 16)
+
+        # Center glyph
+        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(int(size * 0.42))
+        painter.setFont(font)
+        painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "E")
+        painter.end()
+        return pix
 
     # Settings persistence
     def _on_xy_slider(self, value: int):
@@ -1071,6 +1112,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

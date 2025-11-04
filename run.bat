@@ -121,11 +121,6 @@ for /f "delims=" %%D in ('dir /ad /b /o:-d "%OUT_DIR%\run_data" 2^>nul') do (
 )
 if defined LAST_RUN (
   echo [DONE] Run folder: "%OUT_DIR%\run_data\%LAST_RUN%"
-  rem Enrich scan_results with Program and Space Vehicle based on filename
-  if exist "%ROOT%scripts\enrich_scan_results.py" (
-    if not "%QUIET%"=="1" echo [RUN] Enriching scan results with Program/Space Vehicle...
-    "%PY%" "%ROOT%scripts\enrich_scan_results.py" --run-dir "%OUT_DIR%\run_data\%LAST_RUN%"
-  )
 ) else (
   echo [DONE] Check: "%OUT_DIR%\run_data" for this run.
 )

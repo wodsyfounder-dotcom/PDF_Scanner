@@ -127,7 +127,7 @@ def write_sheet(rows: List[Dict[str, Any]]) -> None:
         "Series Label",
     ]
     df = pd.DataFrame(rows, columns=cols)
-    # Try Excel with xlsxwriter for data validation
+    # Write Excel only (xlsxwriter preferred, openpyxl fallback)
     try:
         import xlsxwriter  # noqa: F401
         with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
@@ -142,32 +142,34 @@ def write_sheet(rows: List[Dict[str, Any]]) -> None:
                     max_len = len(col)
                 ws.set_column(i, i, min(60, max(12, max_len + 2)))
             # Data validations for toggles and axis
-            # Plot? -> dropdown Y/N
             last_row = max(1, len(df) + 1)
             ws.data_validation(1, 0, last_row, 0, {"validate": "list", "source": ["", "Y", "N"]})
-            # X Axis -> SN/Program/Space Vehicle
             ws.data_validation(1, 3, last_row, 3, {"validate": "list", "source": list(PREFERRED_AXIS)})
+        if OUT_CSV.exists():
+            try:
+                OUT_CSV.unlink()
+            except Exception:
+                pass
         print(f"[DONE] Plot terms workbook -> {OUT_XLSX}")
         return
-    except Exception as e:
+    except Exception:
         # Fallback: write Excel via openpyxl engine (no validations)
         try:
             with pd.ExcelWriter(OUT_XLSX, engine="openpyxl") as writer:
                 df.to_excel(writer, sheet_name="plot_terms", index=False)
+            if OUT_CSV.exists():
+                try:
+                    OUT_CSV.unlink()
+                except Exception:
+                    pass
             print(f"[DONE] Plot terms workbook -> {OUT_XLSX}")
             return
         except Exception as e2:
-            print(f"[WARN] Excel write unavailable ({e2}); falling back to CSV")
-        try:
-            df.to_csv(OUT_CSV, index=False)
-            print(f"[DONE] Plot terms CSV -> {OUT_CSV}")
-        except Exception as e3:
-            print(f"[ERROR] Could not write plot terms CSV: {e3}")
-    except Exception as e:
-        print(f"[ERROR] Could not write plot terms CSV: {e}")
+            raise SystemExit(f"[ERROR] Could not write plot_terms.xlsx: {e2}")
 
 
 def main() -> None:
+
     serials, master_rows = read_master()
     if not serials:
         sys.exit(1)

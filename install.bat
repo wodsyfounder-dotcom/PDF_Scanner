@@ -25,13 +25,14 @@ echo [SETUP] Upgrading pip...
 "%VPY%" -m pip install --upgrade pip
 if errorlevel 1 echo [WARN] pip upgrade had warnings.
 
-echo [SETUP] Installing required Python packages (minimal)...
+echo [SETUP] Installing required Python packages (minimal + UI)...
 "%VPY%" -m pip install ^
   pymupdf ^
   pandas ^
   openpyxl ^
   matplotlib ^
-  opencv-python-headless
+  opencv-python-headless ^
+  PySide6
 if errorlevel 1 (
   echo [ERROR] Package install failed.
   endlocal & exit /b 1
@@ -53,9 +54,9 @@ rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv run
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
 echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
-echo         pymupdf, pandas, openpyxl, matplotlib, opencv-python-headless, easyocr, torch, torchvision
+echo         pymupdf, pandas, openpyxl, matplotlib, opencv-python-headless, PySide6, easyocr, torch, torchvision
 "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
-  pymupdf pandas openpyxl matplotlib opencv-python-headless easyocr
+  pymupdf pandas openpyxl matplotlib opencv-python-headless PySide6 easyocr
 "%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
   torch torchvision
 if errorlevel 1 (
@@ -93,6 +94,6 @@ echo.
 echo Next steps:
 echo   1) Place PDFs under user_inputs\EIDP_Import_Docs
 echo   2) Edit user_inputs\terms.xlsx (or .csv)
-echo   3) Run: run.bat   or  py gui.py
+echo   3) Run: run.bat   or  "%VENV_DIR%\Scripts\python.exe" ui_next\qt_main.py
 
 endlocal & exit /b 0

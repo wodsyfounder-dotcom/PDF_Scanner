@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import sys
@@ -218,8 +218,9 @@ def open_master_workbook() -> None:
     open_path(target)
 
 
-def enrich_run_registry() -> subprocess.Popen:
-    return run_script("scripts/enrich_run_registry.py")
+# Deprecated: enrichment now handled during/after runs; external script removed
+def enrich_run_registry() -> subprocess.Popen:  # type: ignore[dead-code]
+    raise FileNotFoundError("enrich_run_registry is no longer available")
 
 
 def open_plots_folder() -> None:
@@ -296,15 +297,9 @@ def read_plot_terms_table() -> list[dict]:
 
 
 def write_plot_terms_table(rows: list[dict]) -> None:
-    """Write plot terms table to Excel (preferred), fallback to CSV.
-
-    Primary target: user_inputs/plot_terms.xlsx
-    Fallback mirror: user_inputs/plot_terms.csv (kept for compatibility)
-    """
+    """Write plot terms table to Excel only (user_inputs/plot_terms.xlsx)."""
     xlsx = DEFAULT_PLOT_TERMS_XLSX
-    csvp = xlsx.with_suffix(".csv")
     if not rows:
-        # Ensure header exists if empty write attempted
         rows = [{
             "Plot?": "",
             "Plot Name": "",
@@ -317,27 +312,24 @@ def write_plot_terms_table(rows: list[dict]) -> None:
         }]
     keys: list[str] = list(rows[0].keys())
     xlsx.parent.mkdir(parents=True, exist_ok=True)
-    # Try pandas Excel (xlsxwriter or openpyxl)
+    import pandas as _pd  # type: ignore
+    df = _pd.DataFrame(rows, columns=keys)
+    # Prefer xlsxwriter, fallback to openpyxl, else fail
     try:
-        import pandas as _pd  # type: ignore
-        df = _pd.DataFrame(rows, columns=keys)
-        try:
-            import xlsxwriter  # noqa: F401
-            engine = "xlsxwriter"
-        except Exception:
-            engine = "openpyxl"
+        import xlsxwriter  # noqa: F401
+        engine = "xlsxwriter"
+    except Exception:
+        engine = "openpyxl"
+    try:
         with _pd.ExcelWriter(xlsx, engine=engine) as writer:  # type: ignore[arg-type]
             df.to_excel(writer, sheet_name="plot_terms", index=False)
-        return
-    except Exception:
-        pass
-    # CSV fallback
-    import csv as _csv
-    with open(csvp, "w", newline="", encoding="utf-8") as f:
-        w = _csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for row in rows:
-            w.writerow({k: row.get(k, "") for k in keys})
+        csvp = xlsx.with_suffix(".csv")
+        try:
+            csvp.unlink(missing_ok=True)
+        except Exception:
+            pass
+    except Exception as e:
+        raise RuntimeError(f"Unable to write plot_terms.xlsx: {e}")
 
 
 def set_plot_flags(active_keys: set[tuple[str, str, str, str, str]]) -> None:
@@ -354,3 +346,31 @@ def set_plot_flags(active_keys: set[tuple[str, str, str, str, str]]) -> None:
         r["Plot?"] = "Y" if key in active_keys else (r.get("Plot?", "") if key not in active_keys else "")
         updated.append(r)
     write_plot_terms_table(updated)
+
+def read_plot_names() -> list[tuple[str, bool]]:
+    # Build (plot_name, selected) from plot_terms rows
+    rows = read_plot_terms_table()
+    seen: dict[str, bool] = {}
+    order: list[str] = []
+    for r in rows:
+        name = str(r.get("Plot Name") or "").strip()
+        if not name:
+            continue
+        sel = str(r.get("Plot?") or "").strip().upper() == "Y"
+        if name not in seen:
+            seen[name] = sel
+            order.append(name)
+        else:
+            seen[name] = seen[name] or sel
+    return [(name, seen[name]) for name in order]
+
+def set_plot_flags_by_plot_names(selected_names: set[str]) -> None:
+    # Set Plot?='Y' for rows whose Plot Name is selected, else ''
+    rows = read_plot_terms_table()
+    updated: list[dict] = []
+    for r in rows:
+        name = str(r.get('Plot Name') or '').strip()
+        r['Plot?'] = 'Y' if name and name in selected_names else ''
+        updated.append(r)
+    write_plot_terms_table(updated)
+
