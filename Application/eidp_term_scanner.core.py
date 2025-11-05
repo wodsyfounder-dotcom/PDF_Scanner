@@ -193,6 +193,8 @@ class TermSpec:
     smart_snap_type: Optional[str] = None
     # Optional secondary label to disambiguate values within a row
     secondary_term: Optional[str] = None
+    # Optional positional pick (1-based) of the Nth value to the right (smart mode only)
+    smart_position: Optional[int] = None
 
 
 @dataclass
@@ -467,6 +469,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                         group_after = None
                         group_before = None
                         smart_snap_type = None
+                        secondary_term = None
+                        smart_position: Optional[int] = None
                         for k, v in row.items():
                             if k and k.strip().lower() == "term":
                                 term = (v or "").strip()
@@ -513,6 +517,13 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                 smart_snap_type = _norm_smart_type((v or "").strip())
                             if k and k.strip().lower() in ("secondary_term", "secondary", "secondary label", "secondary_label"):
                                 secondary_term = ((v or "").strip() or None)
+                            if k and k.strip().lower() in ("smart_position", "smart position", "smartpos"):
+                                try:
+                                    smart_position = int(str(v).strip()) if str(v).strip() else None
+                                    if smart_position is not None and smart_position < 1:
+                                        smart_position = None
+                                except Exception:
+                                    smart_position = None
                         if term:
                             result.append(TermSpec(term=term,
                                                    pages=parse_page_ranges(pages_str),
@@ -531,7 +542,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                                    group_after=group_after,
                                                    group_before=group_before,
                                                    smart_snap_type=smart_snap_type,
-                                                   secondary_term=secondary_term))
+                                                   secondary_term=secondary_term,
+                                                   smart_position=smart_position))
                     return result
 
             last_error: Optional[UnicodeDecodeError] = None
@@ -623,6 +635,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     group_before_col = col_for("groupbefore") or col_for("group_before") or col_for("beforegroup")
     smart_type_col = col_for("smart_snap_type") or col_for("smart") or col_for("smart snap type") or col_for("smart_snap")
     secondary_col = col_for("secondary_term") or col_for("secondary") or col_for("secondary label") or col_for("secondary_label")
+    smart_pos_col = col_for("smart_position") or col_for("smart position") or col_for("smartpos")
     if not term_col:
         print("[ERROR] Could not find 'Term' header in Excel file.", file=sys.stderr)
         sys.exit(2)
@@ -644,6 +657,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         units_val = row[units_col - 1].value if units_col else None
         smart_type_val = row[smart_type_col - 1].value if smart_type_col else None
         sec_val = row[secondary_col - 1].value if secondary_col else None
+        smart_pos_val = row[smart_pos_col - 1].value if smart_pos_col else None
         fmt_val = row[fmt_col - 1].value if fmt_col else None if fmt_col else None
         grp_val = row[group_col - 1].value if group_col else None
         grp_before_val = row[group_before_col - 1].value if group_before_col else None
@@ -672,6 +686,12 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         units_hint = parse_units_hint(units_val)
         smart_snap_type = _norm_smart_type(str(smart_type_val).strip() if smart_type_val is not None else None)
         secondary_term = (str(sec_val).strip() if sec_val is not None and str(sec_val).strip() else None)
+        try:
+            smart_position = int(str(smart_pos_val).strip()) if smart_pos_val is not None and str(smart_pos_val).strip() else None
+            if smart_position is not None and smart_position < 1:
+                smart_position = None
+        except Exception:
+            smart_position = None
         if term:
             terms.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
                                   mode=mode, line=line, column=column, anchor=anchor,
@@ -681,7 +701,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                    group_after=(str(grp_val).strip() if grp_val is not None and str(grp_val).strip() else None),
                                    group_before=(str(grp_before_val).strip() if grp_before_val is not None and str(grp_before_val).strip() else None),
                                    smart_snap_type=smart_snap_type,
-                                   secondary_term=secondary_term))
+                                   secondary_term=secondary_term,
+                                   smart_position=smart_position))
     return terms
 
 
@@ -727,13 +748,20 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         group_after = str(get(row, 'groupafter') or get(row, 'group_after') or get(row, 'group') or '').strip() or None
         group_before = str(get(row, 'groupbefore') or get(row, 'group_before') or get(row, 'beforegroup') or '').strip() or None
         secondary_term = str(get(row, 'secondary_term') or get(row, 'secondary') or get(row, 'secondary label') or get(row, 'secondary_label') or '').strip() or None
+        _smart_position_raw = str(get(row, 'smart_position') or get(row, 'smart position') or get(row, 'smartpos') or '').strip()
+        try:
+            smart_position = int(_smart_position_raw) if _smart_position_raw else None
+            if smart_position is not None and smart_position < 1:
+                smart_position = None
+        except Exception:
+            smart_position = None
         smart_snap_type = _norm_smart_type(str(get(row, 'smart_snap_type') or get(row, 'smart') or get(row, 'smart_snap') or '').strip() or None)
         out.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
                             mode=mode, line=line, column=column, anchor=anchor,
                             field_index=field_index, field_split=field_split, return_type=return_type,
                             range_min=rmin, range_max=rmax, units_hint=units_hint,
                             value_format=value_format, group_after=group_after, group_before=group_before,
-                            smart_snap_type=smart_snap_type, secondary_term=secondary_term))
+                            smart_snap_type=smart_snap_type, secondary_term=secondary_term, smart_position=smart_position))
     return out
 
 def parse_units_hint(v) -> List[str]:
@@ -1330,11 +1358,20 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     cand = f"{cand} (range violation)"
             return cand
         # title/text fallback
-        # If a value_format is specified, try to extract that substring; else return the whole right-side string
+        # If a value_format is specified, try to extract all matches and support positional selection
+        pos_n = spec.smart_position or spec.field_index
         if fmt_pat:
-            m = fmt_pat.search(right_text)
-            if m:
-                return m.group(0)
+            matches = list(fmt_pat.finditer(right_text))
+            if matches:
+                if pos_n and 1 <= pos_n <= len(matches):
+                    return matches[pos_n - 1].group(0)
+                return matches[0].group(0)
+        # Without format, split into fields (by spacing) and support positional
+        fields = _split_fields_by_spacing(right_text)
+        if fields:
+            if pos_n and 1 <= pos_n <= len(fields):
+                return fields[pos_n - 1]
+            return fields[0]
         t = right_text.strip()
         return t if t else None
 
@@ -1350,7 +1387,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     pages = list(range(1, doc.page_count + 1))
                 best_score = 0.0
                 best_info = None  # (p, line_text, right_text, val, smart_kind)
-                best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
+                pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -1431,8 +1468,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
                             score = max(score, 0.99)
                         if row_name and score > 0.6:
-                            if not best_line_only or score > best_line_only[2]:
-                                best_line_only = (p, line_text, score)
+                            if not pdf_best_line_only or score > pdf_best_line_only[2]:
+                                pdf_best_line_only = (p, line_text, score)
                         if row_name and score < 0.6:
                             continue
                         # compute right segment and numeric candidates with coordinates
@@ -1491,32 +1528,53 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         chosen_sec_score = 0.0
                         conflict_reason = None
                         if smart_kind == 'number' and numeric_cands:
+                            # Positional override: if smart_position/field_index is set, pick Nth by left-to-right
+                            pos_n = spec.smart_position or spec.field_index
+                            if pos_n and pos_n >= 1:
+                                numeric_cands_sorted = sorted(numeric_cands, key=lambda c: (c['x0'], c['y0']))
+                                if pos_n <= len(numeric_cands_sorted):
+                                    chosen = numeric_cands_sorted[pos_n - 1]
+                                    units_value = chosen.get('units') or units_value
+                                    cand = chosen['text']
+                                    if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
+                                        bad = False
+                                        if spec.range_min is not None and chosen['nval'] < spec.range_min:
+                                            bad = True
+                                        if spec.range_max is not None and chosen['nval'] > spec.range_max:
+                                            bad = True
+                                        if bad and not cand.rstrip().endswith('(range violation)'):
+                                            cand = f"{cand} (range violation)"
+                                    val = cand
+                                    if score > best_score:
+                                        best_score = score
+                                        best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                    # Skip scoring if positional used
+                                    continue
                             # Score candidates using middle-of-line (between min/max), units hints, range, and optional secondary term sweep
                             # Secondary: vertical sweep above candidate within tight x window, including neighbor bands
                             def sec_score(c):
                                 if not sec_term:
                                     return 0.0
-                                xpad = max(5.0, (c['x1'] - c['x0']) * 0.6)
-                                ytol = max(2.0, (entry['y1'] - entry['y0']) * 1.8)
+                                # Expand search up to page top within a horizontal stripe around the candidate
+                                try:
+                                    xpad_mul = float(os.environ.get('SMART_SEC_XPAD', '0.6'))
+                                except Exception:
+                                    xpad_mul = 0.6
+                                xpad = max(5.0, (c['x1'] - c['x0']) * xpad_mul)
                                 cx0, cx1 = c['x0'] - xpad, c['x1'] + xpad
                                 best = 0.0
-                                # Same row first
-                                for ot in tokens:
-                                    if ot[3] <= c['y0'] - 0.5 and ot[0] >= cx0 and ot[2] <= cx1:
-                                        sc = _fuzzy_ratio(ot[4], sec_term)
-                                        if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(ot[4]):
-                                            sc = max(sc, 0.99)
-                                        best = max(best, sc)
-                                # Neighbor bands above within ytol
+                                # Same row and all rows above (to page top)
                                 try:
-                                    for cy2, ent2 in lines_map.items():
-                                        if float(ent2['y1']) <= c['y0'] - 0.5 and (c['y0'] - float(ent2['y1'])) <= ytol:
+                                    for _, ent2 in lines_map.items():
+                                        # consider tokens whose boxes are above or on the candidate's top
+                                        if float(ent2['y1']) <= float(c['y0']) + 0.5:
                                             for ot in ent2['tokens']:
-                                                if ot[0] >= cx0 and ot[2] <= cx1:
+                                                if float(ot[0]) >= cx0 and float(ot[2]) <= cx1:
                                                     sc = _fuzzy_ratio(ot[4], sec_term)
                                                     if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(ot[4]):
                                                         sc = max(sc, 0.99)
-                                                    best = max(best, sc)
+                                                    if sc > best:
+                                                        best = sc
                                 except Exception:
                                     pass
                                 return best
@@ -1618,8 +1676,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     doc.close()
                 except Exception:
                     pass
-            if best_info is None and best_line_only is not None:
-                p, context_line_text, sc = best_line_only
+            if best_info is None and pdf_best_line_only is not None:
+                p, context_line_text, sc = pdf_best_line_only
                 return MatchResult(
                     pdf_file=pdf_path.name,
                     serial_number=serial_number,
@@ -1642,10 +1700,33 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     # OCR fallback with EasyOCR boxes -> lines
     if _HAVE_EASYOCR and _HAVE_PYMUPDF:
         try:
-            try:
-                dpi = int(os.environ.get('SMART_DPI_BASE', os.environ.get('OCR_DPI','600')))
-            except Exception:
-                dpi = 600
+            debug_mode = bool(os.environ.get('SMART_DEBUG') or os.environ.get('SMART_SNAP_DEBUG'))
+            dpi_candidates: List[int] = []
+
+            def _push_dpi(val: Optional[str]) -> None:
+                if not val:
+                    return
+                try:
+                    dpi_val = int(str(val).strip())
+                    if dpi_val > 0 and dpi_val not in dpi_candidates:
+                        dpi_candidates.append(dpi_val)
+                except Exception:
+                    pass
+
+            raw_list = os.environ.get('SMART_DPI_LIST')
+            if raw_list:
+                for token in re.split(r"[;,]", raw_list):
+                    _push_dpi(token)
+
+            _push_dpi(os.environ.get('SMART_DPI_BASE'))
+            _push_dpi(os.environ.get('OCR_DPI'))
+            _push_dpi('700')
+
+            if not dpi_candidates:
+                dpi_candidates = [700]
+            if debug_mode:
+                print(f"[SMART DEBUG] dpi_candidates={dpi_candidates}", file=sys.stderr)
+
             langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
             langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
             # Open doc for page bounds
@@ -1657,135 +1738,198 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pages = list(range(1, doc.page_count + 1))
             best_score = 0.0
             best_info = None
-            for p in pages or []:
-                items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
-                if not items:
-                    continue
-                # group lines by cy buckets
-                rows: Dict[int, List[Dict[str,float]]] = {}
-                for it in items:
-                    cy = int(round(float(it.get('cy', 0.0))))
-                    rows.setdefault(cy, []).append(it)
-                # detect optional group bounds using anchors
-                group_anchor_y = None
-                group_upper_y = None
-                if spec.group_after:
-                    matches = []
+            for dpi in dpi_candidates:
+                for p in pages or []:
+                    items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
+                    if not items:
+                        if debug_mode:
+                            print(f"[SMART DEBUG] no OCR items dpi={dpi} page={p}", file=sys.stderr)
+                        continue
+                    # group lines by cy buckets
+                    rows: Dict[int, List[Dict[str,float]]] = {}
                     for it in items:
-                        txt = str(it.get('text') or '')
-                        sc = _fuzzy_ratio(txt, spec.group_after)
-                        if _normalize_anchor_token(spec.group_after) and _normalize_anchor_token(spec.group_after) in _normalize_anchor_token(txt):
-                            sc = max(sc, 0.99)
-                        if sc >= 0.6:
-                            matches.append((it, sc))
-                    if matches:
-                        best_score = max(m[1] for m in matches)
-                        top = [m for m in matches if m[1] >= best_score - 0.1]
-                        group_anchor_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
-                if spec.group_before:
-                    matches = []
-                    for it in items:
-                        txt = str(it.get('text') or '')
-                        sc = _fuzzy_ratio(txt, spec.group_before)
-                        if _normalize_anchor_token(spec.group_before) and _normalize_anchor_token(spec.group_before) in _normalize_anchor_token(txt):
-                            sc = max(sc, 0.99)
-                        if sc >= 0.6 and (group_anchor_y is None or float(it.get('cy',0.0)) > float(group_anchor_y) + 1.0):
-                            matches.append((it, sc))
-                    if matches:
-                        best_score = max(m[1] for m in matches)
-                        top = [m for m in matches if m[1] >= best_score - 0.1]
-                        group_upper_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
-                for cy, row_items in sorted(rows.items(), key=lambda kv: kv[0]):
-                    row_items.sort(key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))
-                    texts = [str(it.get('text') or '') for it in row_items]
-                    line_text = ' '.join(texts).strip()
-                    if not line_text:
-                        continue
-                    # group filters
-                    mean_y = sum(float(it.get('cy',0.0)) for it in row_items) / max(1,len(row_items))
-                    if group_anchor_y is not None and mean_y <= float(group_anchor_y) + 0.5:
-                        continue
-                    if group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
-                        continue
-                    score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
-                    if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
-                        score = max(score, 0.99)
-                    if row_name and score < 0.6:
-                        continue
-                    # right-of approx via anchor match in token stream
-                    tok_norms = [_normalize_anchor_token(t) for t in texts]
-                    span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
-                    label_right_x = min((float(it.get('x0',0.0)) for it in row_items), default=0.0)
-                    if span:
-                        _, j = span
-                        try:
-                            label_right_x = float(row_items[j].get('x1', row_items[j].get('cx', 0.0)))
-                        except Exception:
-                            pass
-                    right_items = [it for it in row_items if float(it.get('x0',0.0)) >= label_right_x - 1.0]
-                    right_text = ' '.join([str(it.get('text') or '') for it in right_items]).strip()
-                    smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
-
-                    # Build numeric candidates from OCR tokens
-                    numeric_cands = []
-                    for it in right_items:
-                        raw = str(it.get('text') or '')
-                        m = NUMBER_REGEX.search(raw)
-                        if not m:
+                        cy = int(round(float(it.get('cy', 0.0))))
+                        rows.setdefault(cy, []).append(it)
+                    # detect optional group bounds using anchors
+                    group_anchor_y = None
+                    group_upper_y = None
+                    if spec.group_after:
+                        matches = []
+                        for it in items:
+                            txt = str(it.get('text') or '')
+                            sc = _fuzzy_ratio(txt, spec.group_after)
+                            if _normalize_anchor_token(spec.group_after) and _normalize_anchor_token(spec.group_after) in _normalize_anchor_token(txt):
+                                sc = max(sc, 0.99)
+                            if sc >= 0.6:
+                                matches.append((it, sc))
+                        if matches:
+                            anchor_best = max(m[1] for m in matches)
+                            top = [m for m in matches if m[1] >= anchor_best - 0.1]
+                            group_anchor_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                    if spec.group_before:
+                        matches = []
+                        for it in items:
+                            txt = str(it.get('text') or '')
+                            sc = _fuzzy_ratio(txt, spec.group_before)
+                            if _normalize_anchor_token(spec.group_before) and _normalize_anchor_token(spec.group_before) in _normalize_anchor_token(txt):
+                                sc = max(sc, 0.99)
+                            if sc >= 0.6 and (group_anchor_y is None or float(it.get('cy',0.0)) > float(group_anchor_y) + 1.0):
+                                matches.append((it, sc))
+                        if matches:
+                            upper_best = max(m[1] for m in matches)
+                            top = [m for m in matches if m[1] >= upper_best - 0.1]
+                            group_upper_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                    for cy, row_items in sorted(rows.items(), key=lambda kv: kv[0]):
+                        if debug_mode:
+                            print(f"[SMART DEBUG] row candidate dpi={dpi} page={p} cy={cy} tokens={len(row_items)} text={' '.join(str(it.get('text') or '') for it in row_items)!r}", file=sys.stderr)
+                        row_items.sort(key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))
+                        texts = [str(it.get('text') or '') for it in row_items]
+                        line_text = ' '.join(texts).strip()
+                        if not line_text:
                             continue
-                        val_txt = m.group(0)
-                        num_clean = numeric_only(val_txt)
-                        try:
-                            nval = float(num_clean) if num_clean is not None else None
-                        except Exception:
-                            nval = None
-                        units_val = extract_units(val_txt)
-                        numeric_cands.append({
-                            'text': val_txt,
-                            'raw': raw,
-                            'nval': nval,
-                            'units': units_val.lower() if units_val else None,
-                            'x0': float(it.get('x0',0.0)), 'y0': float(it.get('y0',0.0)), 'x1': float(it.get('x1',0.0)), 'y1': float(it.get('y1',0.0)),
-                        })
-
-                    line_min_txt = None
-                    line_max_txt = None
-                    if numeric_cands:
-                        vals = [c['nval'] for c in numeric_cands if c['nval'] is not None]
-                        if vals:
+                        # group filters
+                        mean_y = sum(float(it.get('cy',0.0)) for it in row_items) / max(1,len(row_items))
+                        if group_anchor_y is not None and mean_y <= float(group_anchor_y) + 0.5:
+                            continue
+                        if group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
+                            continue
+                        score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                        if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                            score = max(score, 0.99)
+                        if row_name and score < 0.6:
+                            if debug_mode:
+                                print(f"[SMART DEBUG] skip row score<0.6 dpi={dpi} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
+                            continue
+                        # right-of approx via anchor match in token stream
+                        tok_norms = [_normalize_anchor_token(t) for t in texts]
+                        span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
+                        label_right_x = min((float(it.get('x0',0.0)) for it in row_items), default=0.0)
+                        if span:
+                            _, j = span
                             try:
-                                vmin = min(vals)
-                                vmax = max(vals)
-                                for c in numeric_cands:
-                                    if c['nval'] == vmin and line_min_txt is None:
-                                        line_min_txt = c['text']
-                                    if c['nval'] == vmax and line_max_txt is None:
-                                        line_max_txt = c['text']
+                                label_right_x = float(row_items[j].get('x1', row_items[j].get('cx', 0.0)))
                             except Exception:
                                 pass
+                        right_items = [it for it in row_items if float(it.get('x0',0.0)) >= label_right_x - 1.0]
+                        # Fallback: include nearby tokens just below/above the row when OCR splits numbers into separate rows
+                        if (not right_items) or not any(NUMBER_REGEX.search(str(it.get('text') or '')) for it in right_items):
+                            vertical_tol = max(8.0, (max(float(it.get('y1',0.0)) for it in row_items) - min(float(it.get('y0',0.0)) for it in row_items)) * 1.2 if row_items else 8.0)
+                            augmented: List[Dict[str, float]] = []
+                            for it in items:
+                                if it in row_items:
+                                    continue
+                                if float(it.get('x0',0.0)) < label_right_x - 1.5:
+                                    continue
+                                if abs(float(it.get('cy',0.0)) - mean_y) <= vertical_tol:
+                                    augmented.append(it)
+                            if augmented:
+                                right_items = sorted(right_items + augmented, key=lambda t: (float(t.get('y0',0.0)), float(t.get('x0',0.0))))
+                                if debug_mode:
+                                    print(f"[SMART DEBUG] expanded right_items via vertical tolerance ({len(augmented)} extra)", file=sys.stderr)
+                        right_text = ' '.join([str(it.get('text') or '') for it in right_items]).strip()
+                        smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
+                        if debug_mode:
+                            print(f"[SMART DEBUG] cand dpi={dpi} page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text!r}", file=sys.stderr)
 
-                    conflict_reason = None
-                    chosen_sec_score = 0.0
-                    if smart_kind == 'number' and numeric_cands:
+                        # Identify nearby column headers for scoring (prefer 'value' column)
+                        header_map: Dict[str, Dict[str, float]] = {}
+                        for hdr_name in ('value', 'min', 'max'):
+                            matches = [
+                                it for it in items
+                                if str(it.get('text') or '').strip().lower() == hdr_name
+                                and float(it.get('cy', 0.0)) < mean_y
+                                and (group_anchor_y is None or float(it.get('cy',0.0)) >= float(group_anchor_y) - 5.0)
+                            ]
+                            if matches:
+                                header_map[hdr_name] = max(matches, key=lambda it: float(it.get('cy', 0.0)))
+
+                        # Build numeric candidates from OCR tokens
+                        numeric_cands = []
+                        for it in right_items:
+                            raw = str(it.get('text') or '')
+                            m = NUMBER_REGEX.search(raw)
+                            if not m:
+                                continue
+                            val_txt = m.group(0)
+                            num_clean = numeric_only(val_txt)
+                            try:
+                                nval = float(num_clean) if num_clean is not None else None
+                            except Exception:
+                                nval = None
+                            units_val = extract_units(val_txt)
+                            numeric_cands.append({
+                                'text': val_txt,
+                                'raw': raw,
+                                'nval': nval,
+                                'units': units_val.lower() if units_val else None,
+                                'x0': float(it.get('x0',0.0)), 'y0': float(it.get('y0',0.0)), 'x1': float(it.get('x1',0.0)), 'y1': float(it.get('y1',0.0)),
+                            })
+
+                        line_min_txt = None
+                        line_max_txt = None
+                        if numeric_cands:
+                            vals = [c['nval'] for c in numeric_cands if c['nval'] is not None]
+                            if vals:
+                                try:
+                                    vmin = min(vals)
+                                    vmax = max(vals)
+                                    for c in numeric_cands:
+                                        if c['nval'] == vmin and line_min_txt is None:
+                                            line_min_txt = c['text']
+                                        if c['nval'] == vmax and line_max_txt is None:
+                                            line_max_txt = c['text']
+                                except Exception:
+                                    pass
+
+                        conflict_reason = None
+                        chosen_sec_score = 0.0
+                        if smart_kind == 'number' and numeric_cands:
+                            # Positional override for OCR path
+                            pos_n = spec.smart_position or spec.field_index
+                            if pos_n and pos_n >= 1:
+                                numeric_cands_sorted = sorted(numeric_cands, key=lambda c: (c['x0'], c['y0']))
+                                if pos_n <= len(numeric_cands_sorted):
+                                    chosen = numeric_cands_sorted[pos_n - 1]
+                                    units_value = chosen.get('units') or units_value
+                                    cand = chosen['text']
+                                    if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
+                                        bad = False
+                                        if spec.range_min is not None and chosen['nval'] < spec.range_min:
+                                            bad = True
+                                        if spec.range_max is not None and chosen['nval'] > spec.range_max:
+                                            bad = True
+                                    if bad and not cand.rstrip().endswith('(range violation)'):
+                                        cand = f"{cand} (range violation)"
+                                val = cand
+                                if score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None)
+                                # Skip scoring if positional used
+                                continue
                         def sec_score(c):
                             if not sec_term:
                                 return 0.0
-                            xpad = max(5.0, (float(c['x1']) - float(c['x0'])) * 0.6)
-                            # Estimate row height
+                            # Expand search up to page top within a horizontal stripe around the candidate
                             try:
-                                row_h = (max(float(it.get('y1',0.0)) for it in row_items) - min(float(it.get('y0',0.0)) for it in row_items))
+                                xpad_mul = float(os.environ.get('SMART_SEC_XPAD', '0.6'))
                             except Exception:
-                                row_h = 10.0
-                            ytol = max(2.0, row_h * 1.8)
+                                xpad_mul = 0.6
+                            xpad = max(5.0, (float(c['x1']) - float(c['x0'])) * xpad_mul)
                             cx0, cx1 = float(c['x0']) - xpad, float(c['x1']) + xpad
                             best = 0.0
-                            for ot in row_items:
-                                if float(ot.get('y1',0.0)) <= float(c['y0']) - 0.5 and float(ot.get('x0',0.0)) >= cx0 and float(ot.get('x1',0.0)) <= cx1:
-                                    sc = _fuzzy_ratio(str(ot.get('text') or ''), sec_term)
-                                    if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(str(ot.get('text') or '')):
-                                        sc = max(sc, 0.99)
-                                    if sc > best:
-                                        best = sc
+                            # Use all OCR tokens available on this page (items)
+                            try:
+                                for it in items:
+                                    # consider tokens above or on candidate's top, and within stripe
+                                    if float(it.get('y1',0.0)) <= float(c['y0']) + 0.5 and float(it.get('x0',0.0)) >= cx0 and float(it.get('x1',0.0)) <= cx1:
+                                        txt = str(it.get('text') or '')
+                                        sc = _fuzzy_ratio(txt, sec_term)
+                                        if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(txt):
+                                            sc = max(sc, 0.99)
+                                        if sc > best:
+                                            best = sc
+                            except Exception:
+                                pass
                             return best
 
                         scored = []
@@ -1816,6 +1960,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     s += 0.1
                             sec_s = sec_score(c)
                             s += 0.6 * sec_s
+                            cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
+                            if 'value' in header_map:
+                                hdr = header_map['value']
+                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                dist = abs(cand_cx - hx)
+                                s += 0.8 * (1.0 / (1.0 + dist / 18.0))
+                            if 'min' in header_map:
+                                hdr = header_map['min']
+                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                dist = abs(cand_cx - hx)
+                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                            if 'max' in header_map:
+                                hdr = header_map['max']
+                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                dist = abs(cand_cx - hx)
+                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
                             # slight preference for smaller horizontal distance from label
                             dx = max(0.0, float(c['x0']) - label_right_x)
                             s += 0.05 * (1.0 / (1.0 + dx/10.0))
@@ -1842,11 +2002,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if score > best_score:
                                 best_score = score
                                 best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                if debug_mode:
+                                    print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                     else:
                         val = extract_from_line(line_text, right_text, smart_kind)
                         if val and score > best_score:
                             best_score = score
                             best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason)
+                            if debug_mode:
+                                print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
             if best_info:
                 page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
                 return MatchResult(

@@ -36,7 +36,7 @@ def main() -> None:
         'Term', 'Pages', 'Mode', 'Line (x)', 'Column (y)',
         'Anchor', 'FieldIndex', 'FieldSplit', 'Return',
         'Units', 'Range (min)', 'Range (max)', 'Format', 'GroupAfter', 'GroupBefore',
-        'Smart Snap Type', 'Secondary Term'
+        'Smart Snap Type', 'Secondary Term', 'Smart Position'
     ]
     ws.append(headers)
     header_font = Font(bold=True)
@@ -76,16 +76,17 @@ def main() -> None:
         ws.conditional_formatting.add(f'{col}2:{col}2000', FormulaRule(formula=["$I2<>\"number\""], fill=grey))
     # If Mode == table(xy), grey Format (M) (typically used for nearest/string)
     ws.conditional_formatting.add('M2:M2000', FormulaRule(formula=["$C2=\"table(xy)\""], fill=grey))
-    # If Mode <> smart, grey Smart Snap Type (P) and Secondary Term (Q)
+    # If Mode <> smart, grey Smart Snap Type (P), Secondary Term (Q), Smart Position (R)
     ws.conditional_formatting.add('P2:P2000', FormulaRule(formula=["$C2<>\"smart\""], fill=grey))
     ws.conditional_formatting.add('Q2:Q2000', FormulaRule(formula=["$C2<>\"smart\""], fill=grey))
+    ws.conditional_formatting.add('R2:R2000', FormulaRule(formula=["$C2<>\"smart\""], fill=grey))
 
     # Example rows
     examples = [
         ['Thrust', '1', 'table(xy)', 'Thrust', 'Value|Nominal', '', '', 'groups', 'number', 'lbf', '200', '3000', '', 'Proof Pressure', 'Post Test', ''],
         ['Title', '1', 'line', '', '', 'Title:', '2', 'auto', 'string', '', '', '', '', '', '', '', ''],
         ['Test Plan', '1-2', 'nearest', '', '', '', '', '', 'string', '', '', '', 'tpl-xxxx', 'Qualification', '', '', ''],
-        ['Measured Torque', '3', 'smart', '', '', '', '', '', '', 'lbf', '10', '5000', '', 'Torque Section', '', 'number', 'Peak'],
+        ['Measured Torque', '3', 'smart', '', '', '', '', '', '', 'lbf', '10', '5000', '', 'Torque Section', '', 'number', 'Peak', '2'],
     ]
     for row in examples:
         ws.append(row)
@@ -108,6 +109,8 @@ def main() -> None:
         '   * nearest  : No extra fields; optional Units and Range (min/max).',
         '   * smart    : Smart Snap mode — finds row by Term and returns the most plausible value to the right.',
         '                - Smart Snap Type: auto | number | date | time | title. Auto-detects if blank.',
+        '                - Secondary Term: optional label to validate near the chosen value (sweeps up to page top).',
+        '                - Smart Position: optional 1-based index to pick the Nth value to the right (overrides scoring).',
         '                - Units/Range still apply for numeric detection.',
         '',
         'Header aliases:',
