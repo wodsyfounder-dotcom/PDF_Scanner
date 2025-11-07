@@ -623,13 +623,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._setup_tab_setup()
         self._setup_tab_process()
         self._setup_tab_plot()
-        self._setup_tab_outputs()
+        # Data Outputs tab replaced by top-level master button
 
         # Runtime
         self._worker: ProcWorker | None = None
         self._enrich_after_run: bool = False
         self._registry_cache: tuple[list[str], list[list[str]]] | None = None
         self._scan_refresh()
+        # Periodic auto-sync every few minutes (no popup, no compile)
+        try:
+            self._sync_timer = QtCore.QTimer(self)
+            self._sync_timer.setInterval(5 * 60 * 1000)  # 5 minutes
+            self._sync_timer.timeout.connect(lambda: self._sync_workspace(auto=True))
+            self._sync_timer.start()
+        except Exception:
+            pass
 
     # Tabs
     def _setup_tab_setup(self):
@@ -739,6 +747,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def _setup_tab_process(self):
         grid = QtWidgets.QGridLayout(self.tab_process)
 
+        # Master button at top (above Define Inputs)
+        self.btn_open_master_tab = QtWidgets.QPushButton("Open Master Database")
+        # Black outline style for differentiation
+        self.btn_open_master_tab.setStyleSheet("QPushButton { border: 2px solid #000; color: #000; background: #ffffff; padding: 10px 16px; border-radius: 6px; } QPushButton:hover { background: #f5f5f5; }")
+        polm = self.btn_open_master_tab.sizePolicy(); polm.setHorizontalStretch(1); polm.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_open_master_tab.setSizePolicy(polm)
+        self.btn_open_master_tab.clicked.connect(lambda: self._safe_open(be.open_master_workbook))
+        grid.addWidget(self.btn_open_master_tab, 0, 0, 1, 2)
+
         # Define Inputs
         grp_inputs = QtWidgets.QGroupBox("Define Inputs")
         li = QtWidgets.QGridLayout(grp_inputs)
@@ -756,47 +772,48 @@ class MainWindow(QtWidgets.QMainWindow):
         li.addWidget(self.btn_terms_refresh, 1, 0, 1, 2)
         # Keep internal path field for logic, but do not show it
 
-        # Upload
+        # Upload (repurposed as workspace sync)
         grp_upload = QtWidgets.QGroupBox("Data Upload")
         up = QtWidgets.QGridLayout(grp_upload)
-        self.drop_zone = _DropZone("Drop PDFs here", on_drop=self._ingest_paths)
-        up.addWidget(self.drop_zone, 0, 0)
-        right_box = QtWidgets.QGroupBox("Staged PDFs in folder")
-        rl = QtWidgets.QVBoxLayout(right_box)
-        self.list_pdfs = QtWidgets.QTableWidget(0, 3)
-        self.list_pdfs.setHorizontalHeaderLabels(["File", "Size", "Modified"])
-        header_view = self.list_pdfs.horizontalHeader()
-        header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        header_view.setSectionResizeMode(
-            1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        self.btn_sync_workspace = QtWidgets.QPushButton("Sync Workspace Now")
+        self.btn_sync_workspace.setProperty("variant", "primary")
+        self.btn_sync_workspace.clicked.connect(self._act_sync_workspace)
+        up.addWidget(self.btn_sync_workspace, 0, 0, 1, 2)
+
+        # Repository root picker
+        up.addWidget(QtWidgets.QLabel("Repository Root"), 1, 0)
+        self.ed_repo = QtWidgets.QLineEdit(str(getattr(be, 'get_repo_root', lambda: be.DEFAULT_REPO_ROOT)()))
+        btn_repo = QtWidgets.QPushButton("Browse…")
+        btn_repo.clicked.connect(lambda: self._browse_folder(self.ed_repo, be.DEFAULT_PDF_DIR))
+        row_repo = QtWidgets.QHBoxLayout(); row_repo.addWidget(self.ed_repo, 1); row_repo.addWidget(btn_repo)
+        wrapper = QtWidgets.QWidget(); wrapper.setLayout(row_repo)
+        up.addWidget(wrapper, 1, 1)
+
+        self.lbl_sync_banner = QtWidgets.QLabel("No sync run yet.")
+        self.lbl_sync_banner.setObjectName("syncBanner")
+        self.lbl_sync_banner.setWordWrap(True)
+        self.lbl_sync_banner.setStyleSheet(
+            "#syncBanner { background: #f0f3f7; color: #0f2a46; border: 1px solid #c8d3e5; border-radius: 6px; padding: 8px 12px; }"
         )
-        header_view.setSectionResizeMode(
-            2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.list_pdfs.setSelectionBehavior(
-            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.list_pdfs.setSelectionMode(
-            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        rl.addWidget(self.list_pdfs, 1)
-        bbar = QtWidgets.QHBoxLayout();
-        self.btn_remove_selected = QtWidgets.QPushButton("Remove Selected"); self.btn_remove_selected.clicked.connect(self._act_remove_selected)
-        self.btn_clear_all = QtWidgets.QPushButton("Remove All"); self.btn_clear_all.clicked.connect(self._act_remove_all)
-        self.btn_open_pdfs = QtWidgets.QPushButton("Open PDFs Folder"); self.btn_open_pdfs.clicked.connect(lambda: self._safe_open(lambda: be.open_path(Path(self.ed_pdfs.text()).expanduser())))
-        bbar.addWidget(self.btn_remove_selected); bbar.addWidget(self.btn_clear_all); bbar.addStretch(1); bbar.addWidget(self.btn_open_pdfs)
-        rl.addLayout(bbar)
-        up.addWidget(right_box, 0, 1)
-        cbar = QtWidgets.QHBoxLayout();
-        self.btn_add_files = QtWidgets.QPushButton("Add Files..."); self.btn_add_files.clicked.connect(self._act_add_files)
-        self.btn_add_folder = QtWidgets.QPushButton("Add Folder..."); self.btn_add_folder.clicked.connect(self._act_add_folder)
-        cbar.addWidget(self.btn_add_files); cbar.addWidget(self.btn_add_folder); cbar.addStretch(1)
-        up.addLayout(cbar, 1, 0, 1, 2)
+        up.addWidget(self.lbl_sync_banner, 2, 0, 1, 2)
+
+        self.btn_view_outdated = QtWidgets.QPushButton("View Data Package List and Update EIDAT Database")
+        self.btn_view_outdated.setProperty("variant", "primary")
+        pol = self.btn_view_outdated.sizePolicy(); pol.setHorizontalStretch(1); pol.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_view_outdated.setSizePolicy(pol)
+        self.btn_view_outdated.clicked.connect(self._show_outdated_popup)
+        up.addWidget(self.btn_view_outdated, 3, 0, 1, 2)
+
+        self.btn_view_registry2 = QtWidgets.QPushButton("View Registry")
+        self.btn_view_registry2.clicked.connect(self._act_view_registry)
+        pol2 = self.btn_view_registry2.sizePolicy(); pol2.setHorizontalStretch(1); pol2.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_view_registry2.setSizePolicy(pol2)
+        up.addWidget(self.btn_view_registry2, 4, 0, 1, 2)
+
+        # Removed Open Repository Folder button per UX simplification
 
         # Processing + Outputs
-        grp_proc = QtWidgets.QGroupBox("Processing Controls")
+        grp_proc = QtWidgets.QGroupBox("Smart Processing Controls")
         lp = QtWidgets.QHBoxLayout(grp_proc)
-        self.btn_start = QtWidgets.QPushButton("Start Scan"); self.btn_start.setProperty("variant", "primary")
+        self.btn_start = QtWidgets.QPushButton("Extract and Update All"); self.btn_start.setProperty("variant", "primary")
         self.btn_stop = QtWidgets.QPushButton("Stop Scan")
         self.btn_open_last = QtWidgets.QPushButton("Open Last Run Folder")
         self.btn_start.clicked.connect(self._act_start_scan)
@@ -804,26 +821,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_open_last.clicked.connect(lambda: self._safe_open(be.open_last_run_folder))
         lp.addWidget(self.btn_start); lp.addWidget(self.btn_stop); lp.addWidget(self.btn_open_last)
 
-        grp_out = QtWidgets.QGroupBox("Data Outputs")
-        lo = QtWidgets.QVBoxLayout(grp_out)
-        # Buttons row
-        btn_row = QtWidgets.QHBoxLayout()
-        self.btn_compile = QtWidgets.QPushButton("Compile Master")
-        self.btn_open_master = QtWidgets.QPushButton("Open Master")
-        self.btn_open_registry = QtWidgets.QPushButton("Open Run Registry")
-        self.btn_view_registry = QtWidgets.QPushButton("View Registry")
-        self.btn_compile.clicked.connect(self._act_compile_master)
-        self.btn_open_master.clicked.connect(lambda: self._safe_open(be.open_master_workbook))
-        self.btn_open_registry.clicked.connect(lambda: self._safe_open(be.open_run_registry))
-        self.btn_view_registry.clicked.connect(self._show_registry_popup)
-        btn_row.addWidget(self.btn_compile); btn_row.addWidget(self.btn_open_master); btn_row.addWidget(self.btn_open_registry); btn_row.addWidget(self.btn_view_registry); btn_row.addStretch(1)
-        lo.addLayout(btn_row)
-        # Popup viewer is created on demand; no inline viewer
-
-        grid.addWidget(grp_inputs, 0, 0, 1, 2)
-        grid.addWidget(grp_upload, 1, 0, 1, 2)
-        grid.addWidget(grp_proc, 2, 0, 1, 2)
-        grid.addWidget(grp_out, 3, 0, 1, 2)
+        grid.addWidget(grp_inputs, 1, 0, 1, 2)
+        grid.addWidget(grp_upload, 2, 0, 1, 2)
+        grid.addWidget(grp_proc, 3, 0, 1, 2)
         grid.setRowStretch(4, 1)
     def _setup_tab_plot(self):
         grid = QtWidgets.QGridLayout(self.tab_plot)
@@ -947,6 +947,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Unable to open editor", str(exc))
             return
         dlg.exec()
+        # No immediate auto-sync; the periodic timer will refresh the banner
 
     def _act_generate_terms(self):
         # Warn if a terms spreadsheet exists and will be overwritten
@@ -1027,6 +1028,11 @@ class MainWindow(QtWidgets.QMainWindow):
             p_xlsx = base / "run_registry.xlsx"
             rows: list[list[str]] = []
             headers: list[str] = []
+            # Keep registry tidy before reading; best-effort and safe (prunes invalid rows)
+            try:
+                be.ensure_run_registry_consistent()
+            except Exception:
+                pass
             if p_csv.exists():
                 import csv
                 with open(p_csv, newline="", encoding="utf-8") as f:
@@ -1037,93 +1043,37 @@ class MainWindow(QtWidgets.QMainWindow):
                         else:
                             rows.append([str(x) for x in r])
             elif p_xlsx.exists():
+                # Convert xlsx -> csv once via backend and retry
                 try:
-                    import openpyxl  # type: ignore
-                    wb = openpyxl.load_workbook(str(p_xlsx), read_only=True, data_only=True)
-                    ws = wb.active
-                    if ws is None:
-                        # No active worksheet; treat as empty workbook
-                        headers = []
-                        rows = []
-                    else:
-                        it = ws.iter_rows(values_only=True)
-                        try:
-                            headers = [str(x) if x is not None else "" for x in next(it)]
-                        except StopIteration:
-                            headers = []
-                        for r in it:
-                            rows.append([str(x) if x is not None else "" for x in r])
+                    be.ensure_run_registry_consistent()
                 except Exception:
-                    headers = ["Run Registry"]
-                    rows = [[f"Preview requires CSV or openpyxl: {p_xlsx.name}"]]
+                    pass
+                if p_csv.exists():
+                    import csv
+                    with open(p_csv, newline="", encoding="utf-8") as f:
+                        reader = csv.reader(f)
+                        for i, r in enumerate(reader):
+                            if i == 0:
+                                headers = [str(x) for x in r]
+                            else:
+                                rows.append([str(x) for x in r])
             else:
                 headers = ["Run Registry"]
                 rows = [["No registry found. Run a scan to create it."]]
 
-            # Derive Program/Vehicle/Serial from PDF filename if possible
-            try:
-                hdr_lc = [h.strip().lower() for h in headers]
-                file_candidates = {"file", "filename", "pdf", "document", "input", "input file"}
-                idx_file = -1
-                for i, h in enumerate(hdr_lc):
-                    if h in file_candidates or h.endswith(" file") or h.endswith(" pdf"):
-                        idx_file = i
-                        break
-                def _derive_from_row(row: list[str]) -> tuple[str, str, str]:
-                    name = ""
-                    if idx_file >= 0 and idx_file < len(row):
-                        name = str(row[idx_file] or "")
-                    if not name or ".pdf" not in name.lower():
-                        for c in row:
-                            s = str(c or "")
-                            if s.lower().endswith(".pdf"):
-                                name = s
-                                break
-                    base_name = Path(name).name
-                    if base_name.lower().endswith(".pdf"):
-                        base_name = base_name[:-4]
-                    parts = [p for p in base_name.split("_") if p]
-                    if len(parts) >= 3:
-                        program, vehicle, serial = parts[0], parts[1], parts[2]
-                    else:
-                        program = vehicle = serial = ""
-                    return program, vehicle, serial
-                add_cols: list[str] = []
-                for col in ["Program", "Vehicle", "Serial"]:
-                    if col not in headers:
-                        add_cols.append(col)
-                if add_cols:
-                    headers = headers + add_cols
-                    new_rows: list[list[str]] = []
-                    for row in rows:
-                        prog, veh, ser = _derive_from_row(row)
-                        new_rows.append(row + [prog, veh, ser][: len(add_cols)])
-                    rows = new_rows
-                else:
-                    # Fill existing columns if present but empty
-                    idx_prog = hdr_lc.index("program") if "program" in hdr_lc else -1
-                    idx_veh = hdr_lc.index("vehicle") if "vehicle" in hdr_lc else -1
-                    idx_ser = hdr_lc.index("serial") if "serial" in hdr_lc else -1
-                    for i, row in enumerate(rows):
-                        prog, veh, ser = _derive_from_row(row)
-                        if idx_prog >= 0 and (idx_prog >= len(row) or not str(row[idx_prog]).strip()):
-                            if idx_prog >= len(row):
-                                row.extend([""] * (idx_prog - len(row) + 1))
-                            row[idx_prog] = prog
-                        if idx_veh >= 0 and (idx_veh >= len(row) or not str(row[idx_veh]).strip()):
-                            if idx_veh >= len(row):
-                                row.extend([""] * (idx_veh - len(row) + 1))
-                            row[idx_veh] = veh
-                        if idx_ser >= 0 and (idx_ser >= len(row) or not str(row[idx_ser]).strip()):
-                            if idx_ser >= len(row):
-                                row.extend([""] * (idx_ser - len(row) + 1))
-                            row[idx_ser] = ser
-            except Exception:
-                pass
+            # Show file as-is (no derived columns) for a clean, authoritative view
 
             return headers, rows
         except Exception:
             return [], []
+
+    def _act_view_registry(self):
+        """Refresh cache and show the run registry dialog."""
+        try:
+            self._refresh_run_registry()
+        except Exception:
+            pass
+        self._show_registry_popup()
 
     def _refresh_run_registry(self):
         try:
@@ -1132,6 +1082,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._registry_cache = ([], [])
 
     def _show_registry_popup(self):
+        # Guard against duplicate dialogs
+        if getattr(self, "_dlg_open_registry", False):
+            return
+        self._dlg_open_registry = True
         try:
             cache = getattr(self, "_registry_cache", None)
             if not cache:
@@ -1142,7 +1096,7 @@ class MainWindow(QtWidgets.QMainWindow):
             dlg.resize(900, 500)
             v = QtWidgets.QVBoxLayout(dlg)
             tbl = QtWidgets.QTableWidget(0, len(headers))
-            tbl.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+            tbl.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.AllEditTriggers)
             tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
             tbl.setAlternatingRowColors(True)
             if headers:
@@ -1153,13 +1107,88 @@ class MainWindow(QtWidgets.QMainWindow):
                     tbl.setItem(r, c, QtWidgets.QTableWidgetItem(val))
             tbl.resizeColumnsToContents()
             v.addWidget(tbl)
-            btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
-            btns.rejected.connect(dlg.reject)
-            btns.accepted.connect(dlg.accept)
-            v.addWidget(btns)
+            # Controls: Delete Selected and Close
+            bar = QtWidgets.QHBoxLayout()
+            btn_save = QtWidgets.QPushButton("Save Changes")
+            btn_delete = QtWidgets.QPushButton("Delete Selected")
+            btn_close = QtWidgets.QPushButton("Close")
+            bar.addStretch(1)
+            bar.addWidget(btn_save)
+            bar.addWidget(btn_delete)
+            bar.addWidget(btn_close)
+            v.addLayout(bar)
+
+            def _delete_selected():
+                if not headers:
+                    return
+                hdr_lc = [h.strip().lower() for h in headers]
+                try:
+                    idx_sc = hdr_lc.index("serial_component") if "serial_component" in hdr_lc else (
+                        hdr_lc.index("serial") if "serial" in hdr_lc else -1
+                    )
+                except Exception:
+                    idx_sc = -1
+                if idx_sc < 0:
+                    QtWidgets.QMessageBox.information(dlg, "Delete", "Cannot locate 'serial_component' column.")
+                    return
+                sels = tbl.selectionModel().selectedRows()
+                if not sels:
+                    QtWidgets.QMessageBox.information(dlg, "Delete", "Select one or more rows to delete.")
+                    return
+                serials: list[str] = []
+                for mi in sels:
+                    it = tbl.item(mi.row(), idx_sc)
+                    if it and it.text().strip():
+                        serials.append(it.text().strip())
+                if not serials:
+                    return
+                confirm = QtWidgets.QMessageBox.question(
+                    dlg,
+                    "Confirm deletion",
+                    f"Delete {len(serials)} entr(ies) and their run_data folders?",
+                )
+                if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
+                try:
+                    be.delete_registry_entries(serials)
+                except Exception as e:
+                    QtWidgets.QMessageBox.information(dlg, "Delete", str(e))
+                try:
+                    self._start_worker(be.compile_master, status_msg="Compiling master workbook...")
+                except Exception:
+                    pass
+                dlg.accept()
+
+            def _save_changes():
+                if not headers:
+                    return
+                rows_out: list[dict[str, str]] = []
+                for r in range(tbl.rowCount()):
+                    row_map: dict[str, str] = {}
+                    for c in range(len(headers)):
+                        val = tbl.item(r, c).text() if tbl.item(r, c) else ""
+                        row_map[headers[c]] = val
+                    rows_out.append(row_map)
+                try:
+                    be.write_run_registry_rows(rows_out)
+                except Exception as e:
+                    QtWidgets.QMessageBox.information(dlg, "Save", str(e))
+                    return
+                try:
+                    self._start_worker(be.compile_master, status_msg="Compiling master workbook...")
+                except Exception:
+                    pass
+                dlg.accept()
+
+            btn_save.clicked.connect(_save_changes)
+            btn_delete.clicked.connect(_delete_selected)
+            btn_close.clicked.connect(dlg.reject)
+            
             dlg.exec()
         except Exception as e:
             QtWidgets.QMessageBox.information(self, "Registry", str(e))
+        finally:
+            self._dlg_open_registry = False
 
     def _safe_open(self, fn):
         try:
@@ -1170,18 +1199,172 @@ class MainWindow(QtWidgets.QMainWindow):
     # File/browser helpers
     def _browse_file(self, edit: QtWidgets.QLineEdit, initial_dir: Path, filter_str: str):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select file", str(initial_dir), filter_str)
-        if path:\
-        
+        if path:
+            edit.setText(path)
+        self._scan_refresh()
 
+    def _browse_folder(self, edit: QtWidgets.QLineEdit, initial_dir: Path):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select folder", str(initial_dir))
+        if path:
+            edit.setText(path)
+            # Persist repository root when editing the repo picker
+            if edit is getattr(self, 'ed_repo', None):
+                try:
+                    be.set_repo_root(Path(path))
+                except Exception:
+                    pass
+        self._scan_refresh()
 
+    # Workspace sync
+    def _sync_workspace(self, auto: bool = False):
+        try:
+            repo = Path(self.ed_repo.text()).expanduser() if hasattr(self, "ed_repo") else Path(self.ed_pdfs.text()).expanduser()
+        except Exception:
+            repo = be.DEFAULT_PDF_DIR
+        try:
+            terms = Path(self.ed_terms.text()).expanduser()
+        except Exception:
+            terms = be.DEFAULT_TERMS_XLSX
+        try:
+            # For manual syncs, first rebuild the registry from run_data
+            if not auto:
+                try:
+                    be.rebuild_registry_from_run_data()
+                except Exception:
+                    pass
+            summary, details = be.compute_workspace_sync(repo, terms)
+            self._sync_summary = summary
+            self._sync_details = details
+            new = int(summary.get("new", 0) or 0)
+            pdf_newer = int(summary.get("pdf_newer", 0) or 0)
+            terms_newer = int(summary.get("terms_newer", 0) or 0)
+            up_to_date = int(summary.get("up_to_date", 0) or 0)
+            total = int(summary.get("total", 0) or 0)
+            last = str(summary.get("last_sync", ""))
+            repo_s = str(summary.get("repo_root", repo))
+            txt = (
+                f"Repository: {repo_s}\n"
+                f"Total PDFs: {total}  |  New: {new}  |  Out-of-date (PDF): {pdf_newer}  |  Out-of-date (Terms): {terms_newer}  |  Up-to-date: {up_to_date}\n"
+                f"Last sync: {last}"
+            )
+            self.lbl_sync_banner.setText(txt)
+            if (new + pdf_newer + terms_newer) > 0:
+                self.lbl_sync_banner.setStyleSheet(
+                    "#syncBanner { background: #fff4e5; color: #5b3100; border: 1px solid #ffd9a8; border-radius: 6px; padding: 8px 12px; }"
+                )
+            else:
+                self.lbl_sync_banner.setStyleSheet(
+                    "#syncBanner { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; border-radius: 6px; padding: 8px 12px; }"
+                )
+            flagged = (new + pdf_newer + terms_newer)
+            # Optionally compile master when sync is user-initiated
+            if not auto:
+                try:
+                    self._start_worker(be.compile_master, status_msg="Compiling master workbook from registry...")
+                except Exception:
+                    pass
+            if not auto:
+                self._append_log("[GUI] Workspace sync complete")
+        except Exception as e:
+            self.lbl_sync_banner.setText(f"Sync failed: {e}")
 
+    def _act_sync_workspace(self):
+        self._sync_workspace(auto=False)
 
+    def _show_outdated_popup(self, auto: bool = False):
+        # Guard against duplicate dialogs
+        if getattr(self, "_dlg_open_outdated", False):
+            return
+        self._dlg_open_outdated = True
+        try:
+            details = getattr(self, "_sync_details", None) or []
+            rows = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle("Out-of-Date EIDPs")
+            dlg.resize(900, 520)
+            v = QtWidgets.QVBoxLayout(dlg)
+            toolbar = QtWidgets.QHBoxLayout()
+            btn_sel_all = QtWidgets.QPushButton("Select All")
+            btn_sel_none = QtWidgets.QPushButton("Select None")
+            toolbar.addWidget(btn_sel_all)
+            toolbar.addWidget(btn_sel_none)
+            toolbar.addStretch(1)
+            v.addLayout(toolbar)
+            cols = ["Select", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
+            tbl = QtWidgets.QTableWidget(0, len(cols))
+            tbl.setHorizontalHeaderLabels(cols)
+            tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+            tbl.setAlternatingRowColors(True)
+            v.addWidget(tbl, 1)
+            for r, d in enumerate(rows):
+                tbl.insertRow(r)
+                it = QtWidgets.QTableWidgetItem()
+                it.setFlags(QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsEnabled)
+                it.setCheckState(QtCore.Qt.CheckState.Checked)
+                tbl.setItem(r, 0, it)
+                tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(d.get("serial_component", "")))
+                tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(d.get("reason", "")))
+                tbl.setItem(r, 3, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
+                tbl.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
+                tbl.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
+                tbl.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
+            tbl.resizeColumnsToContents()
 
+            def _set_all(state: QtCore.Qt.CheckState):
+                for r in range(tbl.rowCount()):
+                    it = tbl.item(r, 0)
+                    if it:
+                        it.setCheckState(state)
 
+            btn_sel_all.clicked.connect(lambda: _set_all(QtCore.Qt.CheckState.Checked))
+            btn_sel_none.clicked.connect(lambda: _set_all(QtCore.Qt.CheckState.Unchecked))
 
+            btns = QtWidgets.QHBoxLayout()
+            btn_run_all = QtWidgets.QPushButton("Run All Out-of-Date")
+            btn_run = QtWidgets.QPushButton("Run Selected")
+            btn_close = QtWidgets.QPushButton("Close")
+            btns.addStretch(1)
+            btns.addWidget(btn_run_all)
+            btns.addWidget(btn_run)
+            btns.addWidget(btn_close)
+            v.addLayout(btns)
 
+            def _run_selected():
+                paths: list[Path] = []
+                for r in range(tbl.rowCount()):
+                    it = tbl.item(r, 0)
+                    if it and it.checkState() == QtCore.Qt.CheckState.Checked:
+                        p = tbl.item(r, 3).text() if tbl.item(r, 3) else ""
+                        if p:
+                            paths.append(Path(p))
+                if not paths:
+                    QtWidgets.QMessageBox.information(dlg, "Nothing selected", "Choose at least one EIDP to run.")
+                    return
+                try:
+                    terms = Path(self.ed_terms.text()).expanduser()
+                except Exception:
+                    terms = be.DEFAULT_TERMS_XLSX
+                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...")
+                dlg.accept()
 
-            self._scan_refresh()
+            def _run_all():
+                all_paths = [Path(d.get("pdf")) for d in rows if d.get("pdf")] if rows else []
+                if not all_paths:
+                    QtWidgets.QMessageBox.information(dlg, "Nothing to run", "No out-of-date EIDPs found.")
+                    return
+                try:
+                    terms = Path(self.ed_terms.text()).expanduser()
+                except Exception:
+                    terms = be.DEFAULT_TERMS_XLSX
+                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...")
+                dlg.accept()
+
+            btn_run.clicked.connect(_run_selected)
+            btn_run_all.clicked.connect(_run_all)
+            btn_close.clicked.connect(dlg.reject)
+            dlg.exec()
+        finally:
+            self._dlg_open_outdated = False
 
     def _scan_refresh(self):
         # Env status + badge
@@ -1250,9 +1433,7 @@ class MainWindow(QtWidgets.QMainWindow):
         worker = getattr(self, "_worker", None)
         self.btn_start.setEnabled(has_terms and has_pdfs and (worker is None or not worker.isRunning()))
 
-        # Upload panel refresh
-        self._refresh_upload_list()
-        self.drop_zone.set_hint(f"Drop PDFs here\n-> {self.ed_pdfs.text()}")
+        # Workspace sync banner refresh handled by periodic timer
 
         # Plotting selection\n        self._load_plot_names_list()
         # Inline viewer removed; popup will build data on demand

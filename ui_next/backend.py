@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
+# Default repository root where PDFs may live (user-organized, nested or flat)
+DEFAULT_REPO_ROOT = ROOT / "Data Packages"
 DEFAULT_SCANNED_DIR = ROOT / "user_inputs" / "Scanned_Docs"
 SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
 APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
@@ -74,6 +76,7 @@ def save_scanner_env(env_map: Dict[str, str], path: Path = SCANNER_ENV) -> None:
     ]
     order = [
         "QUIET",
+        "REPO_ROOT",
         "OCR_MODE",
         "OCR_DPI",
         "EASYOCR_LANGS",
@@ -97,6 +100,25 @@ def save_scanner_env(env_map: Dict[str, str], path: Path = SCANNER_ENV) -> None:
             lines.append(f"{k}={v}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def get_repo_root() -> Path:
+    """Return repository root from scanner.env or DEFAULT_REPO_ROOT."""
+    env = parse_scanner_env(SCANNER_ENV)
+    val = env.get("REPO_ROOT", "").strip()
+    try:
+        if val:
+            p = Path(val).expanduser()
+            return p
+    except Exception:
+        pass
+    return DEFAULT_REPO_ROOT
+
+
+def set_repo_root(p: Path) -> None:
+    env = parse_scanner_env(SCANNER_ENV)
+    env["REPO_ROOT"] = str(Path(p).expanduser())
+    save_scanner_env(env)
 
 
 def _venv_python_from(path: Path) -> Path:
@@ -303,6 +325,313 @@ def write_terms_rows(
         wb.save(tgt)
     finally:
         wb.close()
+
+
+# --- Workspace sync helpers ---
+
+from datetime import datetime
+import csv as _csv
+
+
+def _parse_dt(s: str) -> Optional[datetime]:
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%m/%d/%Y %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _read_run_registry_map() -> dict[str, dict[str, str]]:
+    """Return mapping {serial_component: {run_date, run_folder, program_name, vehicle_number}}.
+
+    Reads Product_Data_File/run_registry.(xlsx|csv). Missing file -> empty map.
+    """
+    reg_dir = ROOT / "Product_Data_File"
+    rx = reg_dir / "run_registry.xlsx"
+    rc = reg_dir / "run_registry.csv"
+    out: dict[str, dict[str, str]] = {}
+    if rc.exists():
+        try:
+            with rc.open("r", encoding="utf-8", newline="") as f:
+                r = _csv.DictReader(f)
+                for row in r:
+                    sc = (row.get("serial_component") or row.get("serial_number") or "").strip()
+                    if not sc:
+                        continue
+                    out[sc] = {
+                        "run_date": (row.get("run_date") or ""),
+                        "run_folder": (row.get("run_folder") or ""),
+                        "program_name": (row.get("program_name") or ""),
+                        "vehicle_number": (row.get("vehicle_number") or ""),
+                    }
+        except Exception:
+            pass
+    elif rx.exists():
+        # One-time conversion from xlsx to csv, then delete xlsx to avoid confusion
+        try:
+            import openpyxl as _ox  # type: ignore
+            wb = _ox.load_workbook(str(rx), read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True)) if ws else []
+            if rows:
+                headers = [str(x) if x is not None else "" for x in rows[0]]
+                with rc.open("w", encoding="utf-8", newline="") as f:
+                    w = _csv.writer(f)
+                    w.writerow(headers)
+                    for r in rows[1:]:
+                        w.writerow([("") if c is None else str(c) for c in r])
+            try:
+                rx.unlink()
+            except Exception:
+                pass
+            # Recurse to read the new CSV
+            return _read_run_registry_map()
+        except Exception:
+            pass
+    return out
+
+
+def _write_run_registry_map(rows: dict[str, dict[str, str]]) -> None:
+    """Write the run registry to CSV only. Remove any legacy XLSX to avoid drift."""
+    reg_dir = ROOT / "Product_Data_File"
+    reg_dir.mkdir(parents=True, exist_ok=True)
+    rx = reg_dir / "run_registry.xlsx"
+    rc = reg_dir / "run_registry.csv"
+    columns = ["serial_component", "program_name", "vehicle_number", "run_date", "run_folder"]
+    try:
+        with rc.open("w", encoding="utf-8", newline="") as f:
+            w = _csv.DictWriter(f, fieldnames=columns)
+            w.writeheader()
+            for sc in sorted(rows.keys()):
+                m = rows[sc]
+                w.writerow({
+                    "serial_component": sc,
+                    "program_name": m.get("program_name", ""),
+                    "vehicle_number": m.get("vehicle_number", ""),
+                    "run_date": m.get("run_date", ""),
+                    "run_folder": m.get("run_folder", ""),
+                })
+    except Exception:
+        pass
+    # Remove legacy xlsx to prevent confusion
+    try:
+        if rx.exists():
+            rx.unlink()
+    except Exception:
+        pass
+
+
+def write_run_registry_rows(rows: list[dict[str, str]]) -> None:
+    """Public helper to write a list of row dicts to the run registry.
+
+    Expects keys including at least 'serial_component', 'run_date', 'run_folder'.
+    """
+    mapping: dict[str, dict[str, str]] = {}
+    for r in rows:
+        sc = str(r.get("serial_component", "")).strip()
+        if not sc:
+            continue
+        mapping[sc] = {
+            "serial_component": sc,
+            "program_name": str(r.get("program_name", "")),
+            "vehicle_number": str(r.get("vehicle_number", "")),
+            "run_date": str(r.get("run_date", "")),
+            "run_folder": str(r.get("run_folder", "")),
+        }
+    _write_run_registry_map(mapping)
+
+
+def ensure_run_registry_consistent() -> dict[str, dict[str, str]]:
+    """Prune invalid entries from run_registry.csv (no additions).
+
+    Keeps rows whose run_folder exists and that contain at least one
+    per-document artifact for the serial (filename contains serial and
+    has .xlsx/.json/.csv extension). Removes others.
+    """
+    reg = _read_run_registry_map()
+    if not reg:
+        return {}
+    cleaned: dict[str, dict[str, str]] = {}
+    for sc, info in reg.items():
+        try:
+            run_dir = Path(info.get("run_folder", ""))
+        except Exception:
+            run_dir = None
+        if not run_dir or not run_dir.exists():
+            continue
+        found = False
+        try:
+            # Look for files that include the serial in the name
+            for fp in run_dir.iterdir():
+                if not fp.is_file():
+                    continue
+                name = fp.name.lower()
+                if sc.lower() in name and fp.suffix.lower() in (".xlsx", ".json", ".csv"):
+                    found = True
+                    break
+        except Exception:
+            pass
+        if found:
+            cleaned[sc] = info
+    _write_run_registry_map(cleaned)
+    return cleaned
+
+
+def delete_registry_entries(serial_components: list[str]) -> None:
+    """Delete given serials from run registry and remove their per-document run_data files.
+
+    Does not remove whole run folders.
+    """
+    reg = _read_run_registry_map()
+    for sc in serial_components:
+        info = reg.get(sc)
+        run_dir: Optional[Path] = None
+        try:
+            run_dir = Path(info.get("run_folder")) if info else None
+        except Exception:
+            run_dir = None
+        if run_dir and run_dir.exists():
+            try:
+                for fp in run_dir.iterdir():
+                    try:
+                        if fp.is_file() and sc.lower() in fp.name.lower() and fp.suffix.lower() in (".xlsx", ".json", ".csv"):
+                            fp.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        if sc in reg:
+            try:
+                del reg[sc]
+            except Exception:
+                pass
+    _write_run_registry_map(reg)
+
+
+def _derive_identity_from_name(pdf_path: Path) -> tuple[str, str, str]:
+    stem = pdf_path.stem
+    parts = [p.strip() for p in stem.split("_") if p.strip()]
+    program_name = ""
+    vehicle_number = ""
+    serial_component = ""
+    if len(parts) >= 3:
+        program_name, vehicle_number = parts[0], parts[1]
+        serial_component = "_".join(parts[2:])
+    elif len(parts) == 2:
+        program_name = parts[0]
+        serial_component = parts[1]
+    elif parts:
+        serial_component = parts[0]
+    if not serial_component:
+        # Fallback: use full stem
+        serial_component = stem
+    return program_name, vehicle_number, serial_component
+
+
+_LAST_SYNC_SUMMARY: dict[str, str | int] | None = None
+_LAST_SYNC_DETAILS: list[dict[str, str]] | None = None
+
+
+def compute_workspace_sync(repo_root: Optional[Path] = None, terms_path: Optional[Path] = None) -> tuple[dict, list[dict]]:
+    """Compute workspace sync status.
+
+    Classifies PDFs in repo_root (recursively) as new/out-of-date/up-to-date by
+    comparing run_registry run_date and the mtime of the PDF and terms.
+    """
+    root = Path(repo_root) if repo_root else DEFAULT_PDF_DIR
+    terms = Path(terms_path) if terms_path else DEFAULT_TERMS_XLSX
+    # Ensure registry reflects run_data contents before comparing
+    reg = ensure_run_registry_consistent()
+    t_mtime = datetime.fromtimestamp(terms.stat().st_mtime) if terms.exists() else None
+
+    pdfs = [p for p in root.rglob("*.pdf") if p.is_file()]
+    details: list[dict[str, str]] = []
+    new_count = outdated_pdf = outdated_terms = up_to_date = 0
+    for p in sorted(pdfs):
+        try:
+            prog, veh, serial = _derive_identity_from_name(p)
+            info = reg.get(serial)
+            run_dt = _parse_dt(info.get("run_date", "") if info else "")
+            pdf_dt = datetime.fromtimestamp(p.stat().st_mtime)
+            reason = "up_to_date"
+            if not run_dt:
+                reason = "new"
+                new_count += 1
+            else:
+                if pdf_dt > run_dt:
+                    reason = "pdf_newer"
+                    outdated_pdf += 1
+                elif t_mtime and t_mtime > run_dt:
+                    reason = "terms_newer"
+                    outdated_terms += 1
+                else:
+                    up_to_date += 1
+            details.append({
+                "pdf": str(p),
+                "serial_component": serial,
+                "program_name": prog or (info.get("program_name") if info else "") or "",
+                "vehicle_number": veh or (info.get("vehicle_number") if info else "") or "",
+                "run_date": info.get("run_date") if info else "",
+                "pdf_mtime": pdf_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "terms_mtime": t_mtime.strftime("%Y-%m-%d %H:%M:%S") if t_mtime else "",
+                "reason": reason,
+            })
+        except Exception:
+            continue
+    total = len(pdfs)
+    summary = {
+        "total": total,
+        "new": new_count,
+        "pdf_newer": outdated_pdf,
+        "terms_newer": outdated_terms,
+        "up_to_date": up_to_date,
+        "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "repo_root": str(root),
+    }
+    global _LAST_SYNC_SUMMARY, _LAST_SYNC_DETAILS
+    _LAST_SYNC_SUMMARY, _LAST_SYNC_DETAILS = summary, details
+    return summary, details
+
+
+def get_last_sync() -> tuple[dict, list[dict]]:
+    return _LAST_SYNC_SUMMARY or {}, _LAST_SYNC_DETAILS or []
+
+
+def run_selected_pdfs(paths: list[Path], terms: Optional[Path] = None) -> subprocess.Popen:
+    """Stage selected PDFs into a temp folder and run the scanner only on them.
+
+    Original repository files remain untouched. Staged copies will be moved to
+    the Scanned_Docs folder by the scanner after processing.
+    """
+    terms = Path(terms) if terms else DEFAULT_TERMS_XLSX
+    stage = ROOT / "user_inputs" / "Staging_Selected"
+    try:
+        if stage.exists():
+            shutil.rmtree(stage, ignore_errors=True)
+        stage.mkdir(parents=True, exist_ok=True)
+        for p in paths:
+            try:
+                pp = Path(p)
+                if pp.is_file():
+                    shutil.copy2(str(pp), str(stage / pp.name))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return run_scanner(terms, stage, DEFAULT_SCANNED_DIR)
+
+
+def rebuild_registry_from_run_data() -> dict[str, dict[str, str]]:
+    """Rebuild or update run_registry.csv by scanning run_data folders.
+
+    This leverages ensure_run_registry_consistent(), which walks run_data and
+    merges/updates entries based on discovered outputs. Returns the final map.
+    """
+    return ensure_run_registry_consistent()
 
 
 def open_last_run_folder() -> None:

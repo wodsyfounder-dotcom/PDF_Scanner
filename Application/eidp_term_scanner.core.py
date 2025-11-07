@@ -1085,16 +1085,15 @@ def get_pdf_page_count(pdf_path: Path) -> int:
 
 
 def _update_run_registry(run_dir: Path, serial_components: List[str], serial_metadata: Optional[Dict[str, Dict[str, str]]] = None) -> None:
-    """Update a persistent Excel registry of EIDPs (identified by serial_component) and their latest run date.
+    """Update a persistent run registry of EIDPs (identified by serial_component) and their latest run date.
 
-    - File path: Product_Data_File/run_registry.xlsx (CSV fallback if Excel writer unavailable)
+    - File path: Product_Data_File/run_registry.csv (CSV only)
     - Columns: serial_component, program_name, vehicle_number, run_date, run_folder
     - On re-run, replaces the row for a serial component with the latest date and folder
     """
     try:
         exports_dir = Path("Product_Data_File")
         exports_dir.mkdir(parents=True, exist_ok=True)
-        registry_xlsx = exports_dir / "run_registry.xlsx"
         registry_csv = exports_dir / "run_registry.csv"
         columns = [
             "serial_component",
@@ -1139,49 +1138,7 @@ def _update_run_registry(run_dir: Path, serial_components: List[str], serial_met
         if not new_rows:
             return
 
-        # If pandas + writer are available, maintain Excel; else maintain CSV
-        if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
-            try:
-                import pandas as _pd
-                if registry_xlsx.exists():
-                    try:
-                        df = _pd.read_excel(registry_xlsx)
-                    except Exception:
-                        df = _pd.DataFrame(columns=columns)
-                else:
-                    df = _pd.DataFrame(columns=columns)
-                if "serial_component" not in df.columns and "serial_number" in df.columns:
-                    df["serial_component"] = df["serial_number"]
-                if "serial_component" not in df.columns:
-                    df = _pd.DataFrame(columns=columns)
-                for col in columns:
-                    if col not in df.columns:
-                        df[col] = ""
-                df = df.set_index("serial_component", drop=False)
-                for sc, row in new_rows.items():
-                    df.loc[sc] = row
-                df = df.reset_index(drop=True)
-                df = df[columns]
-                try:
-                    df_sorted = df.sort_values(by=["run_date", "serial_component"], ascending=[False, True])
-                except Exception:
-                    df_sorted = df
-                with _pd.ExcelWriter(registry_xlsx, engine="xlsxwriter") as writer:
-                    df_sorted.to_excel(writer, sheet_name="runs", index=False)
-                    ws = writer.sheets["runs"]
-                    ws.freeze_panes(1, 0)
-                    for i, col in enumerate(df_sorted.columns):
-                        try:
-                            max_len = int(df_sorted[col].astype(str).map(len).max()) if not df_sorted.empty else len(col)
-                        except Exception:
-                            max_len = len(col)
-                        ws.set_column(i, i, min(80, max(12, max_len + 2)))
-                return
-            except Exception:
-                # Fall back to CSV path
-                pass
-
-        # CSV fallback path
+        # CSV-only registry path
         try:
             rows_map: Dict[str, Dict[str, str]] = {}
             if registry_csv.exists():
@@ -1198,6 +1155,13 @@ def _update_run_registry(run_dir: Path, serial_components: List[str], serial_met
                 w.writeheader()
                 for sc in sorted(rows_map.keys()):
                     w.writerow({col: rows_map[sc].get(col, "") for col in columns})
+        except Exception:
+            pass
+        # Best-effort: remove any legacy XLSX to avoid confusion
+        try:
+            legacy = exports_dir / "run_registry.xlsx"
+            if legacy.exists():
+                legacy.unlink()
         except Exception:
             pass
     except Exception:
@@ -4380,12 +4344,24 @@ def run_scan(
     exports_dir = Path("Product_Data_File")
     run_dir = exports_dir / "run_data" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
-    # No per-PDF directory output; keep only summary JSON and flat Excel
+    # Outputs: aggregated JSON for the run, plus per-EIDP CSV/JSON files
 
     # Reroute output paths into the run_dir regardless of CLI-provided paths.
     output_json = run_dir / "scan_results.json"
     output_xlsx = run_dir / "scan_results_flat.xlsx"
     print(f"[INFO] Outputs will be saved under: {run_dir}")
+
+    # Helper for safe filename tokens (for per-EIDP outputs)
+    def _safe_token(s: Optional[str]) -> str:
+        try:
+            t = (s or "").strip()
+            # Replace Windows-invalid filename chars but preserve spaces
+            t = re.sub(r"[<>:\"/\\|?*]+", "_", t)
+            # Trim trailing/leading dots and spaces
+            t = t.strip(" .")
+            return t or "unknown"
+        except Exception:
+            return "unknown"
 
     # Prepare structures for the wide "results" sheet and the "metadata" sheet
     term_order = [t.term for t in terms]                  # preserve input order
@@ -4420,7 +4396,8 @@ def run_scan(
             label = data_id
         print(f"[INFO] Scanning: {pdf_path.name}  [Data: {label}]")
 
-        # No per-PDF artifact collection needed
+        # Per-PDF accumulation for outputs
+        summary_pdf: List[Dict] = []
 
         # Pre-extract text for all needed pages once per PDF (includes OCR fallback as configured)
         try:
@@ -4612,6 +4589,7 @@ def run_scan(
             }
             metadata_rows.append(meta)
             summary.append(meta)
+            summary_pdf.append(meta)
             # No per-PDF accumulation
 
             # Update and print progress for this PDF's terms
@@ -4639,11 +4617,62 @@ def run_scan(
         except Exception as e:
             print(f"[WARN] Could not write JSON during loop: {e}")
 
-        # No per-PDF JSON output
-
-            # continue even if per-PDF write failed
-
-            
+        # Per-PDF JSON + CSV directly in run_data folder
+        try:
+            safe_id = _safe_token(serial_meta.get(data_id, {}).get("serial_component") or data_id)
+        except Exception:
+            safe_id = _safe_token(data_id)
+        per_json = run_dir / f"scan_results_{safe_id}.json"
+        per_csv = run_dir / f"scan_results_flat_{safe_id}.csv"
+        # Write per-PDF JSON (details)
+        try:
+            with per_json.open("w", encoding="utf-8") as jf:
+                json.dump(summary_pdf, jf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] Could not write per-PDF JSON for {safe_id}: {e}")
+        # Write per-PDF flat CSV (header mapped to friendly names)
+        try:
+            cols_display = [
+                "pdf_file", "program_name", "vehicle_number", "serial_component", "term_label", "data_group", "term",
+                "found", "page",
+                "extracted_value", "units", "units_hint",
+                "range_min", "range_max",
+                "text_source", "smart_score",
+                "smart_snap_type", "smart_line_min", "smart_line_max",
+                "smart_conflict", "smart_secondary_found",
+                "group_after", "group_before", "error_reason",
+            ]
+            display_names = {
+                "extracted_value": "Extracted Value",
+                "term_label": "Term Label",
+                "data_group": "Data Group",
+                "units_hint": "Units Hint",
+                "term": "Search Term",
+                "program_name": "Program Name",
+                "vehicle_number": "Vehicle Number",
+                "serial_component": "Serial Component",
+                "smart_score": "Smart Score",
+                "smart_snap_type": "Smart Snap Type",
+                "smart_line_min": "Smart Line Min",
+                "smart_line_max": "Smart Line Max",
+                "smart_conflict": "Smart Conflict",
+                "smart_secondary_found": "Smart Secondary Found",
+                "group_after": "Group After",
+                "group_before": "Group Before",
+                "error_reason": "Error Reason",
+                "range_min": "Range Min",
+                "range_max": "Range Max",
+                "text_source": "Text Source",
+            }
+            with per_csv.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow([display_names.get(col, col) for col in cols_display])
+                for row in summary_pdf:
+                    w.writerow([row.get(col) for col in cols_display])
+            print(f"[DONE] Per-EIDP CSV -> {per_csv}")
+            print(f"[DONE] Per-EIDP JSON -> {per_json}")
+        except Exception as e:
+            print(f"[WARN] Could not write per-PDF CSV for {safe_id}: {e}")
         # Finalize per-PDF terms progress to 100%
         try:
             print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms})")
@@ -4665,8 +4694,8 @@ def run_scan(
         "smart_conflict", "smart_secondary_found",
         "group_after", "group_before", "error_reason",
     ]
-    wrote_xlsx = False
-    if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
+    wrote_xlsx = True  # XLSX disabled; do not write aggregate outputs
+    if False:
         try:
             import pandas as _pd
             display_names = {
@@ -4754,7 +4783,7 @@ def run_scan(
             print(f"[DONE] Extraction table -> {output_xlsx}")
         except Exception as e:
             print(f"[WARN] Could not write Excel extraction table: {e}")
-    if not wrote_xlsx:
+    if False:
         # Fallback: write CSV next to intended xlsx (same basename) if Excel writer not available
         try:
             fallback_csv = output_xlsx.with_suffix(".csv")
@@ -4798,7 +4827,7 @@ def run_scan(
             for sn in run_ids:
                 serial_meta.setdefault(sn, {"program_name": "", "vehicle_number": "", "serial_component": sn})
             _update_run_registry(run_dir, run_ids, serial_meta)
-            print("[DONE] Run registry updated (run_registry.xlsx)")
+            print("[DONE] Run registry updated (run_registry.csv)")
     except Exception as e:
         print(f"[WARN] Could not update run registry: {e}")
 
