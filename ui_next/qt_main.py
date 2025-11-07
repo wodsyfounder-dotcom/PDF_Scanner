@@ -97,6 +97,416 @@ class _DropZone(QtWidgets.QFrame):
             e.ignore()
 
 
+class TermsEditorDialog(QtWidgets.QDialog):
+    """In-app editor for Smart-Snap terms with grouped headers and curated fields."""
+
+    VISIBLE_COLUMN_ORDER = [
+        "Data Group",
+        "Term Label",
+        "Mode",
+        "Smart Snap Type",
+        "Term",
+        "Pages",
+        "GroupAfter",
+        "GroupBefore",
+        "Units",
+        "Range (min)",
+        "Range (max)",
+        "Format",
+        "Secondary Term",
+        "Smart Position",
+    ]
+    COLUMN_DISPLAY_NAMES = {
+        "Term": "Search Term",
+        "Data Group": "Data Grouping",
+        "Term Label": "Term Label",
+        "Mode": "Mode",
+        "Smart Snap Type": "Smart Snap Type",
+        "Pages": "Pages",
+        "GroupAfter": "Group After",
+        "GroupBefore": "Group Before",
+        "Units": "Units",
+        "Range (min)": "Range (min)",
+        "Range (max)": "Range (max)",
+        "Format": "Format / Pattern",
+        "Secondary Term": "Secondary Term",
+        "Smart Position": "Smart Position",
+    }
+    GROUP_LAYOUT = [
+        ("Data Information", ["Data Group", "Term Label"]),
+        ("Mode / Type", ["Mode", "Smart Snap Type"]),
+        ("Search Index", ["Term", "Pages", "GroupAfter", "GroupBefore"]),
+        (
+            "Data Definition for Extraction",
+            ["Units", "Range (min)", "Range (max)", "Format", "Secondary Term", "Smart Position"],
+        ),
+    ]
+    DEFAULT_HIDDEN = {"Return"}
+
+    def __init__(self, terms_path: Path, parent=None):
+        super().__init__(parent)
+        self._terms_path = Path(terms_path)
+        self._all_headers: list[str] = []
+        self._visible_headers: list[str] = []
+        self._hidden_headers: list[str] = []
+        self._hidden_rows: list[dict[str, str]] = []
+        self._dirty = False
+        self._loading = False
+
+        self.setWindowTitle("Smart-Snap Terms Editor")
+        self.resize(1280, 680)
+
+        self._combo_defs = {
+            "Mode": {
+                "options": [(opt, opt) for opt in be.TERMS_MODE_CHOICES] or [("smart", "smart")],
+                "default": (be.TERMS_MODE_CHOICES[0] if be.TERMS_MODE_CHOICES else "smart"),
+            },
+            "Smart Snap Type": {
+                "options": self._smart_type_options(),
+                "default": "",
+            },
+        }
+
+        layout = QtWidgets.QVBoxLayout(self)
+        title = QtWidgets.QLabel("Edit the Smart-Snap input spreadsheet directly in the app.")
+        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        layout.addWidget(title)
+        hint = QtWidgets.QLabel(f"File: {self._terms_path}")
+        hint.setObjectName("termsPathLabel")
+        hint.setStyleSheet("color: #556070;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self.group_header = QtWidgets.QTableWidget(1, 0)
+        self._configure_group_header_widget()
+        layout.addWidget(self.group_header)
+
+        self.table = QtWidgets.QTableWidget()
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.verticalHeader().setVisible(False)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.sectionResized.connect(self._sync_group_header_section)
+        self.table.horizontalScrollBar().valueChanged.connect(self.group_header.horizontalScrollBar().setValue)
+        layout.addWidget(self.table, 1)
+
+        row_btns = QtWidgets.QHBoxLayout()
+        self.btn_add_row = QtWidgets.QPushButton("Add Row")
+        self.btn_duplicate_row = QtWidgets.QPushButton("Duplicate Row")
+        self.btn_delete_row = QtWidgets.QPushButton("Delete Selected")
+        self.btn_add_row.clicked.connect(self._add_blank_row)
+        self.btn_duplicate_row.clicked.connect(self._duplicate_row)
+        self.btn_delete_row.clicked.connect(self._delete_rows)
+        row_btns.addWidget(self.btn_add_row)
+        row_btns.addWidget(self.btn_duplicate_row)
+        row_btns.addWidget(self.btn_delete_row)
+        row_btns.addStretch(1)
+        layout.addLayout(row_btns)
+
+        bottom = QtWidgets.QHBoxLayout()
+        self._status_label = QtWidgets.QLabel("Loading...")
+        self._status_label.setObjectName("termsStatusLabel")
+        self._status_label.setStyleSheet("color: #1b5e20;")
+        bottom.addWidget(self._status_label)
+        bottom.addStretch(1)
+        self.btn_save = QtWidgets.QPushButton("Save")
+        self.btn_save.setProperty("variant", "primary")
+        self.btn_done = QtWidgets.QPushButton("Done")
+        self.btn_save.clicked.connect(self._save_rows)
+        self.btn_done.clicked.connect(self.reject)
+        bottom.addWidget(self.btn_save)
+        bottom.addWidget(self.btn_done)
+        layout.addLayout(bottom)
+
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Save, self, activated=self._save_rows)
+        self.table.itemChanged.connect(self._on_table_item_changed)
+
+        self._load_rows()
+
+    def _configure_group_header_widget(self) -> None:
+        self.group_header.setEditTriggers(QtWidgets.QAbstractItemView.EditTriggers.NoEditTriggers)
+        self.group_header.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.group_header.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
+        self.group_header.setFixedHeight(46)
+        self.group_header.setShowGrid(False)
+        self.group_header.horizontalHeader().setVisible(False)
+        self.group_header.verticalHeader().setVisible(False)
+        self.group_header.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.group_header.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
+        self.group_header.setStyleSheet(
+            """
+            QTableWidget {
+                background: #050505;
+                border: none;
+                border-bottom: 4px solid #121212;
+            }
+            QTableWidget::item {
+                border-right: 1px solid #1f1f1f;
+                padding-top: 6px;
+                padding-bottom: 6px;
+            }
+            """
+        )
+        self.group_header.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.group_header.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def _make_group_cell(self, text: str = "") -> QtWidgets.QTableWidgetItem:
+        item = QtWidgets.QTableWidgetItem(text)
+        item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+        font = item.font()
+        font.setBold(bool(text))
+        item.setFont(font)
+        item.setForeground(QtGui.QBrush(QtGui.QColor("#f4f4f4")))
+        item.setBackground(QtGui.QBrush(QtGui.QColor("#050505")))
+        return item
+
+    def _smart_type_options(self) -> list[tuple[str, str]]:
+        opts: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        values = be.TERMS_SMART_TYPE_CHOICES or ["", "auto", "number", "date", "time", "title"]
+        for opt in values:
+            val = opt or ""
+            if val in seen:
+                continue
+            seen.add(val)
+            if val == "":
+                opts.append(("Auto-detect (blank)", ""))
+            elif val == "number":
+                opts.append(("Numeric", "number"))
+            elif val == "title":
+                opts.append(("Title / Text", "title"))
+            else:
+                opts.append((val.capitalize(), val))
+        if not opts:
+            opts.append(("Auto-detect (blank)", ""))
+        return opts
+
+    def _determine_visible_headers(self, headers: list[str]) -> None:
+        order: list[str] = []
+        present = set(headers)
+        for col in self.VISIBLE_COLUMN_ORDER:
+            if col in present and col not in order:
+                order.append(col)
+        for h in headers:
+            if h in self.DEFAULT_HIDDEN:
+                continue
+            if h not in order:
+                order.append(h)
+        self._visible_headers = [h for h in order if h in headers and h not in self.DEFAULT_HIDDEN]
+        self._hidden_headers = [h for h in headers if h not in self._visible_headers]
+
+    def _load_rows(self) -> None:
+        headers, rows = be.read_terms_rows(self._terms_path)
+        self._loading = True
+        try:
+            self._all_headers = headers
+            self._determine_visible_headers(headers)
+            self._hidden_rows = []
+            self.table.clear()
+            self.table.setColumnCount(len(self._visible_headers))
+            header_labels = [self._column_display_name(h) for h in self._visible_headers]
+            self.table.setHorizontalHeaderLabels(header_labels)
+            self.table.setRowCount(0)
+            for row in rows:
+                idx = self.table.rowCount()
+                self.table.insertRow(idx)
+                self._hidden_rows.append({h: row.get(h, "") for h in self._hidden_headers})
+                self._populate_row(idx, row)
+        finally:
+            self._loading = False
+        self._dirty = False
+        self._status_label.setText("All changes saved")
+        self._rebuild_group_header()
+
+    def _column_display_name(self, header: str) -> str:
+        return self.COLUMN_DISPLAY_NAMES.get(header, header)
+
+    def _rebuild_group_header(self) -> None:
+        self.group_header.blockSignals(True)
+        self.group_header.clear()
+        cols = len(self._visible_headers)
+        self.group_header.setColumnCount(cols)
+        self.group_header.setRowCount(1)
+        self.group_header.clearSpans()
+        for idx in range(cols):
+            self.group_header.setColumnWidth(idx, self.table.columnWidth(idx))
+            self.group_header.setItem(0, idx, self._make_group_cell(""))
+        for group_name, members in self.GROUP_LAYOUT:
+            indices = [self._visible_headers.index(m) for m in members if m in self._visible_headers]
+            if not indices:
+                continue
+            start = min(indices)
+            span = len(indices)
+            self.group_header.setSpan(0, start, 1, span)
+            self.group_header.setItem(0, start, self._make_group_cell(group_name))
+        self.group_header.blockSignals(False)
+
+    def _sync_group_header_section(self, logical_index: int, _old_size: int, new_size: int) -> None:
+        try:
+            self.group_header.setColumnWidth(logical_index, new_size)
+        except Exception:
+            pass
+
+    def _populate_row(self, row_idx: int, row_data: dict[str, str]) -> None:
+        for col_idx, header in enumerate(self._visible_headers):
+            value = row_data.get(header, "")
+            if header in self._combo_defs:
+                combo = self._build_combo(header, value)
+                self.table.setCellWidget(row_idx, col_idx, combo)
+            else:
+                item = QtWidgets.QTableWidgetItem(value)
+                self.table.setItem(row_idx, col_idx, item)
+
+    def _build_combo(self, header: str, value: str) -> QtWidgets.QComboBox:
+        config = self._combo_defs[header]
+        combo = QtWidgets.QComboBox()
+        combo.setEditable(False)
+        seen_values = set()
+        for label, val in config["options"]:
+            combo.addItem(label, val)
+            seen_values.add(val)
+        if value and value not in seen_values:
+            combo.addItem(value, value)
+        target = value if value else config.get("default", "")
+        combo.blockSignals(True)
+        idx = combo.findData(target)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+        combo.currentIndexChanged.connect(self._on_combo_changed)
+        return combo
+
+    def _on_combo_changed(self, *args) -> None:
+        if self._loading:
+            return
+        self._mark_dirty()
+
+    def _on_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if self._loading:
+            return
+        self._mark_dirty()
+
+    def _mark_dirty(self) -> None:
+        if self._dirty:
+            return
+        self._dirty = True
+        self._status_label.setText("Unsaved changes")
+
+    def _selected_rows(self) -> list[int]:
+        rows = {idx.row() for idx in self.table.selectionModel().selectedRows()}
+        return sorted(rows)
+
+    def _add_blank_row(self) -> None:
+        payload = {h: "" for h in self._all_headers}
+        payload.setdefault("Mode", (be.TERMS_MODE_CHOICES[0] if be.TERMS_MODE_CHOICES else "smart"))
+        self._insert_row(payload)
+        self.table.scrollToBottom()
+        self._mark_dirty()
+
+    def _duplicate_row(self) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        source = rows[0]
+        payload = self._combine_row_payload(source)
+        self._insert_row(payload)
+        self.table.scrollToBottom()
+        self._mark_dirty()
+
+    def _delete_rows(self) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        for row in reversed(rows):
+            self.table.removeRow(row)
+            if 0 <= row < len(self._hidden_rows):
+                self._hidden_rows.pop(row)
+        if self.table.rowCount() == 0:
+            self._insert_row({h: "" for h in self._all_headers})
+        self._mark_dirty()
+
+    def _insert_row(self, payload: dict[str, str]) -> None:
+        self._loading = True
+        try:
+            idx = self.table.rowCount()
+            self.table.insertRow(idx)
+            hidden_payload = {h: payload.get(h, "") for h in self._hidden_headers}
+            if idx <= len(self._hidden_rows):
+                self._hidden_rows.insert(idx, hidden_payload)
+            else:
+                self._hidden_rows.append(hidden_payload)
+            self._populate_row(idx, payload)
+        finally:
+            self._loading = False
+
+    def _row_data_from_table(self, row_idx: int) -> dict[str, str]:
+        data: dict[str, str] = {}
+        for col_idx, header in enumerate(self._visible_headers):
+            widget = self.table.cellWidget(row_idx, col_idx)
+            if isinstance(widget, QtWidgets.QComboBox):
+                current = widget.currentData()
+                val = current if current is not None else widget.currentText()
+                data[header] = str(val)
+                continue
+            item = self.table.item(row_idx, col_idx)
+            data[header] = item.text() if item else ""
+        return data
+
+    def _combine_row_payload(self, row_idx: int) -> dict[str, str]:
+        payload: dict[str, str] = {}
+        payload.update(self._hidden_rows[row_idx] if row_idx < len(self._hidden_rows) else {})
+        payload.update(self._row_data_from_table(row_idx))
+        for header in self._all_headers:
+            payload.setdefault(header, "")
+        return payload
+
+    def _gather_rows(self) -> list[dict[str, str]]:
+        rows_out: list[dict[str, str]] = []
+        for row_idx in range(self.table.rowCount()):
+            combined = self._combine_row_payload(row_idx)
+            if not any((combined.get(h, "") or "").strip() for h in self._visible_headers if h in combined and h != "Return"):
+                continue
+            existing_ret = combined.get("Return")
+            combined["Return"] = be.derive_return_value(combined, existing=existing_ret)
+            if row_idx < len(self._hidden_rows):
+                self._hidden_rows[row_idx]["Return"] = combined["Return"]
+            rows_out.append({h: combined.get(h, "") for h in self._all_headers})
+        if not rows_out:
+            rows_out.append({h: "" for h in self._all_headers})
+        return rows_out
+
+    def _save_rows(self) -> bool:
+        try:
+            rows = self._gather_rows()
+            be.write_terms_rows(rows, path=self._terms_path, headers=self._all_headers)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Save failed", str(exc))
+            return False
+        self._dirty = False
+        self._status_label.setText("All changes saved")
+        return True
+
+    def reject(self) -> None:  # type: ignore[override]
+        if self._dirty:
+            resp = QtWidgets.QMessageBox.question(
+                self,
+                "Discard unsaved edits?",
+                "You have unsaved changes. Close without saving?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if resp != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        super().reject()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
+        if event.matches(QtGui.QKeySequence.StandardKey.Save):
+            if self._save_rows():
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -335,14 +745,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
         btn_browse_terms = QtWidgets.QPushButton("Browse...")
         btn_browse_terms.clicked.connect(lambda: self._browse_file(self.ed_terms, be.DEFAULT_TERMS_XLSX.parent, "Smart Snap Terms (*.xlsx);;All files (*.*)"))
-        self.btn_terms_create = QtWidgets.QPushButton("Create Smart-Snap Terms Spreadsheet (terms.schema.smartsnap.xlsx)")
-        self.btn_terms_open = QtWidgets.QPushButton("Open/Edit Existing Terms Spreadsheet")
-        self.btn_terms_create.clicked.connect(self._act_generate_terms)
-        self.btn_terms_open.clicked.connect(lambda: be.open_terms_file(Path(self.ed_terms.text())))
+        self.btn_terms_edit = QtWidgets.QPushButton("Edit Smart-Snap Terms")
+        self.btn_terms_edit.setProperty("variant", "primary")
+        self.btn_terms_refresh = QtWidgets.QPushButton("Create/Refresh Input Spreadsheet")
+        self.btn_terms_edit.clicked.connect(self._open_terms_editor)
+        self.btn_terms_refresh.clicked.connect(self._act_generate_terms)
         self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
         self.ed_scanned = QtWidgets.QLineEdit(str(be.DEFAULT_SCANNED_DIR))
-        li.addWidget(self.btn_terms_create, 0, 0)
-        li.addWidget(self.btn_terms_open, 0, 1)
+        li.addWidget(self.btn_terms_edit, 0, 0, 1, 2)
+        li.addWidget(self.btn_terms_refresh, 1, 0, 1, 2)
         # Keep internal path field for logic, but do not show it
 
         # Upload
@@ -513,6 +924,29 @@ class MainWindow(QtWidgets.QMainWindow):
             be.open_path(be.SCANNER_ENV)
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Open failed", str(e))
+
+    def _open_terms_editor(self):
+        raw = (self.ed_terms.text() or "").strip()
+        try:
+            target = Path(raw).expanduser() if raw else be.DEFAULT_TERMS_XLSX
+        except Exception:
+            target = be.DEFAULT_TERMS_XLSX
+        if not target.exists():
+            resp = QtWidgets.QMessageBox.question(
+                self,
+                "Terms spreadsheet missing",
+                f"{target} was not found.\nGenerate a fresh Smart-Snap template now?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if resp == QtWidgets.QMessageBox.StandardButton.Yes:
+                self._act_generate_terms()
+            return
+        try:
+            dlg = TermsEditorDialog(target, self)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Unable to open editor", str(exc))
+            return
+        dlg.exec()
 
     def _act_generate_terms(self):
         # Warn if a terms spreadsheet exists and will be overwritten
@@ -1112,6 +1546,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

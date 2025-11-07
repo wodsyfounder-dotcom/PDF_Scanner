@@ -5,7 +5,7 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Mapping, Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +17,26 @@ SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
 APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
 RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
 PLOTS_DIR = ROOT / "Product_Data_File" / "plots"
+TERMS_TEMPLATE_SHEET = "Template"
+TERMS_SCHEMA_COLUMNS = [
+    "Data Group",
+    "Term Label",
+    "Term",
+    "Pages",
+    "Mode",
+    "Return",
+    "Units",
+    "Range (min)",
+    "Range (max)",
+    "Format",
+    "GroupAfter",
+    "GroupBefore",
+    "Smart Snap Type",
+    "Secondary Term",
+    "Smart Position",
+]
+TERMS_MODE_CHOICES = ["smart"]
+TERMS_SMART_TYPE_CHOICES = ["", "auto", "number", "date", "time", "title"]
 
 
 def parse_scanner_env(path: Path = SCANNER_ENV) -> Dict[str, str]:
@@ -189,6 +209,100 @@ def open_path(p: Path) -> None:
 def open_terms_file(path: Optional[Path] = None) -> None:
     tgt = Path(path) if path else DEFAULT_TERMS_XLSX
     open_path(tgt)
+
+
+def derive_return_value(row: Mapping[str, str], existing: Optional[str] = None) -> str:
+    """Infer the return type (number|string) when the column is hidden in the UI."""
+    smart = (row.get("Smart Snap Type") or "").strip().lower()
+    if smart in ("number", "num", "value"):
+        return "number"
+    if smart in ("date", "time", "title"):
+        return "string"
+    hint = (existing or row.get("Return") or "").strip().lower()
+    if hint in ("number", "string"):
+        return hint
+    return "number"
+
+
+def _ensure_openpyxl_loader():
+    try:
+        from openpyxl import load_workbook  # type: ignore
+    except Exception as exc:  # pragma: no cover - depends on optional dep
+        raise RuntimeError(
+            "openpyxl is required to edit the Smart-Snap terms spreadsheet. "
+            "Install it with `py -m pip install openpyxl` within the project environment."
+        ) from exc
+    return load_workbook
+
+
+def read_terms_rows(path: Optional[Path] = None) -> tuple[list[str], list[dict[str, str]]]:
+    """Return (headers, rows) from the Smart-Snap terms sheet starting at row 3."""
+    tgt = Path(path) if path else DEFAULT_TERMS_XLSX
+    if not tgt.exists():
+        raise FileNotFoundError(f"Terms spreadsheet not found: {tgt}")
+    load_wb = _ensure_openpyxl_loader()
+    wb = load_wb(tgt)
+    try:
+        if TERMS_TEMPLATE_SHEET not in wb.sheetnames:
+            raise RuntimeError(f"Sheet '{TERMS_TEMPLATE_SHEET}' missing in {tgt}")
+        ws = wb[TERMS_TEMPLATE_SHEET]
+        headers: list[str] = []
+        for idx, fallback in enumerate(TERMS_SCHEMA_COLUMNS, start=1):
+            raw = ws.cell(row=1, column=idx).value
+            name = str(raw).strip() if raw not in (None, "") else fallback
+            headers.append(name or fallback)
+        rows: list[dict[str, str]] = []
+        for values in ws.iter_rows(min_row=3, max_col=len(headers), values_only=True):
+            normalized: dict[str, str] = {}
+            has_value = False
+            for col_idx, header in enumerate(headers):
+                cell_val = values[col_idx] if col_idx < len(values) else None
+                if cell_val is None:
+                    text = ""
+                else:
+                    text = str(cell_val)
+                if text.strip():
+                    has_value = True
+                normalized[header] = text
+            if has_value:
+                rows.append(normalized)
+        if not rows:
+            rows.append({h: "" for h in headers})
+        return headers, rows
+    finally:
+        wb.close()
+
+
+def write_terms_rows(
+    rows: list[dict[str, str]],
+    path: Optional[Path] = None,
+    headers: Optional[list[str]] = None,
+) -> None:
+    """Persist edited Smart-Snap rows back into the template sheet (rows 3+)."""
+    tgt = Path(path) if path else DEFAULT_TERMS_XLSX
+    if not tgt.exists():
+        raise FileNotFoundError(f"Terms spreadsheet not found: {tgt}")
+    load_wb = _ensure_openpyxl_loader()
+    wb = load_wb(tgt)
+    try:
+        if TERMS_TEMPLATE_SHEET not in wb.sheetnames:
+            raise RuntimeError(f"Sheet '{TERMS_TEMPLATE_SHEET}' missing in {tgt}")
+        ws = wb[TERMS_TEMPLATE_SHEET]
+        if headers is None:
+            headers = []
+            for idx, fallback in enumerate(TERMS_SCHEMA_COLUMNS, start=1):
+                raw = ws.cell(row=1, column=idx).value
+                name = str(raw).strip() if raw not in (None, "") else fallback
+                headers.append(name or fallback)
+        existing_rows = max(ws.max_row - 2, 0)
+        if existing_rows > 0:
+            ws.delete_rows(3, existing_rows)
+        records = rows or [{h: "" for h in headers}]
+        for record in records:
+            ws.append([record.get(h, "") for h in headers])
+        wb.save(tgt)
+    finally:
+        wb.close()
 
 
 def open_last_run_folder() -> None:
