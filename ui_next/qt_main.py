@@ -334,8 +334,8 @@ class MainWindow(QtWidgets.QMainWindow):
         li = QtWidgets.QGridLayout(grp_inputs)
         self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
         btn_browse_terms = QtWidgets.QPushButton("Browse...")
-        btn_browse_terms.clicked.connect(lambda: self._browse_file(self.ed_terms, be.DEFAULT_TERMS_XLSX.parent, "Terms files (*.xlsx *.csv);;All files (*.*)"))
-        self.btn_terms_create = QtWidgets.QPushButton("Create A New Spreadsheet for Defining Input Terms (terms.xlsx)")
+        btn_browse_terms.clicked.connect(lambda: self._browse_file(self.ed_terms, be.DEFAULT_TERMS_XLSX.parent, "Smart Snap Terms (*.xlsx);;All files (*.*)"))
+        self.btn_terms_create = QtWidgets.QPushButton("Create Smart-Snap Terms Spreadsheet (terms.schema.smartsnap.xlsx)")
         self.btn_terms_open = QtWidgets.QPushButton("Open/Edit Existing Terms Spreadsheet")
         self.btn_terms_create.clicked.connect(self._act_generate_terms)
         self.btn_terms_open.clicked.connect(lambda: be.open_terms_file(Path(self.ed_terms.text())))
@@ -534,8 +534,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 != QtWidgets.QMessageBox.StandardButton.Yes
             ):
                 return
-        # Kick off generation (backend handles creating terms.xlsx)
-        self._start_worker(be.generate_terms, status_msg="Generating terms spreadsheet...")
+        # Kick off generation (backend creates terms.schema.smartsnap.xlsx)
+        self._start_worker(be.generate_terms, status_msg="Generating Smart-Snap terms spreadsheet...")
 
     def _act_start_scan(self):
         terms = Path(self.ed_terms.text()).expanduser()
@@ -1112,7 +1112,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 

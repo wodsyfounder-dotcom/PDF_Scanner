@@ -9,7 +9,7 @@ from typing import Dict, Iterable, Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.xlsx"
+DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
 DEFAULT_SCANNED_DIR = ROOT / "user_inputs" / "Scanned_Docs"
@@ -151,7 +151,7 @@ def run_script(script_rel_path: str, *args: str) -> subprocess.Popen:
 
 
 def generate_terms() -> subprocess.Popen:
-    return run_script("scripts/generate_terms_schema.py")
+    return run_script("scripts/generate_terms_schema_smartsnap.py")
 
 
 def compile_master() -> subprocess.Popen:

@@ -6,10 +6,10 @@ EIDP Term Scanner (Matrix + Metadata + Auto-Move)
 -------------------------------------------------
 - Scans PDFs in a given folder for configured "terms" within specified page ranges.
 - Extracts the closest numeric value near each term occurrence.
-- Serial Number (SN) is inferred from each PDF's filename; results are arranged
-  as a wide matrix: rows=terms, columns=serial numbers (one per EIDP).
+- A serial component (data identifier) is inferred from each PDF's filename; results are arranged
+  as a wide matrix: rows=terms, columns=data identifiers (one per EIDP).
 - Produces an Excel workbook with:
-    * "results"  : Term, Pages, and one column per SN with the matched number
+    * "results"  : Term, Pages, and one column per data identifier with the matched number
     * "metadata" : detailed per-term/per-file records, for auditing/debugging
 - Moves scanned PDFs from the imports folder into "Scanned Docs" to avoid reprocessing.
 - Falls back to CSVs if Excel writer dependencies are not available.
@@ -162,6 +162,7 @@ class TermSpec:
 
     Fields:
     - term, pages, pages_raw
+    - term_label / data_group: optional reporting metadata (not used for matching)
     - mode: nearest | line | table(xy)
     - line/column: XY mode inputs (column may be pipe-separated alternatives)
     - anchor: line mode anchor (defaults to term)
@@ -175,6 +176,8 @@ class TermSpec:
     term: str
     pages: List[int]
     pages_raw: str
+    term_label: Optional[str] = None          # Friendly label for outputs (optional)
+    data_group: Optional[str] = None          # User-defined grouping bucket (optional)
     mode: Optional[str] = None
     line: Optional[str] = None
     column: Optional[str] = None
@@ -286,7 +289,7 @@ def extract_units(value: Optional[str]) -> Optional[str]:
     return None
 
 
-# Regex to capture serial numbers like "... SN 1234", "... SN-ABC_09", etc.
+# Regex to capture legacy SN tokens like "... SN 1234", "... SN-ABC_09", etc.
 SN_REGEX = re.compile(
     r"""\bSN\W*([A-Za-z0-9][A-Za-z0-9_\-]*)""",  # capture the SN id after the "SN" prefix
     re.IGNORECASE | re.VERBOSE
@@ -471,9 +474,15 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                         smart_snap_type = None
                         secondary_term = None
                         smart_position: Optional[int] = None
+                        data_group = None
+                        term_label = None
                         for k, v in row.items():
                             if k and k.strip().lower() == "term":
                                 term = (v or "").strip()
+                            if k and k.strip().lower() in ("term_label", "term label"):
+                                term_label = ((v or "").strip() or None)
+                            if k and k.strip().lower() in ("data_group", "data group", "datagroup"):
+                                data_group = ((v or "").strip() or None)
                             if k and k.strip().lower() == "pages":
                                 pages_str = (v or "").strip()
                             if k and k.strip().lower() == "line":
@@ -528,6 +537,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                             result.append(TermSpec(term=term,
                                                    pages=parse_page_ranges(pages_str),
                                                    pages_raw=pages_str,
+                                                   term_label=term_label,
+                                                   data_group=data_group,
                                                    mode=mode,
                                                    line=line,
                                                    column=column,
@@ -618,6 +629,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         return None
 
     term_col = col_for("term")
+    term_label_col = col_for("term_label") or col_for("term label")
+    data_group_col = col_for("data_group") or col_for("data group") or col_for("datagroup")
     pages_col = col_for("pages")
     mode_col = col_for("mode")
     line_col = col_for("line")
@@ -642,7 +655,19 @@ def load_terms(input_path: Path) -> List[TermSpec]:
 
     # Walk rows and collect terms
     for row in ws.iter_rows(min_row=2):
+        try:
+            row_idx = row[0].row if row and row[0] is not None else None
+        except Exception:
+            row_idx = None
+        # Skip the explanatory second header in Smart‑Snap schema templates
+        try:
+            if row_idx == 2 and input_path.name.lower().endswith('terms.schema.smartsnap.xlsx'):
+                continue
+        except Exception:
+            pass
         term_val = row[term_col - 1].value if term_col else None
+        term_label_val = row[term_label_col - 1].value if term_label_col else None
+        data_group_val = row[data_group_col - 1].value if data_group_col else None
         pages_val = row[pages_col - 1].value if pages_col else "" if pages_col else ""
         mode_val = row[mode_col - 1].value if mode_col else None
         line_val = row[line_col - 1].value if line_col else None
@@ -693,9 +718,12 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         except Exception:
             smart_position = None
         if term:
+            term_label = (str(term_label_val).strip() if term_label_val is not None and str(term_label_val).strip() else None)
+            data_group = (str(data_group_val).strip() if data_group_val is not None and str(data_group_val).strip() else None)
             terms.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
-                                  mode=mode, line=line, column=column, anchor=anchor,
-                                  field_index=field_index, field_split=field_split, return_type=return_type,
+                                   term_label=term_label, data_group=data_group,
+                                   mode=mode, line=line, column=column, anchor=anchor,
+                                   field_index=field_index, field_split=field_split, return_type=return_type,
                                   range_min=rmin, range_max=rmax, units_hint=units_hint,
                                    value_format=(str(fmt_val).strip() if fmt_val is not None and str(fmt_val).strip() else None),
                                    group_after=(str(grp_val).strip() if grp_val is not None and str(grp_val).strip() else None),
@@ -726,6 +754,8 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         field_index = _parse_field_index(str(get(row, 'fieldindex') or '').strip() or None)
         field_split = _norm_field_split(str(get(row, 'fieldsplit') or '').strip() or None)
         return_type = _norm_return_type(str(get(row, 'return') or '').strip() or None)
+        term_label = str(get(row, 'term_label') or '').strip() or None
+        data_group = str(get(row, 'data_group') or '').strip() or None
         rng = str(get(row, 'range') or '').strip()
         rmin = rmax = None
         if rng:
@@ -757,6 +787,7 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
             smart_position = None
         smart_snap_type = _norm_smart_type(str(get(row, 'smart_snap_type') or get(row, 'smart') or get(row, 'smart_snap') or '').strip() or None)
         out.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
+                            term_label=term_label, data_group=data_group,
                             mode=mode, line=line, column=column, anchor=anchor,
                             field_index=field_index, field_split=field_split, return_type=return_type,
                             range_min=rmin, range_max=rmax, units_hint=units_hint,
@@ -1053,18 +1084,26 @@ def get_pdf_page_count(pdf_path: Path) -> int:
     return 0
 
 
-def _update_run_registry(run_dir: Path, serial_numbers: List[str]) -> None:
-    """Update a persistent Excel registry of EIDPs (serial_numbers) and their latest run date.
+def _update_run_registry(run_dir: Path, serial_components: List[str], serial_metadata: Optional[Dict[str, Dict[str, str]]] = None) -> None:
+    """Update a persistent Excel registry of EIDPs (identified by serial_component) and their latest run date.
 
     - File path: Product_Data_File/run_registry.xlsx (CSV fallback if Excel writer unavailable)
-    - Columns: serial_number, run_date, run_folder
-    - On re-run, replaces the row for a serial number with the latest date and folder
+    - Columns: serial_component, program_name, vehicle_number, run_date, run_folder
+    - On re-run, replaces the row for a serial component with the latest date and folder
     """
     try:
         exports_dir = Path("Product_Data_File")
         exports_dir.mkdir(parents=True, exist_ok=True)
         registry_xlsx = exports_dir / "run_registry.xlsx"
         registry_csv = exports_dir / "run_registry.csv"
+        columns = [
+            "serial_component",
+            "program_name",
+            "vehicle_number",
+            "run_date",
+            "run_folder",
+        ]
+        serial_metadata = serial_metadata or {}
 
         # Build rows to merge
         from datetime import datetime
@@ -1078,7 +1117,27 @@ def _update_run_registry(run_dir: Path, serial_numbers: List[str]) -> None:
         except Exception:
             run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        new_rows = {sn: {"serial_number": sn, "run_date": run_date, "run_folder": str(run_folder)} for sn in serial_numbers}
+        def meta_value(sc: str, key: str) -> str:
+            try:
+                val = serial_metadata.get(sc, {}).get(key, "")
+            except Exception:
+                val = ""
+            return str(val).strip() if val is not None else ""
+
+        new_rows = {}
+        for sc in serial_components:
+            sc_clean = (sc or "").strip()
+            if not sc_clean:
+                continue
+            new_rows[sc_clean] = {
+                "serial_component": sc_clean,
+                "program_name": meta_value(sc_clean, "program_name"),
+                "vehicle_number": meta_value(sc_clean, "vehicle_number"),
+                "run_date": run_date,
+                "run_folder": str(run_folder),
+            }
+        if not new_rows:
+            return
 
         # If pandas + writer are available, maintain Excel; else maintain CSV
         if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
@@ -1088,18 +1147,23 @@ def _update_run_registry(run_dir: Path, serial_numbers: List[str]) -> None:
                     try:
                         df = _pd.read_excel(registry_xlsx)
                     except Exception:
-                        df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
+                        df = _pd.DataFrame(columns=columns)
                 else:
-                    df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
-                # Index by serial_number and update
-                if "serial_number" not in df.columns:
-                    df = _pd.DataFrame(columns=["serial_number", "run_date", "run_folder"])
-                df = df.set_index("serial_number", drop=False)
-                for sn, row in new_rows.items():
-                    df.loc[sn] = row
-                # Sort by run_date desc for convenience (optional)
+                    df = _pd.DataFrame(columns=columns)
+                if "serial_component" not in df.columns and "serial_number" in df.columns:
+                    df["serial_component"] = df["serial_number"]
+                if "serial_component" not in df.columns:
+                    df = _pd.DataFrame(columns=columns)
+                for col in columns:
+                    if col not in df.columns:
+                        df[col] = ""
+                df = df.set_index("serial_component", drop=False)
+                for sc, row in new_rows.items():
+                    df.loc[sc] = row
+                df = df.reset_index(drop=True)
+                df = df[columns]
                 try:
-                    df_sorted = df.sort_values(by=["run_date", "serial_number"], ascending=[False, True])
+                    df_sorted = df.sort_values(by=["run_date", "serial_component"], ascending=[False, True])
                 except Exception:
                     df_sorted = df
                 with _pd.ExcelWriter(registry_xlsx, engine="xlsxwriter") as writer:
@@ -1124,16 +1188,16 @@ def _update_run_registry(run_dir: Path, serial_numbers: List[str]) -> None:
                 with registry_csv.open("r", encoding="utf-8", newline="") as f:
                     r = csv.DictReader(f)
                     for row in r:
-                        sn = (row.get("serial_number") or "").strip()
-                        if sn:
-                            rows_map[sn] = row
-            for sn, row in new_rows.items():
-                rows_map[sn] = row
+                        sc = (row.get("serial_component") or row.get("serial_number") or "").strip()
+                        if sc:
+                            rows_map[sc] = {col: (row.get(col) or "").strip() for col in columns}
+            for sc, row in new_rows.items():
+                rows_map[sc] = {col: row.get(col, "") for col in columns}
             with registry_csv.open("w", encoding="utf-8", newline="") as f:
-                w = csv.DictWriter(f, fieldnames=["serial_number", "run_date", "run_folder"])
+                w = csv.DictWriter(f, fieldnames=columns)
                 w.writeheader()
-                for sn in sorted(rows_map.keys()):
-                    w.writerow(rows_map[sn])
+                for sc in sorted(rows_map.keys()):
+                    w.writerow({col: rows_map[sc].get(col, "") for col in columns})
         except Exception:
             pass
     except Exception:
@@ -1426,6 +1490,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     # Detect optional group bounds (y coordinates) from anchors
                     ga_y = None
                     gb_y = None
+                    header_tokens: Dict[str, List[Tuple[float, float, float]]] = {'min': [], 'value': [], 'max': []}
+                    for e in lines_map.values():
+                        for tok in e['tokens']:
+                            txt_norm = str(tok[4]).strip().lower()
+                            if txt_norm in header_tokens:
+                                cy_tok = (float(tok[1]) + float(tok[3])) / 2.0
+                                cx_tok = (float(tok[0]) + float(tok[2])) / 2.0
+                                header_tokens[txt_norm].append((cy_tok, float(e['y0']), cx_tok))
                     if spec.group_after:
                         best = None
                         for _, e in lines_map.items():
@@ -1483,6 +1555,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         right_tokens = [t for t in tokens if t[0] >= label_right_x - 1.0]
                         right_text = ' '.join([t[4] for t in right_tokens]).strip()
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
+
+                        # Identify nearest header positions above this row
+                        header_map: Dict[str, float] = {}
+                        row_top = float(entry['y0'])
+                        for hdr_name, positions in header_tokens.items():
+                            below = [pos for pos in positions if pos[0] < row_top - 0.5]
+                            if below:
+                                below.sort(key=lambda t: t[0])
+                                header_map[hdr_name] = below[-1][2]
 
                         # Build numeric candidates from tokens (captures 500psig etc.)
                         numeric_cands = []  # list of dicts with keys: text, num_clean, units, x0,y0,x1,y1
@@ -1608,12 +1689,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         s += 0.1
                                     if spec.range_max is not None and c['nval'] <= spec.range_max:
                                         s += 0.1
-                                sec_s = sec_score(c)
-                                s += 0.6 * sec_s
-                                # slight preference for smaller horizontal distance from label
-                                dx = max(0.0, c['x0'] - label_right_x)
-                                s += 0.05 * (1.0 / (1.0 + dx/10.0))
-                                scored.append((s, c, sec_s))
+                            sec_s = sec_score(c)
+                            s += 0.6 * sec_s
+                            cx_cand = (c['x0'] + c['x1']) / 2.0
+                            if 'value' in header_map:
+                                dist = abs(cx_cand - header_map['value'])
+                                s += 0.8 * (1.0 / (1.0 + dist / 18.0))
+                            if 'min' in header_map:
+                                dist = abs(cx_cand - header_map['min'])
+                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                            if 'max' in header_map:
+                                dist = abs(cx_cand - header_map['max'])
+                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                            # slight preference for smaller horizontal distance from label
+                            dx = max(0.0, c['x0'] - label_right_x)
+                            s += 0.05 * (1.0 / (1.0 + dx/10.0))
+                            scored.append((s, c, sec_s))
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
                                 top_score = scored[0][0]
@@ -1892,20 +1983,20 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     chosen = numeric_cands_sorted[pos_n - 1]
                                     units_value = chosen.get('units') or units_value
                                     cand = chosen['text']
+                                    bad = False
                                     if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
-                                        bad = False
                                         if spec.range_min is not None and chosen['nval'] < spec.range_min:
                                             bad = True
                                         if spec.range_max is not None and chosen['nval'] > spec.range_max:
                                             bad = True
                                     if bad and not cand.rstrip().endswith('(range violation)'):
                                         cand = f"{cand} (range violation)"
-                                val = cand
-                                if score > best_score:
-                                    best_score = score
-                                    best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None)
-                                # Skip scoring if positional used
-                                continue
+                                    val = cand
+                                    if score > best_score:
+                                        best_score = score
+                                        best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                    # Skip scoring if positional used
+                                    continue
                         def sec_score(c):
                             if not sec_term:
                                 return 0.0
@@ -3452,17 +3543,29 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
     )
 
 
-def get_serial_number_from_filename(pdf_path: Path) -> str:
-    """Extract the serial number from the PDF filename using SN_REGEX.
-    Returns a string like "SN 1234". If no match is found, returns a fallback based on the basename."""
-    name = pdf_path.stem
-    m = SN_REGEX.search(name)
-    if m:
-        return f"SN {m.group(1)}"
-    m = SN_REGEX.search(pdf_path.name)
-    if m:
-        return f"SN {m.group(1)}"
-    return f"SN_{name}"
+def derive_pdf_identity(pdf_path: Path) -> Tuple[str, str, str]:
+    """Best-effort extraction of program, vehicle, and serial_component tokens from the PDF filename."""
+    stem = Path(pdf_path).stem
+    parts = [p.strip() for p in stem.split("_") if p.strip()]
+    program_name = ""
+    vehicle_number = ""
+    serial_component = ""
+    if len(parts) >= 3:
+        program_name = parts[0]
+        vehicle_number = parts[1]
+        serial_component = "_".join(parts[2:])
+    elif len(parts) == 2:
+        program_name = parts[0]
+        serial_component = parts[1]
+    elif parts:
+        serial_component = parts[0]
+    if not serial_component:
+        m = SN_REGEX.search(pdf_path.name)
+        if m:
+            serial_component = m.group(1)
+    if not serial_component:
+        serial_component = stem or pdf_path.name
+    return program_name, vehicle_number, serial_component
 
 
 def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequence[int], window_chars: int, case_sensitive: bool,
@@ -4087,7 +4190,35 @@ def write_outputs_excel_or_csv(
         # Create DataFrames
         df_results = pd.DataFrame(rows, columns=["Term", "Pages"] + serial_cols)
         df_meta = pd.DataFrame(metadata_rows)
-        error_cols = ["pdf_file", "serial_number", "term", "error", "method", "page", "column", "row", "group_after", "group_before"]
+        display_names = {
+            "extracted_value": "Extracted Value",
+            "term_label": "Term Label",
+            "data_group": "Data Group",
+            "units_hint": "Units Hint",
+            "term": "Search Term",
+            "program_name": "Program Name",
+            "vehicle_number": "Vehicle Number",
+            "serial_component": "Serial Component",
+            "smart_score": "Smart Score",
+            "smart_snap_type": "Smart Snap Type",
+            "smart_line_min": "Smart Line Min",
+            "smart_line_max": "Smart Line Max",
+            "smart_conflict": "Smart Conflict",
+            "smart_secondary_found": "Smart Secondary Found",
+            "group_after": "Group After",
+            "group_before": "Group Before",
+            "error_reason": "Error Reason",
+            "range_min": "Range Min",
+            "range_max": "Range Max",
+            "text_source": "Text Source",
+            "return_type": "Return Type",
+            "pages_raw": "Pages Raw",
+            "smart_snap_context": "Smart Snap Context",
+            "smart_position": "Smart Position",
+            "secondary_term": "Secondary Term",
+        }
+        df_meta = df_meta.rename(columns={k: v for k, v in display_names.items() if k in df_meta.columns})
+        error_cols = ["pdf_file", "program_name", "vehicle_number", "serial_component", "term", "error", "method", "page", "column", "row", "group_after", "group_before"]
         if errors_rows:
             df_errors = pd.DataFrame(errors_rows, columns=error_cols)
         else:
@@ -4148,37 +4279,66 @@ def write_outputs_excel_or_csv(
 
     # Write "metadata" CSV
     meta_cols = [
-        "pdf_file", "serial_number", "term", "found", "page", "number", "context", "method_pipeline", "error_reason",
-        "smart_snap_context", "smart_snap_type", "smart_line_min", "smart_line_max", "smart_conflict", "smart_secondary_found"
+        "pdf_file", "program_name", "vehicle_number", "serial_component",
+        "term", "term_label", "data_group",
+        "found", "page", "extracted_value", "units",
+        "text_source", "smart_score",
+        "range_min", "range_max", "units_hint",
+        "return_type", "group_after", "group_before", "value_format",
+        "pages_raw", "mode",
+        "error_reason",
+        "smart_snap_context", "smart_snap_type", "smart_line_min", "smart_line_max",
+        "smart_conflict", "smart_secondary_found", "smart_position", "secondary_term"
     ]
+    display_names = {
+        "extracted_value": "Extracted Value",
+        "term_label": "Term Label",
+        "data_group": "Data Group",
+        "units_hint": "Units Hint",
+        "term": "Search Term",
+        "program_name": "Program Name",
+        "vehicle_number": "Vehicle Number",
+        "serial_component": "Serial Component",
+        "smart_score": "Smart Score",
+        "smart_snap_type": "Smart Snap Type",
+        "smart_line_min": "Smart Line Min",
+        "smart_line_max": "Smart Line Max",
+        "smart_conflict": "Smart Conflict",
+        "smart_secondary_found": "Smart Secondary Found",
+        "group_after": "Group After",
+        "group_before": "Group Before",
+        "error_reason": "Error Reason",
+        "range_min": "Range Min",
+        "range_max": "Range Max",
+        "text_source": "Text Source",
+        "return_type": "Return Type",
+        "pages_raw": "Pages Raw",
+        "smart_snap_context": "Smart Snap Context",
+        "smart_position": "Smart Position",
+        "secondary_term": "Secondary Term",
+    }
     with metadata_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(meta_cols)
+        writer.writerow([display_names.get(col, col) for col in meta_cols])
         for r in metadata_rows:
-            writer.writerow([
-                r.get("pdf_file"),
-                r.get("serial_number"),
-                r.get("term"),
-                r.get("found"),
-                r.get("page"),
-                r.get("number"),
-                r.get("context"),
-                r.get("method_pipeline"),
-                r.get("error_reason"),
-            ])
+            writer.writerow([r.get(col) for col in meta_cols])
     with errors_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["pdf_file", "serial_number", "term", "error", "method", "page", "column", "row"])
+        writer.writerow(["pdf_file", "program_name", "vehicle_number", "serial_component", "term", "error", "method", "page", "column", "row", "group_after", "group_before"])
         for r in errors_rows:
             writer.writerow([
                 r.get("pdf_file"),
-                r.get("serial_number"),
+                r.get("program_name"),
+                r.get("vehicle_number"),
+                r.get("serial_component"),
                 r.get("term"),
                 r.get("error"),
                 r.get("method"),
                 r.get("page"),
                 r.get("column"),
                 r.get("row"),
+                r.get("group_after"),
+                r.get("group_before"),
             ])
     print(f"[DONE] CSV fallback written -> {results_csv}, {metadata_csv}, {errors_csv}")
 
@@ -4234,12 +4394,31 @@ def run_scan(
     metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
     summary: List[Dict] = []        # JSON audit entries
     errors_rows: List[Dict] = []    # rows for the errors report
+    serial_meta: Dict[str, Dict[str, str]] = {}
 
     # Step 3: For each PDF, scan for each term
     for pdf_path in sorted(pdfs):
-        # Derive the serial number from the filename
-        serial_number = get_serial_number_from_filename(pdf_path)
-        print(f"[INFO] Scanning: {pdf_path.name}  ({serial_number})")
+        # Derive identifiers from the filename
+        program_hint, vehicle_hint, serial_component = derive_pdf_identity(pdf_path)
+        data_id = (serial_component or pdf_path.stem or pdf_path.name).strip()
+        if not data_id:
+            data_id = pdf_path.name
+        info_defaults = {
+            "program_name": program_hint,
+            "vehicle_number": vehicle_hint,
+            "serial_component": serial_component or data_id,
+        }
+        existing_meta = serial_meta.get(data_id, {})
+        serial_meta[data_id] = {
+            "program_name": existing_meta.get("program_name") or info_defaults["program_name"],
+            "vehicle_number": existing_meta.get("vehicle_number") or info_defaults["vehicle_number"],
+            "serial_component": existing_meta.get("serial_component") or info_defaults["serial_component"],
+        }
+        try:
+            label = serial_meta[data_id]["serial_component"] or data_id
+        except Exception:
+            label = data_id
+        print(f"[INFO] Scanning: {pdf_path.name}  [Data: {label}]")
 
         # No per-PDF artifact collection needed
 
@@ -4291,13 +4470,13 @@ def run_scan(
         for idx, t in enumerate(terms, start=1):
             mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
             if mode == "line":
-                res = scan_pdf_for_term_line(pdf_path, serial_number, t, window_chars, case_sensitive)
+                res = scan_pdf_for_term_line(pdf_path, data_id, t, window_chars, case_sensitive)
             elif mode == "smart":
-                res = scan_pdf_for_term_smart(pdf_path, serial_number, t, window_chars, case_sensitive)
+                res = scan_pdf_for_term_smart(pdf_path, data_id, t, window_chars, case_sensitive)
             elif mode in ("table(xy)", "xy", "table") or (not mode and getattr(t, 'line', None) and getattr(t, 'column', None)):
-                res = scan_pdf_for_term_xy(pdf_path, serial_number, t, window_chars, case_sensitive)
+                res = scan_pdf_for_term_xy(pdf_path, data_id, t, window_chars, case_sensitive)
             else:
-                res = scan_pdf_for_term_nearest(pdf_path, serial_number, t, window_chars, case_sensitive)
+                res = scan_pdf_for_term_nearest(pdf_path, data_id, t, window_chars, case_sensitive)
             # Normalize units/value when found
             ret_kind = (getattr(t, 'return_type', None) or 'number').strip().lower()
             # Smart mode: if smart snap type is not numeric, treat as string
@@ -4326,19 +4505,30 @@ def run_scan(
                     elif note_suffix and isinstance(base_value, str):
                         res.number = f"{base_value}{note_suffix}"
 
-            # Fill the matrix cell for this (term, serial_number)
+            # Fill the matrix cell for this (term, serial_component)
             if res.found:
                 if ret_kind == 'string':
                     cell_value = res.number
                 else:
                     cell_value = res.number
-                results_matrix.setdefault(t.term, {})[serial_number] = cell_value
+                results_matrix.setdefault(t.term, {})[data_id] = cell_value
             else:
                 err_msg = res.error_reason or "No match found"
-                results_matrix.setdefault(t.term, {})[serial_number] = f"ERROR: {err_msg}"
+                results_matrix.setdefault(t.term, {})[data_id] = f"ERROR: {err_msg}"
+                pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
+                parts = [p for p in pdf_stem.split("_") if p]
+                err_program = err_vehicle = err_serial_component = None
+                if len(parts) >= 3:
+                    err_program, err_vehicle, err_serial_component = parts[0], parts[1], "_".join(parts[2:])
+                elif len(parts) == 2:
+                    err_program, err_serial_component = parts[0], parts[1]
+                elif len(parts) == 1:
+                    err_serial_component = parts[0]
                 errors_rows.append({
                     "pdf_file": res.pdf_file,
-                    "serial_number": res.serial_number,
+                    "program_name": err_program,
+                    "vehicle_number": err_vehicle,
+                    "serial_component": err_serial_component,
                     "term": res.term,
                     "error": err_msg,
                     "page": res.page,
@@ -4350,31 +4540,62 @@ def run_scan(
                 })
 
             # Build metadata record
+            range_min_schema = getattr(t, 'range_min', None)
+            range_max_schema = getattr(t, 'range_max', None)
+            smart_line_min = getattr(res, 'smart_line_min', None)
+            smart_line_max = getattr(res, 'smart_line_max', None)
+            units_hint_raw = getattr(t, 'units_hint', None)
+            if isinstance(units_hint_raw, (list, tuple, set)):
+                units_hint_display = "|".join(
+                    str(u).strip() for u in units_hint_raw if str(u).strip()
+                ) or None
+            else:
+                units_hint_display = str(units_hint_raw).strip() if units_hint_raw is not None and str(units_hint_raw).strip() else None
+
+            effective_range_min = range_min_schema if range_min_schema is not None else smart_line_min
+            effective_range_max = range_max_schema if range_max_schema is not None else smart_line_max
+
+            pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
+            parts = [p for p in pdf_stem.split("_") if p]
+            program_name = vehicle_number = serial_component = None
+            if len(parts) >= 3:
+                program_name, vehicle_number, serial_component = parts[0], parts[1], "_".join(parts[2:])
+            elif len(parts) == 2:
+                program_name, serial_component = parts[0], parts[1]
+            elif len(parts) == 1:
+                serial_component = parts[0]
+
+            info_entry = serial_meta.setdefault(res.serial_number, {"program_name": "", "vehicle_number": "", "serial_component": ""})
+            if program_name:
+                info_entry["program_name"] = info_entry.get("program_name") or program_name
+            if vehicle_number:
+                info_entry["vehicle_number"] = info_entry.get("vehicle_number") or vehicle_number
+            if serial_component:
+                info_entry["serial_component"] = info_entry.get("serial_component") or serial_component
+
+            term_label_out = (t.term_label or t.term or "").strip()
+            data_group_out = (t.data_group or "").strip()
+
+            component_value = info_entry.get("serial_component") or serial_component or res.serial_number
             meta = {
                 "pdf_file": res.pdf_file,
-                "serial_number": res.serial_number,
+                "program_name": info_entry.get("program_name") or program_name,
+                "vehicle_number": info_entry.get("vehicle_number") or vehicle_number,
+                "serial_component": component_value,
                 "term": res.term,
+                "term_label": term_label_out,
+                "data_group": data_group_out,
                 "found": res.found,
                 "page": res.page,
-                "number": res.number,
+                "extracted_value": res.number,
                 "units": res.units,
-                "context": res.context,
-                "method_pipeline": res.method,
                 "text_source": res.text_source,
-                "confidence": res.confidence,
-                "row_label": res.row_label,
-                "column_label": res.column_label,
-                # Terms schema hints for transparency/debug
+                "smart_score": res.confidence,
                 "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
                 "pages_raw": getattr(t, 'pages_raw', ""),
-                "line": getattr(t, 'line', None),
-                "column": getattr(t, 'column', None),
-                "range_min": getattr(t, 'range_min', None),
-                "range_max": getattr(t, 'range_max', None),
-                "units_hint": getattr(t, 'units_hint', None),
-                "anchor": getattr(t, 'anchor', None),
-                "field_index": getattr(t, 'field_index', None),
-                "field_split": getattr(t, 'field_split', None),
+                "range_min": effective_range_min,
+                "range_max": effective_range_max,
+                "units_hint": units_hint_display,
                 "return_type": getattr(t, 'return_type', None),
                 "group_after": getattr(t, 'group_after', None),
                 "group_before": getattr(t, 'group_before', None),
@@ -4382,10 +4603,12 @@ def run_scan(
                 "error_reason": res.error_reason,
                 "smart_snap_context": getattr(res, 'smart_snap_context', None),
                 "smart_snap_type": (getattr(t, 'smart_snap_type', None) or getattr(res, 'smart_snap_type', None)),
-                "smart_line_min": getattr(res, 'smart_line_min', None),
-                "smart_line_max": getattr(res, 'smart_line_max', None),
+                "smart_line_min": smart_line_min,
+                "smart_line_max": smart_line_max,
                 "smart_conflict": getattr(res, 'smart_conflict', None),
                 "smart_secondary_found": getattr(res, 'smart_secondary_found', None),
+                "smart_position": getattr(t, 'smart_position', None),
+                "secondary_term": getattr(t, 'secondary_term', None),
             }
             metadata_rows.append(meta)
             summary.append(meta)
@@ -4430,44 +4653,79 @@ def run_scan(
     # Output: Flat extraction table as Excel and details JSON
     # Columns for the flat (Excel/CSV) extraction table:
     # - omit verbose context
-    # - include row/column labels used to derive the value
-    # - include actual OCR confidence where available
+    # - focus on Smart Snap scoring details
+    # - include Smart Snap score (confidence) and effective range bounds
     cols_display = [
-        "pdf_file", "serial_number", "term",
-        "row", "column",
+        "pdf_file", "program_name", "vehicle_number", "serial_component", "term_label", "data_group", "term",
         "found", "page",
-        "number", "range_min", "range_max", "units",
-        "method_pipeline", "text_source", "confidence",
+        "extracted_value", "units", "units_hint",
+        "range_min", "range_max",
+        "text_source", "smart_score",
+        "smart_snap_type", "smart_line_min", "smart_line_max",
+        "smart_conflict", "smart_secondary_found",
         "group_after", "group_before", "error_reason",
     ]
     wrote_xlsx = False
     if _HAVE_PANDAS and _HAVE_OPENPYXL_OR_XLSXWRITER:
         try:
             import pandas as _pd
+            display_names = {
+                "extracted_value": "Extracted Value",
+                "term_label": "Term Label",
+                "data_group": "Data Group",
+                "units_hint": "Units Hint",
+                "term": "Search Term",
+                "program_name": "Program Name",
+                "vehicle_number": "Vehicle Number",
+                "serial_component": "Serial Component",
+                "smart_score": "Smart Score",
+                "smart_snap_type": "Smart Snap Type",
+                "smart_line_min": "Smart Line Min",
+                "smart_line_max": "Smart Line Max",
+                "smart_conflict": "Smart Conflict",
+                "smart_secondary_found": "Smart Secondary Found",
+                "group_after": "Group After",
+                "group_before": "Group Before",
+                "error_reason": "Error Reason",
+                "range_min": "Range Min",
+                "range_max": "Range Max",
+                "text_source": "Text Source",
+                "return_type": "Return Type",
+                "pages_raw": "Pages Raw",
+                "smart_snap_context": "Smart Snap Context",
+                "smart_position": "Smart Position",
+                "secondary_term": "Secondary Term",
+            }
             rows_for_df = []
             for row in summary:
-                row_val = row.get("row_label") or row.get("line") or ""
-                col_val = row.get("column_label") or row.get("column") or ""
                 rows_for_df.append({
                     "pdf_file": row.get("pdf_file"),
-                    "serial_number": row.get("serial_number"),
+                    "program_name": row.get("program_name"),
+                    "vehicle_number": row.get("vehicle_number"),
+                    "serial_component": row.get("serial_component"),
+                    "term_label": row.get("term_label"),
+                    "data_group": row.get("data_group"),
                     "term": row.get("term"),
-                    "row": row_val,
-                    "column": col_val,
                     "found": row.get("found"),
                     "page": row.get("page"),
-                    "number": row.get("number"),
+                    "extracted_value": row.get("extracted_value"),
+                    "units": row.get("units"),
+                    "units_hint": row.get("units_hint"),
                     "range_min": row.get("range_min"),
                     "range_max": row.get("range_max"),
-                    "units": row.get("units"),
-                    "method_pipeline": row.get("method_pipeline"),
                     "text_source": row.get("text_source"),
-                    "confidence": row.get("confidence"),
+                    "smart_score": row.get("smart_score"),
+                    "smart_snap_type": row.get("smart_snap_type"),
+                    "smart_line_min": row.get("smart_line_min"),
+                    "smart_line_max": row.get("smart_line_max"),
+                    "smart_conflict": row.get("smart_conflict"),
+                    "smart_secondary_found": row.get("smart_secondary_found"),
                     "group_after": row.get("group_after") or "",
                     "group_before": row.get("group_before") or "",
                     "error_reason": row.get("error_reason") or "",
                 })
             df = _pd.DataFrame(rows_for_df, columns=cols_display)
+            df = df.rename(columns={k: v for k, v in display_names.items() if k in df.columns})
             df_errors = df[df["found"] == False].copy()
             with _pd.ExcelWriter(output_xlsx, engine="xlsxwriter") as writer:
                 df.to_excel(writer, sheet_name="extraction", index=False)
@@ -4502,16 +4760,9 @@ def run_scan(
             fallback_csv = output_xlsx.with_suffix(".csv")
             with fallback_csv.open("w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
-                w.writerow(cols_display)
+                w.writerow([display_names.get(col, col) for col in cols_display])
                 for row in summary:
-                    row_val = row.get("row_label") or row.get("line") or ""
-                    col_val = row.get("column_label") or row.get("column") or ""
-                    w.writerow([
-                        row.get("pdf_file"), row.get("serial_number"), row.get("term"),
-                        row_val, col_val,
-                        row.get("found"), row.get("page"), row.get("number"), row.get("range_min"), row.get("range_max"), row.get("units"), row.get("method_pipeline"),
-                        row.get("text_source"), row.get("confidence"), row.get("group_after") or "", row.get("group_before") or "", row.get("error_reason") or ""
-                    ])
+                    w.writerow([row.get(col) for col in cols_display])
             err_csv = output_xlsx.with_suffix(".errors.csv")
             with err_csv.open("w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
@@ -4519,14 +4770,7 @@ def run_scan(
                 for row in summary:
                     if row.get("found"):
                         continue
-                    row_val = row.get("row_label") or row.get("line") or ""
-                    col_val = row.get("column_label") or row.get("column") or ""
-                    w.writerow([
-                        row.get("pdf_file"), row.get("serial_number"), row.get("term"),
-                        row_val, col_val,
-                        row.get("found"), row.get("page"), row.get("number"), row.get("range_min"), row.get("range_max"), row.get("units"), row.get("method_pipeline"),
-                        row.get("text_source"), row.get("confidence"), row.get("group_after") or "", row.get("group_before") or "", row.get("error_reason") or ""
-                    ])
+                    w.writerow([row.get(col) for col in cols_display])
             print(f"[DONE] Extraction table (CSV fallback) -> {fallback_csv}; errors -> {err_csv}")
         except Exception as e:
             print(f"[WARN] Could not write extraction table fallback: {e}")
@@ -4542,16 +4786,18 @@ def run_scan(
     except Exception:
         pass
 
-    # Update the persistent run registry with all serial numbers in this run
+    # Update the persistent run registry with all serial components in this run
     try:
-        run_sns: List[str] = []
+        run_ids: List[str] = []
         # Prefer keys discovered in results_matrix
         for term, sn_map in results_matrix.items():
             for sn in sn_map.keys():
-                if sn not in run_sns:
-                    run_sns.append(sn)
-        if run_sns:
-            _update_run_registry(run_dir, run_sns)
+                if sn not in run_ids:
+                    run_ids.append(sn)
+        if run_ids:
+            for sn in run_ids:
+                serial_meta.setdefault(sn, {"program_name": "", "vehicle_number": "", "serial_component": sn})
+            _update_run_registry(run_dir, run_ids, serial_meta)
             print("[DONE] Run registry updated (run_registry.xlsx)")
     except Exception as e:
         print(f"[WARN] Could not update run registry: {e}")
@@ -4570,7 +4816,7 @@ def main() -> None:
     Parses arguments and calls run_scan(...).
     """
     parser = argparse.ArgumentParser(
-        description="Scan PDFs for terms and nearest numbers, produce a matrix by Serial Number, and move scanned PDFs."
+        description="Scan PDFs for terms and nearest numbers, produce a matrix by data identifier (serial component), and move scanned PDFs."
     )
     parser.add_argument("--input", required=True, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
     parser.add_argument("--pdf-folder", required=True, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')

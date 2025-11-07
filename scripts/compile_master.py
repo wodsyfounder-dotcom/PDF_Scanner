@@ -4,7 +4,7 @@ Compile a master extraction workbook from the per-run caches recorded in run_reg
 
 Inputs:
   - Product_Data_File/run_registry.xlsx (preferred) or run_registry.csv
-  - For each row: (serial_number, run_folder)
+  - For each row: serial_component, run_folder, program_name, vehicle_number
   - Each run folder contains scan_results.json which holds per-term values per SN.
 
 Output:
@@ -12,8 +12,8 @@ Output:
   - Fallback: Product_Data_File/master.csv
 
 Workbook layout:
-  - Leading rows reserved for "Program" and "Space Vehicle" metadata.
-  - Columns include Grouping (group_after), Units, Row Label, and Column Label to align multi-row terms.
+  - Leading rows reserved for "Program", "Space Vehicle", and "Data" metadata.
+  - Columns include Term Label, Data Group, Units, Min, Max, followed by one column per serial number.
 
 No external executables required. Uses pandas/xlsxwriter if available; otherwise falls back to CSV.
 """
@@ -35,21 +35,35 @@ OUT_XLSX = EXPORTS / "master.xlsx"
 OUT_CSV = EXPORTS / "master.csv"
 
 
-def load_registry() -> List[Tuple[str, Path]]:
-    """Return list of (serial_number, run_folder) from registry.
+def load_registry() -> List[Tuple[str, Path, Dict[str, str]]]:
+    """Return list of (serial_component, run_folder, metadata) from registry.
     Priority: Excel -> CSV. Duplicates are unlikely; if present, keep last occurrence.
     """
-    rows: List[Tuple[str, Path]] = []
+    def clean_cell(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    def build_meta(source: Dict[str, Any] | None) -> Dict[str, str]:
+        source = source or {}
+        return {
+            "program_name": clean_cell(source.get("program_name")),
+            "vehicle_number": clean_cell(source.get("vehicle_number")),
+            "serial_component": clean_cell(source.get("serial_component")),
+        }
+
+    rows: List[Tuple[str, Path, Dict[str, str]]] = []
     if REG_XLSX.exists():
         # Try pandas first
         try:
             import pandas as pd  # type: ignore
             df = pd.read_excel(REG_XLSX)
             for _, r in df.iterrows():
-                sn = str(r.get("serial_number") or "").strip()
-                rf = str(r.get("run_folder") or "").strip()
-                if sn and rf:
-                    rows.append((sn, Path(rf)))
+                row_dict = r.to_dict() if hasattr(r, "to_dict") else dict(r)
+                sc = clean_cell(row_dict.get("serial_component") or row_dict.get("serial_number"))
+                rf = clean_cell(row_dict.get("run_folder"))
+                if sc and rf:
+                    rows.append((sc, Path(rf), build_meta(row_dict)))
             return rows
         except Exception:
             # Fallback: openpyxl without pandas
@@ -69,16 +83,24 @@ def load_registry() -> List[Tuple[str, Path]]:
                         if k == name:
                             return v
                     return None
-                sn_col = col_idx("serial_number")
+                sc_col = col_idx("serial_component") or col_idx("serial_number")
                 rf_col = col_idx("run_folder")
-                if sn_col and rf_col:
+                prog_col = col_idx("program_name")
+                veh_col = col_idx("vehicle_number")
+                data_col = col_idx("serial_component")
+                if sc_col and rf_col:
                     for row in ws.iter_rows(min_row=2):
-                        sn_val = row[sn_col - 1].value if sn_col else None
+                        sc_val = row[sc_col - 1].value if sc_col else None
                         rf_val = row[rf_col - 1].value if rf_col else None
-                        sn = (str(sn_val) if sn_val is not None else "").strip()
-                        rf = (str(rf_val) if rf_val is not None else "").strip()
-                        if sn and rf:
-                            rows.append((sn, Path(rf)))
+                        sc = clean_cell(sc_val)
+                        rf = clean_cell(rf_val)
+                        if sc and rf:
+                            meta = {
+                                "program_name": clean_cell(row[prog_col - 1].value) if prog_col else "",
+                                "vehicle_number": clean_cell(row[veh_col - 1].value) if veh_col else "",
+                                "serial_component": clean_cell(row[data_col - 1].value) if data_col else "",
+                            }
+                            rows.append((sc, Path(rf), meta))
                     if rows:
                         return rows
             except Exception:
@@ -88,10 +110,10 @@ def load_registry() -> List[Tuple[str, Path]]:
             with REG_CSV.open("r", encoding="utf-8", newline="") as f:
                 r = csv.DictReader(f)
                 for row in r:
-                    sn = (row.get("serial_number") or "").strip()
-                    rf = (row.get("run_folder") or "").strip()
-                    if sn and rf:
-                        rows.append((sn, Path(rf)))
+                    sc = clean_cell(row.get("serial_component") or row.get("serial_number"))
+                    rf = clean_cell(row.get("run_folder"))
+                    if sc and rf:
+                        rows.append((sc, Path(rf), build_meta(row)))
         except Exception:
             pass
     return rows
@@ -106,23 +128,24 @@ def load_results_json(run_folder: Path) -> List[Dict]:
         return []
 
 
-def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str]]:
-    """Return (serials, rows) including per-term row/column breakdown and captured values."""
+def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """Return serial list, term rows, and program/vehicle/data mappings."""
     reg = load_registry()
     if not reg:
         print("[WARN] No registry entries found. Nothing to compile.")
-        return [], []
+        return [], [], {}, {}, {}
 
     # Keep last occurrence per SN (registry is already latest-first, but be safe)
-    last_for_sn: Dict[str, Path] = {}
-    for sn, rf in reg:
-        last_for_sn[sn] = rf
+    last_for_sn: Dict[str, Tuple[Path, Dict[str, str]]] = {}
+    for sn, rf, meta in reg:
+        last_for_sn[sn] = (rf, meta or {})
 
     serials = list(last_for_sn.keys())
-    terms_order: List[str] = []
-    term_map: Dict[str, Dict[str, Any]] = {}
+    terms_order: List[Tuple[str, str]] = []
+    term_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
     program_by_sn: Dict[str, str] = {}
     sv_by_sn: Dict[str, str] = {}
+    data_by_sn: Dict[str, str] = {}
 
     def norm(value: Any) -> str:
         if value is None:
@@ -152,7 +175,7 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
         return ""
 
     def extract_value(entry: Dict[str, Any]) -> Optional[str]:
-        for key in ("number", "text", "string", "value"):
+        for key in ("extracted_value", "number", "text", "string", "value"):
             if key in entry:
                 val = entry.get(key)
                 if val is None:
@@ -161,18 +184,30 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
                 return text
         return None
 
-    for sn, rf in last_for_sn.items():
+    for sn, (rf, registry_meta) in last_for_sn.items():
+        registry_meta = registry_meta or {}
+        reg_prog = norm(registry_meta.get("program_name"))
+        reg_sv = norm(registry_meta.get("vehicle_number"))
+        reg_data = norm(registry_meta.get("serial_component"))
         rows = load_results_json(rf)
         if not rows:
             print(f"[WARN] No scan_results.json in {rf}")
+            if reg_prog and sn not in program_by_sn:
+                program_by_sn[sn] = reg_prog
+            if reg_sv and sn not in sv_by_sn:
+                sv_by_sn[sn] = reg_sv
+            if reg_data and sn not in data_by_sn:
+                data_by_sn[sn] = reg_data
             continue
-        # Capture every row for this SN, grouped by term with row/column detail
+        # Capture every row for this SN, grouped by displayed term/data group
         for row in rows:
-            if (row.get("serial_number") or "").strip() != sn:
+            row_id = (row.get("serial_component") or row.get("serial_number") or "").strip()
+            if row_id and row_id != sn:
                 continue
             # Capture metadata per SN if present (or derive from filename)
-            prog = norm(row.get("program"))
-            sv = norm(row.get("space_vehicle"))
+            prog = norm(row.get("program_name") or row.get("program"))
+            sv = norm(row.get("vehicle_number") or row.get("space_vehicle"))
+            serial_component = norm(row.get("serial_component")) or reg_data
             if not prog:
                 # Derive from filename
                 pdf_file = norm(row.get("pdf_file"))
@@ -206,95 +241,93 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
                         elif si is not None and si >= 2:
                             prog = toks[0]
                             sv = " ".join(toks[1:si])
+            if not prog and reg_prog:
+                prog = reg_prog
+            if not sv and reg_sv:
+                sv = reg_sv
             if prog and sn not in program_by_sn:
                 program_by_sn[sn] = prog
             if sv and sn not in sv_by_sn:
                 sv_by_sn[sn] = sv
-            term = (row.get("term") or "").strip()
-            if not term:
+            if serial_component and sn not in data_by_sn:
+                data_by_sn[sn] = serial_component
+            term_label = norm(row.get("term_label") or row.get("term"))
+            if not term_label:
                 continue
             value = extract_value(row)
             if value is None:
                 value = ""
 
-            if term not in term_map:
-                term_map[term] = {
-                    "order": [],
-                    "entries": {}
+            data_group = norm(row.get("data_group"))
+            key = (term_label.lower(), data_group.lower())
+            if key not in term_map:
+                term_map[key] = {
+                    "term_label": term_label,
+                    "data_group": data_group,
+                    "units": "",
+                    "range_min": "",
+                    "range_max": "",
+                    "values": {},
                 }
-                terms_order.append(term)
-            term_info = term_map[term]
-
-            group_after = norm(row.get("group_after"))
+                terms_order.append(key)
+            entry = term_map[key]
             units = extract_units(row)
-            row_label = norm(row.get("line") or row.get("row_label"))
-            column_label = norm(row.get("column") or row.get("column_label"))
-            group_key = group_after.lower()
-            entry_key = (row_label.lower(), column_label.lower(), group_key)
-
-            entries: Dict[Tuple[str, str, str], Dict[str, Any]] = term_info["entries"]
-            if entry_key not in entries:
-                entries[entry_key] = {
-                    "group": group_after,
-                    "row_label": row_label,
-                    "column_label": column_label,
-                    "units": units,
-                    "values": {}
-                }
-                term_info["order"].append(entry_key)
-            entry = entries[entry_key]
-            if not entry.get("group"):
-                entry["group"] = group_after
-            if units and not entry.get("units"):
+            if units and not entry["units"]:
                 entry["units"] = units
+            rng_min = norm(row.get("range_min"))
+            if rng_min and not entry["range_min"]:
+                entry["range_min"] = rng_min
+            rng_max = norm(row.get("range_max"))
+            if rng_max and not entry["range_max"]:
+                entry["range_max"] = rng_max
             entry["values"][sn] = value
 
     term_rows: List[Dict[str, Any]] = []
-    for term in terms_order:
-        info = term_map.get(term)
+    for key in terms_order:
+        info = term_map.get(key)
         if not info:
             continue
-        for entry_key in info["order"]:
-            entry = info["entries"][entry_key]
-            term_rows.append({
-                "term": term,
-                "group": entry.get("group", ""),
-                "units": entry.get("units", ""),
-                "row_label": entry["row_label"],
-                "column_label": entry["column_label"],
-                "values": entry["values"],
-            })
+        term_rows.append({
+            "term_label": info.get("term_label", ""),
+            "data_group": info.get("data_group", ""),
+            "units": info.get("units", ""),
+            "range_min": info.get("range_min", ""),
+            "range_max": info.get("range_max", ""),
+            "values": info.get("values", {}),
+        })
 
-    return serials, term_rows, program_by_sn, sv_by_sn
+    return serials, term_rows, program_by_sn, sv_by_sn, data_by_sn
 
 
-def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by_sn: Dict[str, str] | None = None, sv_by_sn: Dict[str, str] | None = None) -> None:
+def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by_sn: Dict[str, str] | None = None, sv_by_sn: Dict[str, str] | None = None, data_by_sn: Dict[str, str] | None = None) -> None:
     EXPORTS.mkdir(parents=True, exist_ok=True)
-    base_columns = ["Term", "Grouping", "Units", "Row Label", "Column Label"]
+    base_columns = ["Term Label", "Data Group", "Units", "Min", "Max"]
     header = base_columns + serials
 
     def blank_meta(label: str) -> Dict[str, Any]:
         row = {col: "" for col in header}
-        row["Term"] = label
+        row["Term Label"] = label
         return row
 
-    structured_rows: List[Dict[str, Any]] = [blank_meta("Program"), blank_meta("Space Vehicle")]
+    structured_rows: List[Dict[str, Any]] = [blank_meta("Program"), blank_meta("Space Vehicle"), blank_meta("Data")]
 
     # Fill Program / Space Vehicle rows per serial
     program_by_sn = program_by_sn or {}
     sv_by_sn = sv_by_sn or {}
-    # Row 0 -> Program, Row 1 -> Space Vehicle
+    data_by_sn = data_by_sn or {}
+    # Row 0 -> Program, Row 1 -> Space Vehicle, Row 2 -> Data
     for sn in serials:
         structured_rows[0][sn] = program_by_sn.get(sn, "")
         structured_rows[1][sn] = sv_by_sn.get(sn, "")
+        structured_rows[2][sn] = data_by_sn.get(sn, "")
 
     for entry in term_rows:
         row: Dict[str, Any] = {col: "" for col in header}
-        row["Term"] = entry.get("term", "")
-        row["Grouping"] = entry.get("group", "")
+        row["Term Label"] = entry.get("term_label", "")
+        row["Data Group"] = entry.get("data_group", "")
         row["Units"] = entry.get("units", "")
-        row["Row Label"] = entry.get("row_label", "")
-        row["Column Label"] = entry.get("column_label", "")
+        row["Min"] = entry.get("range_min", "")
+        row["Max"] = entry.get("range_max", "")
         values = entry.get("values", {}) or {}
         for sn in serials:
             row[sn] = values.get(sn, "")
@@ -308,8 +341,8 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
         with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="master", index=False)
             ws = writer.sheets["master"]
-            # Freeze header + Program/Space Vehicle rows, and keep core columns visible.
-            ws.freeze_panes(3, 3)
+            # Freeze header + metadata rows, and keep core columns visible.
+            ws.freeze_panes(4, 5)
             # Auto-size columns
             for i, col in enumerate(df.columns):
                 try:
@@ -336,10 +369,10 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
 
 
 def main() -> None:
-    serials, rows, prog_map, sv_map = build_master()
+    serials, rows, prog_map, sv_map, data_map = build_master()
     if not serials:
         sys.exit(0)
-    write_master(serials, rows, program_by_sn=prog_map, sv_by_sn=sv_map)
+    write_master(serials, rows, program_by_sn=prog_map, sv_by_sn=sv_map, data_by_sn=data_map)
 
 
 if __name__ == "__main__":

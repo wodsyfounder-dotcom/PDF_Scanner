@@ -47,7 +47,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 
 - `Product_Data_File\run_data\<timestamp>\scan_results.xlsx` (if Excel writers available)
   - `results` sheet: Term, Pages, and one column per SN (Serial Number from filename)
-  - `metadata` sheet: pdf_file, serial_number, term, found, page, number, units, context, method_pipeline
+  - `metadata` sheet: pdf_file, serial_component, term, found, page, number, units, context, method_pipeline
 - CSV fallbacks (written into the same `run_data` folder if Excel libs are missing):
   - `scan_results.results.csv` and `scan_results.metadata.csv`
 - `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder

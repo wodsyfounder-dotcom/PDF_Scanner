@@ -16,17 +16,26 @@ if exist "%VENV_PY%" (
 rem Make vendored packages available when not installed system-wide
 set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
 
-rem Detect terms file and scaffold if missing
-set "TERMS_XLSX=%ROOT%user_inputs\terms.xlsx"
-set "TERMS_CSV=%ROOT%user_inputs\terms.csv"
-if exist "%TERMS_XLSX%" set "TERMS=%TERMS_XLSX%" & goto has_terms
-if exist "%TERMS_CSV%" set "TERMS=%TERMS_CSV%" & goto has_terms
-echo [WARN] No terms file found.
-if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
-  echo [SETUP] Creating Excel terms template (user_inputs\terms.schema.xlsx)
-  "%PY%" "%ROOT%scripts\generate_terms_schema.py"
+rem Detect terms file and scaffold if missing (Smart Snap default)
+set "TERMS_SMART=%ROOT%user_inputs\terms.schema.smartsnap.xlsx"
+set "TERMS_LEGACY=%ROOT%user_inputs\terms.xlsx"
+
+if exist "%TERMS_SMART%" (
+  set "TERMS=%TERMS_SMART%"
+  goto has_terms
 )
-echo Open and edit: "%ROOT%user_inputs\terms.schema.xlsx" (save as terms.xlsx when ready)
+
+rem Legacy support (warn and continue if old file exists)
+if exist "%TERMS_LEGACY%" (
+  echo [WARN] Legacy terms.xlsx detected. Please migrate to terms.schema.smartsnap.xlsx when convenient.
+  set "TERMS=%TERMS_LEGACY%"
+  goto has_terms
+)
+
+echo [WARN] No Smart-Snap terms file found.
+echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
+"%PY%" "%ROOT%scripts\generate_terms_schema_smartsnap.py"
+echo Open and edit: "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" and re-run.
 exit /b 1
 
 :has_terms
