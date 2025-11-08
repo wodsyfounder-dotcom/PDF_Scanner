@@ -613,12 +613,20 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self._apply_tab_widths)
 
         self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumBlockCount(5000)
+        # Toggle to show/hide the debug log panel on demand
+        self.btn_toggle_log = QtWidgets.QPushButton("Show Debug Panel")
+        self.btn_toggle_log.setCheckable(True)
+        self.btn_toggle_log.setChecked(False)
+        self.btn_toggle_log.clicked.connect(self._toggle_log_panel)
+        pol_log = self.btn_toggle_log.sizePolicy(); pol_log.setHorizontalStretch(1); pol_log.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_toggle_log.setSizePolicy(pol_log)
         self.status_bar = self.statusBar()
 
         layout = QtWidgets.QVBoxLayout(central)
         layout.addWidget(header)
         layout.addWidget(self.tabs)
+        layout.addWidget(self.btn_toggle_log)
         layout.addWidget(self.log, 1)
+        self.log.setVisible(False)
         # Build tabs
         self._setup_tab_setup()
         self._setup_tab_process()
@@ -808,6 +816,12 @@ class MainWindow(QtWidgets.QMainWindow):
         pol2 = self.btn_view_registry2.sizePolicy(); pol2.setHorizontalStretch(1); pol2.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_view_registry2.setSizePolicy(pol2)
         up.addWidget(self.btn_view_registry2, 4, 0, 1, 2)
 
+        # Quick cleanup: remove run_data folders not referenced by registry
+        self.btn_clear_old_runs = QtWidgets.QPushButton("Clear Old Run Cache")
+        self.btn_clear_old_runs.clicked.connect(self._act_clear_old_runs)
+        pol3 = self.btn_clear_old_runs.sizePolicy(); pol3.setHorizontalStretch(1); pol3.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_clear_old_runs.setSizePolicy(pol3)
+        up.addWidget(self.btn_clear_old_runs, 5, 0, 1, 2)
+
         # Removed Open Repository Folder button per UX simplification
 
         # Processing + Outputs
@@ -886,6 +900,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _append_log(self, text: str):
         self.log.appendPlainText(text)
+        if not self.log.isVisible():
+            try:
+                label = self.btn_toggle_log.text()
+                if "\u2022" not in label and "•" not in label:
+                    self.btn_toggle_log.setText("Show Debug Panel •")
+            except Exception:
+                pass
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
     def _start_worker(self, popen_factory, *, status_msg: str):
@@ -897,6 +918,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._worker.line.connect(self._append_log)
         self._worker.finished.connect(self._on_worker_done)
         self._worker.start()
+
+    def _toggle_log_panel(self):
+        try:
+            visible = bool(self.btn_toggle_log.isChecked())
+        except Exception:
+            visible = True
+        self.log.setVisible(visible)
+        try:
+            self.btn_toggle_log.setText("Hide Debug Panel" if visible else "Show Debug Panel")
+        except Exception:
+            pass
 
     def _on_worker_done(self, rc: int):
         self.status_bar.showMessage("Ready.", 3000)
@@ -1074,6 +1106,31 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
         self._show_registry_popup()
+
+    def _act_clear_old_runs(self):
+        try:
+            confirm = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm cleanup",
+                "Delete old run_data folders not referenced by the current registry?",
+            )
+            if confirm != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+            # Ensure registry is consistent before cleanup
+            try:
+                be.ensure_run_registry_consistent()
+            except Exception:
+                pass
+            deleted, kept = be.clear_stale_run_data()
+            QtWidgets.QMessageBox.information(
+                self,
+                "Cleanup complete",
+                f"Removed {deleted} old run folder(s). Kept {kept} current folder(s).",
+            )
+            # Refresh internal cache after cleanup
+            self._refresh_run_registry()
+        except Exception as e:
+            QtWidgets.QMessageBox.information(self, "Cleanup", str(e))
 
     def _refresh_run_registry(self):
         try:
@@ -1646,40 +1703,49 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def _build_logo_pixmap(self, size: int = 52) -> QtGui.QPixmap:
+        """Load external app logo if present; otherwise draw the fallback glyph.
+
+        Checks these paths in order and scales preserving aspect ratio:
+        - ui_next/assets/app_logo.png
+        - ui_next/assets/logo.png
+        - user_inputs/app_logo.png
+        """
+        candidates = [
+            (be.ROOT / "ui_next" / "assets" / "app_logo.png"),
+            (be.ROOT / "ui_next" / "assets" / "logo.png"),
+            (be.ROOT / "user_inputs" / "app_logo.png"),
+        ]
+        for path in candidates:
+            try:
+                if path.exists():
+                    pix = QtGui.QPixmap(str(path))
+                    if not pix.isNull():
+                        scaled = pix.scaled(size, size, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
+                        try:
+                            # Also set the window icon for consistency
+                            self.setWindowIcon(QtGui.QIcon(scaled))
+                        except Exception:
+                            pass
+                        return scaled
+            except Exception:
+                pass
+        # Fallback: draw the original glyph
         pix = QtGui.QPixmap(size, size)
         pix.fill(QtCore.Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(pix)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-
-        # Background disk
-        gradient = QtGui.QConicalGradient(size / 2, size / 2, 45)
-        gradient.setColorAt(0.0, QtGui.QColor("#1f5c9a"))
-        gradient.setColorAt(0.5, QtGui.QColor("#0f3258"))
-        gradient.setColorAt(1.0, QtGui.QColor("#1f5c9a"))
-        painter.setBrush(QtGui.QBrush(gradient))
+        bg = QtGui.QColor("#1f5c9a")
+        painter.setBrush(QtGui.QBrush(bg))
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawEllipse(0, 0, size - 1, size - 1)
-
-        # Inner ring
-        ring_color = QtGui.QColor(255, 255, 255, 80)
-        pen = QtGui.QPen(ring_color, size * 0.08)
-        painter.setPen(pen)
-        inset = size * 0.16
-        painter.drawEllipse(QtCore.QRectF(inset, inset, size - inset * 2, size - inset * 2))
-
-        # Flight lines
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 140), size * 0.06, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap))
-        painter.drawArc(int(size * 0.18), int(size * 0.36), int(size * 0.64), int(size * 0.40), 30 * 16, 120 * 16)
-        painter.drawArc(int(size * 0.10), int(size * 0.18), int(size * 0.80), int(size * 0.64), -40 * 16, -120 * 16)
-
-        # Center glyph
+        painter.drawRoundedRect(0, 0, size, size, 8, 8)
         painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
-        font = painter.font()
-        font.setBold(True)
-        font.setPointSize(int(size * 0.42))
-        painter.setFont(font)
+        font = painter.font(); font.setBold(True); font.setPointSize(int(size * 0.42)); painter.setFont(font)
         painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "E")
         painter.end()
+        try:
+            self.setWindowIcon(QtGui.QIcon(pix))
+        except Exception:
+            pass
         return pix
 
     # Settings persistence

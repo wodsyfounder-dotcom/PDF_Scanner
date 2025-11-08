@@ -652,6 +652,64 @@ def open_run_registry() -> None:
     open_path(target)
 
 
+# --- Run-data maintenance helpers ---
+
+def _resolve_run_folder(value: str) -> Path:
+    try:
+        p = Path(value)
+    except Exception:
+        return RUNS_DIR
+    if not p.is_absolute():
+        p = ROOT / p
+    return p
+
+
+def clear_stale_run_data() -> tuple[int, int]:
+    """Delete run_data subfolders not referenced by run_registry.
+
+    Returns (deleted_count, kept_count).
+    """
+    runs_root = RUNS_DIR
+    deleted = 0
+    kept = 0
+    try:
+        reg = _read_run_registry_map()
+    except Exception:
+        reg = {}
+    referenced: set[Path] = set()
+    for info in (reg or {}).values():
+        try:
+            rf = str(info.get("run_folder", ""))
+        except Exception:
+            rf = ""
+        if not rf:
+            continue
+        try:
+            referenced.add(_resolve_run_folder(rf).resolve())
+        except Exception:
+            pass
+    try:
+        if not runs_root.exists():
+            return (0, 0)
+        for child in runs_root.iterdir():
+            try:
+                if not child.is_dir():
+                    continue
+                rchild = child.resolve()
+                if rchild in referenced:
+                    kept += 1
+                    continue
+                # Remove stale folder entirely
+                shutil.rmtree(str(child), ignore_errors=True)
+                deleted += 1
+            except Exception:
+                # Ignore individual folder errors
+                pass
+    except Exception:
+        pass
+    return (deleted, kept)
+
+
 def open_master_workbook() -> None:
     xlsx = ROOT / "Product_Data_File" / "master.xlsx"
     csv = ROOT / "Product_Data_File" / "master.csv"
