@@ -259,6 +259,56 @@ class _DropZone(QtWidgets.QFrame):
             e.ignore()
 
 
+class ToastNotification(QtWidgets.QWidget):
+    """Cookie banner / toast notification that appears at bottom of window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.WindowType.ToolTip | QtCore.Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1e293b, stop:1 #0f172a);
+                border: 2px solid #3b82f6;
+                border-radius: 12px;
+                padding: 0px;
+            }
+            QLabel {
+                color: #f8fafc;
+                font-size: 14px;
+                font-weight: 600;
+                padding: 12px 24px;
+            }
+        """)
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.label = QtWidgets.QLabel()
+        self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.label)
+
+        self._timer = QtCore.QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+
+    def show_message(self, message: str, duration: int = 5000):
+        """Show toast notification with message for duration milliseconds."""
+        self.label.setText(message)
+        self.adjustSize()
+
+        # Position at bottom center of parent
+        if self.parent():
+            parent_rect = self.parent().geometry()
+            x = parent_rect.x() + (parent_rect.width() - self.width()) // 2
+            y = parent_rect.y() + parent_rect.height() - self.height() - 40
+            self.move(x, y)
+
+        self.show()
+        self.raise_()
+        self._timer.start(duration)
+
+
 class TermsEditorDialog(QtWidgets.QDialog):
     """In-app editor for Smart-Snap terms with grouped headers and curated fields."""
 
@@ -393,6 +443,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(36)  # Increase row height for better edit bubble visibility
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #0b1220;
@@ -400,15 +451,16 @@ class TermsEditorDialog(QtWidgets.QDialog):
                 gridline-color: #1f2a44;
             }
             QTableWidget::item {
-                padding: 6px;
+                padding: 8px;
             }
             QTableWidget QLineEdit {
                 background-color: #111b2f;
                 border: 1px solid #334155;
                 border-radius: 4px;
-                padding: 4px;
+                padding: 6px 8px;
                 color: #f8fafc;
                 selection-background-color: #1d4ed8;
+                min-height: 24px;
             }
         """)
         header = self.table.horizontalHeader()
@@ -442,16 +494,16 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self._status_label.setStyleSheet("color: #38bdf8; font-weight: 600;")
         bottom.addWidget(self._status_label)
         bottom.addStretch(1)
-        self.btn_save = QtWidgets.QPushButton("Save")
-        self.btn_save.setProperty("variant", "primary")
-        self.btn_done = QtWidgets.QPushButton("Done")
-        self.btn_save.clicked.connect(self._save_rows)
-        self.btn_done.clicked.connect(self.reject)
-        bottom.addWidget(self.btn_save)
-        bottom.addWidget(self.btn_done)
+        self.btn_open_excel = QtWidgets.QPushButton("Open in Excel")
+        self.btn_open_excel.clicked.connect(self._open_in_excel)
+        self.btn_save_close = QtWidgets.QPushButton("Save & Close")
+        self.btn_save_close.setProperty("variant", "primary")
+        self.btn_save_close.clicked.connect(self._save_and_close)
+        bottom.addWidget(self.btn_open_excel)
+        bottom.addWidget(self.btn_save_close)
         layout.addLayout(bottom)
 
-        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Save, self, activated=self._save_rows)
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Save, self, activated=self._save_and_close)
         self.table.itemChanged.connect(self._on_table_item_changed)
 
         self._load_rows()
@@ -551,6 +603,14 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self._dirty = False
         self._status_label.setText("All changes saved")
         self._rebuild_group_header()
+
+        # Set custom column widths - double width for Data Group and Term Label
+        self.table.resizeColumnsToContents()
+        for col_idx, header in enumerate(self._visible_headers):
+            if header in ("Data Group", "Term Label"):
+                current_width = self.table.columnWidth(col_idx)
+                self.table.setColumnWidth(col_idx, current_width * 2)
+                self.group_header.setColumnWidth(col_idx, current_width * 2)
 
     def _column_display_name(self, header: str) -> str:
         return self.COLUMN_DISPLAY_NAMES.get(header, header)
@@ -786,6 +846,45 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self._pending_save_notice = True
         return True
 
+    def _save_and_close(self) -> None:
+        """Save changes and close the dialog."""
+        if self._save_rows():
+            self.accept()  # Close with success code
+
+    def _open_in_excel(self) -> None:
+        """Open the terms file in Excel (or default spreadsheet application)."""
+        try:
+            import subprocess
+            import platform
+
+            # Save any pending changes first
+            if self._dirty:
+                resp = QtWidgets.QMessageBox.question(
+                    self,
+                    "Save before opening?",
+                    "You have unsaved changes. Save before opening in Excel?",
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No | QtWidgets.QMessageBox.StandardButton.Cancel,
+                )
+                if resp == QtWidgets.QMessageBox.StandardButton.Cancel:
+                    return
+                elif resp == QtWidgets.QMessageBox.StandardButton.Yes:
+                    if not self._save_rows():
+                        return
+
+            file_path = str(self._terms_path.resolve())
+
+            # Open file with default application
+            if platform.system() == 'Windows':
+                subprocess.Popen(['start', 'excel', file_path], shell=True)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.Popen(['open', file_path])
+            else:  # Linux
+                subprocess.Popen(['xdg-open', file_path])
+
+            self._status_label.setText("Opened in Excel")
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Open failed", f"Could not open file in Excel:\n{exc}")
+
     def reject(self) -> None:  # type: ignore[override]
         if self._dirty:
             resp = QtWidgets.QMessageBox.question(
@@ -796,13 +895,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
             )
             if resp != QtWidgets.QMessageBox.StandardButton.Yes:
                 return
-        if self._pending_save_notice:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Smart-Snap Terms",
-                "Changes saved successfully.",
-            )
-            self._pending_save_notice = False
         super().reject()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
@@ -1409,6 +1501,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_popup_active = False
         self._progress_was_canceled = False
         self._last_run_dir: Path | None = None
+
+        # Create toast notification widget
+        self._toast = ToastNotification(self)
+        self._toast.hide()
 
         layout = QtWidgets.QVBoxLayout(central)
         layout.addWidget(header)
@@ -2505,6 +2601,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_popup_active = show_run_progress
         self._progress_was_canceled = False
         self._last_run_dir = None
+        # Track if this is an extraction run (show_run_progress indicates EIDP extraction)
+        self._is_extraction_run = show_run_progress
         if show_run_progress:
             self._progress_dialog.begin(status_msg)
         else:
@@ -2531,9 +2629,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_bar.showMessage("Ready.", 3000)
         self._append_log(f"[INFO] Process finished with code {rc}")
         was_canceled = self._progress_was_canceled
+        is_extraction = getattr(self, "_is_extraction_run", False)
         self._finalize_run_progress(success=(rc == 0))
+
+        # Show toast notification only for extraction runs
+        if is_extraction:
+            if was_canceled:
+                self._show_toast("Extraction run aborted")
+            elif rc == 0:
+                self._show_toast("Extraction completed successfully")
+            else:
+                self._show_toast(f"Extraction failed with code {rc}")
+
         if was_canceled:
             self._cleanup_last_run_dir()
+
         # Refresh UI after a scan; no post-run enrichment step
         if getattr(self, "_enrich_after_run", False):
             self._enrich_after_run = False
@@ -2551,6 +2661,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._auto_update_plot_terms_on_success = False
         if auto_refresh:
             self._schedule_plot_terms_update("latest scan")
+
+        # Update master database after successful extraction run
+        if is_extraction and rc == 0 and not was_canceled:
+            try:
+                self._append_log("[GUI] Compiling master database after extraction run...")
+                be.compile_master()
+                self._show_toast("Master database updated")
+            except Exception as e:
+                self._append_log(f"[ERROR] Failed to compile master database: {e}")
+
         self._scan_refresh()
         if self._plot_terms_pending and (self._worker is None or not self._worker.isRunning()):
             reason = self._plot_terms_pending_reason or "refresh"
@@ -2594,8 +2714,12 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Unable to open editor", str(exc))
             return
-        dlg.exec()
-        # No immediate auto-sync; the periodic timer will refresh the banner
+        result = dlg.exec()
+        # If dialog was accepted (saved successfully), show toast and sync
+        if result == QtWidgets.QDialog.DialogCode.Accepted:
+            self._show_toast("Smart-Snap terms saved successfully")
+            # Auto-sync workspace after successful save
+            QtCore.QTimer.singleShot(500, lambda: self._sync_workspace(auto=False))
 
     def _act_generate_terms(self):
         try:
@@ -3060,12 +3184,26 @@ class MainWindow(QtWidgets.QMainWindow):
                     pass
             if not auto:
                 self._append_log("[GUI] Workspace sync complete")
+                # Show toast notification for manual sync
+                if flagged > 0:
+                    self._show_toast(f"Workspace synced - {flagged} out-of-date items found")
+                else:
+                    self._show_toast("Workspace synced - all up-to-date")
             self._schedule_plot_terms_update("workspace sync")
         except Exception as e:
             self.lbl_sync_banner.setText(f"Sync failed: {e}")
+            if not auto:
+                self._show_toast(f"Workspace sync failed: {e}")
 
     def _act_sync_workspace(self):
         self._sync_workspace(auto=False)
+
+    def _show_toast(self, message: str, duration: int = 5000):
+        """Show a toast/cookie banner notification."""
+        try:
+            self._toast.show_message(message, duration)
+        except Exception:
+            pass
 
     def _show_outdated_popup(self, auto: bool = False):
         # Guard against duplicate dialogs
