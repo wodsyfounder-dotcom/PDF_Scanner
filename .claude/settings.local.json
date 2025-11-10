@@ -4,7 +4,9 @@
       "Bash(python -m ui_next.qt_main:*)",
       "Bash(nul)",
       "Bash(mkdir:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(python:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []

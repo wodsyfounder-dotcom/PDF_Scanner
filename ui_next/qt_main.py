@@ -115,10 +115,10 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.lbl_status.setWordWrap(True)
         self.lbl_status.setStyleSheet("font-size: 13px;")
 
-        self.spinner_label = QtWidgets.QLabel("◐")
+        self.spinner_label = QtWidgets.QLabel("•")
         spin_font = self.spinner_label.font()
-        spin_font.setPointSize(32)
-        spin_font.setBold(True)
+        spin_font.setPointSize(24)
+        spin_font.setBold(False)
         self.spinner_label.setFont(spin_font)
         self.spinner_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
@@ -127,9 +127,9 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("Working...")
 
-        self.detail_label = QtWidgets.QLabel("Terms found: 0 / 0 \u2022 0 remaining")
+        self.detail_label = QtWidgets.QLabel("Searching: 0 / 0 terms \u2022 Found: 0")
         self.detail_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.detail_label.setStyleSheet("font-size: 12px;")
+        self.detail_label.setStyleSheet("font-size: 12px; color: #e0e7f0;")
 
         self.hint_label = QtWidgets.QLabel("This window closes automatically when the run finishes.")
         self.hint_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -147,7 +147,7 @@ class RunProgressDialog(QtWidgets.QDialog):
         layout.addWidget(self.hint_label)
         layout.addWidget(self.btn_cancel)
 
-        self._spinner_frames = ["◐", "◓", "◑", "◒"]
+        self._spinner_frames = ["•", "·", "•", "·"]
         self._spinner_index = 0
         self._anim_timer = QtCore.QTimer(self)
         self._anim_timer.setInterval(170)
@@ -161,7 +161,7 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.lbl_status.setText(status_text)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setFormat("Working...")
-        self.detail_label.setText("Terms found: 0 / 0 \u2022 0 remaining")
+        self.detail_label.setText("Searching: 0 / 0 terms \u2022 Found: 0")
         self._spinner_index = 0
         self.spinner_label.setText(self._spinner_frames[0])
         self._anim_timer.start()
@@ -174,12 +174,12 @@ class RunProgressDialog(QtWidgets.QDialog):
         except Exception:
             pass
 
-    def update_progress(self, completed: int, total: int):
+    def update_progress(self, completed: int, total: int, found: int = 0):
         if total <= 0:
             if self.progress_bar.maximum() != 0:
                 self.progress_bar.setRange(0, 0)
                 self.progress_bar.setFormat("Working...")
-            self.detail_label.setText(f"Terms processed: {completed}")
+            self.detail_label.setText(f"Searching: {completed} terms \u2022 Found: {found}")
             return
         if self.progress_bar.maximum() == 0:
             self.progress_bar.setRange(0, 100)
@@ -187,11 +187,11 @@ class RunProgressDialog(QtWidgets.QDialog):
         remaining = max(0, total - completed)
         self.progress_bar.setValue(pct)
         self.progress_bar.setFormat(f"{pct}%")
-        self.detail_label.setText(f"Terms found: {completed} / {total} \u2022 {remaining} remaining")
+        self.detail_label.setText(f"Searching: {completed} / {total} terms \u2022 Found: {found}")
 
     def finish(self, message: str, success: bool = True):
         self._anim_timer.stop()
-        self.spinner_label.setText("✓" if success else "!")
+        self.spinner_label.setText("✓" if success else "×")
         self.lbl_status.setText(message)
         if self.progress_bar.maximum() == 0:
             self.progress_bar.setRange(0, 100)
@@ -1336,24 +1336,24 @@ class MainWindow(QtWidgets.QMainWindow):
         hbox.setContentsMargins(24, 20, 24, 16)
         hbox.setSpacing(20)
 
-        # Logo with shadow effect (larger size for better visibility)
+        # Logo - simple and compact
         logo_container = QtWidgets.QFrame()
         logo_container.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #2563eb, stop:1 #1e40af);
-                border-radius: 14px;
+                border-radius: 10px;
                 border: 2px solid #1d4ed8;
             }
         """)
-        logo_container.setFixedSize(64, 64)
+        logo_container.setFixedSize(48, 48)
         logo_layout = QtWidgets.QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
 
         logo = QtWidgets.QLabel()
-        logo_pix = self._build_logo_pixmap(size=60)
+        logo_pix = self._build_logo_pixmap(size=44)
         logo.setPixmap(logo_pix)
-        logo.setFixedSize(60, 60)
+        logo.setFixedSize(44, 44)
         logo.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         logo_layout.addWidget(logo)
 
@@ -1495,9 +1495,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_bar = self.statusBar()
         self._progress_dialog = RunProgressDialog(self)
         self._progress_dialog.canceled.connect(self._on_progress_canceled)
-        self._progress_pattern = re.compile(r"\[PROGRESS\]\s*Terms:\s*(\d+)%\s*\((\d+)/(\d+)\)")
+        # Pattern supports both old format (without Found) and new format (with Found)
+        self._progress_pattern = re.compile(r"\[PROGRESS\]\s*Terms:\s*(\d+)%\s*\((\d+)/(\d+)\)(?:\s*\|\s*Found:\s*(\d+))?")
         self._progress_total = 0
         self._progress_completed = 0
+        self._progress_found = 0
         self._progress_popup_active = False
         self._progress_was_canceled = False
         self._last_run_dir: Path | None = None
@@ -2497,10 +2499,14 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             completed = int(match.group(2))
             total = int(match.group(3))
+            # Group 4 is optional (for backward compatibility with old format)
+            found_str = match.group(4)
+            found = int(found_str) if found_str is not None else 0
         except Exception:
             return
         self._progress_total = max(total, 0)
         self._progress_completed = max(0, min(completed, self._progress_total or completed))
+        self._progress_found = max(0, found)
         self._update_progress_widgets()
 
     def _maybe_track_run_dir(self, text: str):
@@ -2536,7 +2542,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         total = self._progress_total
         completed = min(self._progress_completed, total if total else self._progress_completed)
-        self._progress_dialog.update_progress(completed, total)
+        found = self._progress_found
+        self._progress_dialog.update_progress(completed, total, found)
 
     def _finalize_run_progress(self, success: bool):
         if not self._progress_popup_active:
@@ -2598,6 +2605,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_bar.showMessage(status_msg)
         self._progress_total = 0
         self._progress_completed = 0
+        self._progress_found = 0
         self._progress_popup_active = show_run_progress
         self._progress_was_canceled = False
         self._last_run_dir = None
@@ -3809,7 +3817,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         return scaled
             except Exception:
                 pass
-        # Fallback: draw a modern, professional logo
+        # Fallback: draw a simple, clean logo
         pix = QtGui.QPixmap(size, size)
         pix.fill(QtCore.Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(pix)
@@ -3823,28 +3831,16 @@ class MainWindow(QtWidgets.QMainWindow):
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.drawRoundedRect(0, 0, size, size, size * 0.2, size * 0.2)
 
-        # Draw stylized "E" with modern design
-        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff"), size * 0.06))
+        # Draw simple "E" letter
         font = painter.font()
         font.setBold(True)
-        font.setPointSize(int(size * 0.48))
+        font.setPointSize(int(size * 0.5))
         font.setFamily("Arial")
         painter.setFont(font)
 
-        # Add subtle shadow effect to text
-        shadow_path = QtGui.QPainterPath()
-        shadow_path.addText(size * 0.17, size * 0.68, font, "E")
-        painter.fillPath(shadow_path, QtGui.QColor(0, 0, 0, 40))
-
-        # Draw main text
+        # Draw clean text without shadow
         painter.setPen(QtGui.QColor("#ffffff"))
         painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "E")
-
-        # Add accent line/dot decoration
-        accent_color = QtGui.QColor("#60a5fa")
-        painter.setBrush(QtGui.QBrush(accent_color))
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawEllipse(int(size * 0.75), int(size * 0.15), int(size * 0.12), int(size * 0.12))
 
         painter.end()
         try:

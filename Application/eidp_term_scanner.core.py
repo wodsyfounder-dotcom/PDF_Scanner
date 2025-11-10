@@ -47,8 +47,9 @@ def _should_emit_text(text: str, is_stderr: bool) -> bool:
             return False
         if text.startswith("[CLEANUP]"):
             return False
-        if text.startswith("[PROGRESS]"):
-            return False
+        # Allow [PROGRESS] messages even in quiet mode (needed for UI progress tracking)
+        # if text.startswith("[PROGRESS]"):
+        #     return False
         if text.startswith("[INFO] Pre-extracted"):
             return False
         if text.startswith("[INFO]"):
@@ -4680,10 +4681,11 @@ def run_scan(
         # Search each configured term (excluding full table rows) within the allowed page ranges
         total_terms = len(scan_terms)
         completed = 0
+        found_count = 0
         prev_pct = -1
         # Initial progress line
         try:
-            print(f"[PROGRESS] Terms: 0% (0/{total_terms})")
+            print(f"[PROGRESS] Terms: 0% (0/{total_terms}) | Found: 0")
         except Exception:
             pass
 
@@ -4727,6 +4729,7 @@ def run_scan(
 
             # Fill the matrix cell for this (term, serial_component)
             if res.found:
+                found_count += 1
                 if ret_kind == 'string':
                     cell_value = res.number
                 else:
@@ -4849,7 +4852,7 @@ def run_scan(
                 pct = int((completed * 100) / max(1, total_terms))
                 # Print at meaningful increments to avoid flooding the console
                 if pct != prev_pct and (total_terms <= 20 or pct % 5 == 0 or completed == total_terms):
-                    print(f"[PROGRESS] Terms: {pct}% ({completed}/{total_terms})")
+                    print(f"[PROGRESS] Terms: {pct}% ({completed}/{total_terms}) | Found: {found_count}")
                     prev_pct = pct
             except Exception:
                 pass
@@ -4919,7 +4922,7 @@ def run_scan(
             print(f"[WARN] Could not write per-PDF CSV for {safe_id}: {e}")
         # Finalize per-PDF terms progress to 100%
         try:
-            print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms})")
+            print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms}) | Found: {found_count}")
         except Exception:
             pass
 
