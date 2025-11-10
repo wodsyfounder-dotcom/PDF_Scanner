@@ -140,6 +140,113 @@ except Exception:
     _HAVE_EASYOCR = False
 
 
+# --- Optional: table extraction helper (scripts/extract_page_tables.py) ---
+def _import_tables_module():
+    try:
+        import importlib
+        return importlib.import_module('scripts.extract_page_tables')
+    except Exception:
+        return None
+
+
+def _filter_rows_by_anchors(rows: List[List[str]], group_after: Optional[str], group_before: Optional[str]) -> List[List[str]]:
+    if not rows:
+        return []
+    ga = (group_after or '').strip()
+    gb = (group_before or '').strip()
+    if not ga and not gb:
+        return rows
+    start_idx = 0
+    end_idx = len(rows)
+    found_any = False
+    if ga:
+        needle = ga.lower()
+        for i, r in enumerate(rows):
+            line = " ".join(str(x or '') for x in r).lower()
+            if needle and (needle in line):
+                start_idx = i + 1
+                found_any = True
+                break
+    if gb:
+        needle = gb.lower()
+        for i in range(start_idx, len(rows)):
+            line = " ".join(str(x or '') for x in rows[i]).lower()
+            if needle and (needle in line):
+                end_idx = i
+                found_any = True or found_any
+                break
+    if not found_any:
+        # Default to full page content when anchors absent
+        return rows
+    return rows[start_idx:end_idx]
+
+
+def _extract_full_table_rows_for_pdf(
+    pdf_path: Path,
+    pages: List[int],
+    group_after: Optional[str],
+    group_before: Optional[str],
+    program_name: Optional[str],
+    vehicle_number: Optional[str],
+    serial_component: Optional[str],
+) -> List[Dict[str, Optional[str]]]:
+    mod = _import_tables_module()
+    if mod is None:
+        return []
+    # OCR config
+    try:
+        ocr_mode = _get_ocr_mode()
+    except Exception:
+        ocr_mode = 'fallback'
+    use_ocr = (ocr_mode != 'no_ocr')
+    try:
+        dpi = int((os.environ.get('OCR_DPI') or '600').strip())
+    except Exception:
+        dpi = 600
+    try:
+        min_conf = float((os.environ.get('EASYOCR_MIN_CONF') or '0.4').strip())
+    except Exception:
+        min_conf = 0.4
+    try:
+        langs_raw = (os.environ.get('EASYOCR_LANGS') or 'en').strip()
+        import re as _re
+        langs = [s.strip() for s in _re.split(r'[;,]', langs_raw) if s.strip()]
+        if not langs:
+            langs = ['en']
+    except Exception:
+        langs = ['en']
+
+    try:
+        tables_map = mod.extract_tables_for_pages(pdf_path, pages, use_ocr=bool(use_ocr), dpi=int(dpi), min_conf=float(min_conf), langs=langs, emit_tokens=False)  # type: ignore[attr-defined]
+    except Exception:
+        return []
+    out_rows: List[Dict[str, Optional[str]]] = []
+    for p in sorted(tables_map.keys()):
+        spec = tables_map.get(p) or {}
+        columns = spec.get('columns') or []
+        rows = spec.get('rows') or []
+        # Expect first column to be Section per implementation; still handle generically
+        filtered = _filter_rows_by_anchors(rows, group_after, group_before)
+        for r in filtered:
+            row_out: Dict[str, Optional[str]] = {
+                'pdf_file': pdf_path.name,
+                'program_name': program_name or '',
+                'vehicle_number': vehicle_number or '',
+                'serial_component': serial_component or '',
+                'page': str(p),
+            }
+            # Section is usually first column if present
+            if r:
+                row_out['section'] = str(r[0]) if r[0] is not None else ''
+            else:
+                row_out['section'] = ''
+            # Remaining cells -> col_1, col_2, ...
+            for i, cell in enumerate(r[1:] if r else [], start=1):
+                row_out[f'col_{i}'] = str(cell) if cell is not None else ''
+            out_rows.append(row_out)
+    return out_rows
+
+
 def _get_ocr_mode() -> str:
     """Return OCR mode: 'fallback' (default), 'ocr_only', or 'no_ocr'.
     Accepts synonyms: 'auto'->fallback, 'none'/'off'->no_ocr, 'ocr'/'only'->ocr_only.
@@ -187,6 +294,8 @@ class TermSpec:
     return_type: Optional[str] = None
     range_min: Optional[float] = None
     range_max: Optional[float] = None
+    range_min_disabled: bool = False  # True when user sets Range (min) to N/A
+    range_max_disabled: bool = False  # True when user sets Range (max) to N/A
     units_hint: List[str] = field(default_factory=list)
     # New schema helpers
     value_format: Optional[str] = None      # Optional expected value pattern (e.g., tpl-xxxx or /TPL-\d{4}/)
@@ -696,18 +805,29 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         field_split = _norm_field_split(str(fieldsplit_val) if fieldsplit_val is not None else None)
         return_type = _norm_return_type(str(return_val) if return_val is not None else None)
         rmin = rmax = None
+        rmin_disabled = rmax_disabled = False
         if range_val is not None and str(range_val).strip():
             rmin, rmax = parse_range(str(range_val).strip())
         if rmin_val is not None and str(rmin_val).strip():
-            try:
-                rmin = float(str(rmin_val).replace(',', ''))
-            except Exception:
-                pass
+            raw = str(rmin_val).strip()
+            if _is_na_token(raw):
+                rmin = None
+                rmin_disabled = True
+            else:
+                try:
+                    rmin = float(str(rmin_val).replace(',', ''))
+                except Exception:
+                    pass
         if rmax_val is not None and str(rmax_val).strip():
-            try:
-                rmax = float(str(rmax_val).replace(',', ''))
-            except Exception:
-                pass
+            raw = str(rmax_val).strip()
+            if _is_na_token(raw):
+                rmax = None
+                rmax_disabled = True
+            else:
+                try:
+                    rmax = float(str(rmax_val).replace(',', ''))
+                except Exception:
+                    pass
         units_hint = parse_units_hint(units_val)
         smart_snap_type = _norm_smart_type(str(smart_type_val).strip() if smart_type_val is not None else None)
         secondary_term = (str(sec_val).strip() if sec_val is not None and str(sec_val).strip() else None)
@@ -725,6 +845,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                    mode=mode, line=line, column=column, anchor=anchor,
                                    field_index=field_index, field_split=field_split, return_type=return_type,
                                   range_min=rmin, range_max=rmax, units_hint=units_hint,
+                                  range_min_disabled=rmin_disabled, range_max_disabled=rmax_disabled,
                                    value_format=(str(fmt_val).strip() if fmt_val is not None and str(fmt_val).strip() else None),
                                    group_after=(str(grp_val).strip() if grp_val is not None and str(grp_val).strip() else None),
                                    group_before=(str(grp_before_val).strip() if grp_before_val is not None and str(grp_before_val).strip() else None),
@@ -758,21 +879,30 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         data_group = str(get(row, 'data_group') or '').strip() or None
         rng = str(get(row, 'range') or '').strip()
         rmin = rmax = None
+        rmin_disabled = rmax_disabled = False
         if rng:
             rmin, rmax = parse_range(rng)
         # Direct min/max override
         _rmin = str(get(row, 'range (min)') or '').strip()
         _rmax = str(get(row, 'range (max)') or '').strip()
         if _rmin:
-            try:
-                rmin = float(_rmin.replace(',', ''))
-            except Exception:
-                pass
+            if _is_na_token(_rmin):
+                rmin = None
+                rmin_disabled = True
+            else:
+                try:
+                    rmin = float(_rmin.replace(',', ''))
+                except Exception:
+                    pass
         if _rmax:
-            try:
-                rmax = float(_rmax.replace(',', ''))
-            except Exception:
-                pass
+            if _is_na_token(_rmax):
+                rmax = None
+                rmax_disabled = True
+            else:
+                try:
+                    rmax = float(_rmax.replace(',', ''))
+                except Exception:
+                    pass
         units_hint = parse_units_hint(get(row, 'units'))
         value_format = str(get(row, 'format') or get(row, 'value_format') or '').strip() or None
         group_after = str(get(row, 'groupafter') or get(row, 'group_after') or get(row, 'group') or '').strip() or None
@@ -790,7 +920,8 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
                             term_label=term_label, data_group=data_group,
                             mode=mode, line=line, column=column, anchor=anchor,
                             field_index=field_index, field_split=field_split, return_type=return_type,
-                            range_min=rmin, range_max=rmax, units_hint=units_hint,
+                                  range_min=rmin, range_max=rmax, units_hint=units_hint,
+                                  range_min_disabled=rmin_disabled, range_max_disabled=rmax_disabled,
                             value_format=value_format, group_after=group_after, group_before=group_before,
                             smart_snap_type=smart_snap_type, secondary_term=secondary_term, smart_position=smart_position))
     return out
@@ -815,6 +946,14 @@ def parse_range(s: str) -> Tuple[Optional[float], Optional[float]]:
                 return None
         return to_f(m.group(1)), to_f(m.group(2))
     return None, None
+
+
+def _is_na_token(value: Optional[str]) -> bool:
+    """Return True if the provided cell text indicates N/A."""
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    return text in {"n/a", "na", "n.a.", "not applicable"}
 
 
 def extract_pages_text_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
@@ -1517,7 +1656,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             label_right_x = tokens[j][2]
                         # right-side tokens
                         right_tokens = [t for t in tokens if t[0] >= label_right_x - 1.0]
-                        right_text = ' '.join([t[4] for t in right_tokens]).strip()
+                        right_text = ' '.join([t[4] for t in right_tokens]).strip() if right_tokens else ""
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
 
                         # Identify nearest header positions above this row
@@ -1881,7 +2020,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 right_items = sorted(right_items + augmented, key=lambda t: (float(t.get('y0',0.0)), float(t.get('x0',0.0))))
                                 if debug_mode:
                                     print(f"[SMART DEBUG] expanded right_items via vertical tolerance ({len(augmented)} extra)", file=sys.stderr)
-                        right_text = ' '.join([str(it.get('text') or '') for it in right_items]).strip()
+                        right_text = ' '.join([str(it.get('text') or '') for it in right_items]).strip() if right_items else ""
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
                         if debug_mode:
                             print(f"[SMART DEBUG] cand dpi={dpi} page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text!r}", file=sys.stderr)
@@ -4127,7 +4266,9 @@ def write_outputs_excel_or_csv(
     term_order: List[str],
     term_pages_raw: Dict[str, str],
     metadata_rows: List[Dict],
-    csv_fallback_prefix: Path
+    errors_rows: List[Dict],
+    csv_fallback_prefix: Path,
+    tables_rows: Optional[List[Dict]] = None,
 ) -> None:
     """
     Write the "results" and "metadata" outputs to Excel if possible,
@@ -4188,22 +4329,46 @@ def write_outputs_excel_or_csv(
         else:
             df_errors = pd.DataFrame(columns=error_cols)
 
+        # Prepare tables sheet if provided
+        df_tables = None
+        if tables_rows:
+            # Determine max dynamic columns col_1..col_N
+            max_cols = 0
+            for r in tables_rows:
+                for k in r.keys():
+                    if isinstance(k, str) and k.startswith("col_"):
+                        try:
+                            idx = int(k.split("_", 1)[1])
+                            if idx > max_cols:
+                                max_cols = idx
+                        except Exception:
+                            pass
+            base_cols = ["pdf_file", "program_name", "vehicle_number", "serial_component", "page", "section"]
+            dyn_cols = [f"col_{i}" for i in range(1, max_cols + 1)]
+            tab_cols = base_cols + dyn_cols
+            df_tables = pd.DataFrame(tables_rows, columns=tab_cols)
+
         # Write Excel with two sheets
         with pd.ExcelWriter(output_xlsx, engine="xlsxwriter") as writer:
-            # Sheet 1: wide matrix of results
+            # Sheet 1: Smart/standard results
             df_results.to_excel(writer, sheet_name="results", index=False)
-            # Sheet 2: detailed metadata
+            # Sheet 2: full table extraction (if any)
+            if df_tables is not None:
+                df_tables.to_excel(writer, sheet_name="tables", index=False)
+            # Next sheet(s): detailed metadata and errors
             df_meta.to_excel(writer, sheet_name="metadata", index=False)
-            # Sheet 3: failures/errors summary
             df_errors.to_excel(writer, sheet_name="errors", index=False)
 
             # Cosmetic improvements: freeze header rows and set reasonable column widths
             ws_res = writer.sheets["results"]
-            ws_meta = writer.sheets["metadata"]
-            ws_err = writer.sheets["errors"]
             ws_res.freeze_panes(1, 0)
+            ws_meta = writer.sheets["metadata"]
             ws_meta.freeze_panes(1, 0)
+            ws_err = writer.sheets["errors"]
             ws_err.freeze_panes(1, 0)
+            ws_tab = writer.sheets.get("tables") if (tables_rows) else None
+            if ws_tab is not None:
+                ws_tab.freeze_panes(1, 0)
 
             # Auto-size columns based on max content length (capped)
             for i, col in enumerate(df_results.columns):
@@ -4215,6 +4380,10 @@ def write_outputs_excel_or_csv(
             for i, col in enumerate(df_errors.columns):
                 width = min(60, max(10, int(df_errors[col].astype(str).str.len().max() if not df_errors.empty else len(col)) + 2))
                 ws_err.set_column(i, i, width)
+            if ws_tab is not None and df_tables is not None:
+                for i, col in enumerate(df_tables.columns):
+                    width = min(60, max(10, int(df_tables[col].astype(str).str.len().max() if not df_tables.empty else len(col)) + 2))
+                    ws_tab.set_column(i, i, width)
 
         print(f"[DONE] Excel written -> {output_xlsx}")
         return
@@ -4223,6 +4392,7 @@ def write_outputs_excel_or_csv(
     results_csv = csv_fallback_prefix.with_suffix(".results.csv")
     metadata_csv = csv_fallback_prefix.with_suffix(".metadata.csv")
     errors_csv = csv_fallback_prefix.with_suffix(".errors.csv")
+    tables_csv = csv_fallback_prefix.with_suffix(".tables.csv")
 
     # Build SN column set as above
     serials = set()
@@ -4304,7 +4474,31 @@ def write_outputs_excel_or_csv(
                 r.get("group_after"),
                 r.get("group_before"),
             ])
-    print(f"[DONE] CSV fallback written -> {results_csv}, {metadata_csv}, {errors_csv}")
+    # Write tables CSV if provided
+    if tables_rows:
+        try:
+            # Determine schema
+            max_cols = 0
+            for r in tables_rows:
+                for k in r.keys():
+                    if isinstance(k, str) and k.startswith("col_"):
+                        try:
+                            idx = int(k.split("_", 1)[1])
+                            if idx > max_cols:
+                                max_cols = idx
+                        except Exception:
+                            pass
+            base_cols = ["pdf_file", "program_name", "vehicle_number", "serial_component", "page", "section"]
+            dyn_cols = [f"col_{i}" for i in range(1, max_cols + 1)]
+            cols = base_cols + dyn_cols
+            with tables_csv.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(cols)
+                for r in tables_rows:
+                    w.writerow([r.get(c, "") for c in cols])
+        except Exception as e:
+            print(f"[WARN] Could not write tables CSV fallback: {e}")
+    print(f"[DONE] CSV fallback written -> {results_csv}, {metadata_csv}, {errors_csv}{', ' + str(tables_csv) if tables_rows else ''}")
 
 
 def run_scan(
@@ -4331,6 +4525,17 @@ def run_scan(
     if not terms:
         print("[WARN] No terms found in input. Ensure headers 'Term' and 'Pages' exist.")
         return
+
+    # Partition terms: keep 'full table' rows separate from standard scan rows
+    def _is_full_table(t: TermSpec) -> bool:
+        try:
+            m = (t.mode or '').strip().lower()
+            return m in ('full table', 'full_table', 'fulltable')
+        except Exception:
+            return False
+
+    full_table_terms: List[TermSpec] = [t for t in terms if _is_full_table(t)]
+    scan_terms: List[TermSpec] = [t for t in terms if not _is_full_table(t)]
 
     # Step 2: Enumerate PDFs to scan
     pdfs = [p for p in pdf_folder.glob("*.pdf")]
@@ -4364,13 +4569,18 @@ def run_scan(
             return "unknown"
 
     # Prepare structures for the wide "results" sheet and the "metadata" sheet
-    term_order = [t.term for t in terms]                  # preserve input order
+    term_order = [t.term for t in scan_terms]                  # preserve input order
     term_pages_raw = {t.term: t.pages_raw for t in terms} # map term ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ original "Pages" string
     results_matrix: Dict[str, Dict[str, Optional[str]]] = {t.term: {} for t in terms}  # term ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ {SN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ number}
     metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
     summary: List[Dict] = []        # JSON audit entries
     errors_rows: List[Dict] = []    # rows for the errors report
+    # Override term lists to exclude 'full table' rows from the wide matrix
+    term_order = [t.term for t in scan_terms]
+    term_pages_raw = {t.term: t.pages_raw for t in scan_terms}
+    results_matrix = {t.term: {} for t in scan_terms}
     serial_meta: Dict[str, Dict[str, str]] = {}
+    tables_rows_agg: List[Dict] = []  # aggregated full-table rows across all PDFs
 
     # Step 3: For each PDF, scan for each term
     for pdf_path in sorted(pdfs):
@@ -4434,8 +4644,66 @@ def run_scan(
         except Exception:
             pass
 
-        # Search each configured term within the allowed page ranges
-        total_terms = len(terms)
+        # Handle any 'full table' extractions for this PDF first
+        for t in full_table_terms:
+            try:
+                pages_for_t = t.pages if getattr(t, 'pages', None) else (sorted(pre_map.keys()) if pre_map else (list(range(1, page_count + 1)) if page_count > 0 else [1]))
+            except Exception:
+                pages_for_t = sorted(pre_map.keys()) if pre_map else [1]
+            ft_rows = _extract_full_table_rows_for_pdf(
+                pdf_path=pdf_path,
+                pages=list(pages_for_t),
+                group_after=getattr(t, 'group_after', None),
+                group_before=getattr(t, 'group_before', None),
+                program_name=serial_meta[data_id].get("program_name"),
+                vehicle_number=serial_meta[data_id].get("vehicle_number"),
+                serial_component=serial_meta[data_id].get("serial_component"),
+            )
+            try:
+                tables_rows_agg.extend(ft_rows)
+            except Exception:
+                pass
+            # Add a concise metadata record for audit/JSON
+            rows_count = len(ft_rows) if ft_rows is not None else 0
+            meta_ft = {
+                "pdf_file": pdf_path.name,
+                "program_name": serial_meta[data_id].get("program_name"),
+                "vehicle_number": serial_meta[data_id].get("vehicle_number"),
+                "serial_component": serial_meta[data_id].get("serial_component") or data_id,
+                "term": getattr(t, 'term', '') or 'Full Table',
+                "term_label": getattr(t, 'term_label', None) or 'Full Table',
+                "data_group": getattr(t, 'data_group', None) or '',
+                "found": bool(rows_count > 0),
+                "page": None,
+                "extracted_value": f"{rows_count} rows",
+                "units": None,
+                "text_source": "table",
+                "smart_score": None,
+                "mode": "full table",
+                "pages_raw": getattr(t, 'pages_raw', ''),
+                "range_min": None,
+                "range_max": None,
+                "units_hint": None,
+                "return_type": None,
+                "group_after": getattr(t, 'group_after', None),
+                "group_before": getattr(t, 'group_before', None),
+                "value_format": getattr(t, 'value_format', None),
+                "error_reason": (None if rows_count > 0 else "No table rows in selected range"),
+                "smart_snap_context": None,
+                "smart_snap_type": None,
+                "smart_line_min": None,
+                "smart_line_max": None,
+                "smart_conflict": None,
+                "smart_secondary_found": None,
+                "smart_position": None,
+                "secondary_term": getattr(t, 'secondary_term', None),
+            }
+            metadata_rows.append(meta_ft)
+            summary.append(meta_ft)
+            summary_pdf.append(meta_ft)
+
+        # Search each configured term (excluding full table rows) within the allowed page ranges
+        total_terms = len(scan_terms)
         completed = 0
         prev_pct = -1
         # Initial progress line
@@ -4444,7 +4712,7 @@ def run_scan(
         except Exception:
             pass
 
-        for idx, t in enumerate(terms, start=1):
+        for idx, t in enumerate(scan_terms, start=1):
             mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
             if mode == "line":
                 res = scan_pdf_for_term_line(pdf_path, data_id, t, window_chars, case_sensitive)
@@ -4519,6 +4787,8 @@ def run_scan(
             # Build metadata record
             range_min_schema = getattr(t, 'range_min', None)
             range_max_schema = getattr(t, 'range_max', None)
+            range_min_disabled = getattr(t, 'range_min_disabled', False)
+            range_max_disabled = getattr(t, 'range_max_disabled', False)
             smart_line_min = getattr(res, 'smart_line_min', None)
             smart_line_max = getattr(res, 'smart_line_max', None)
             units_hint_raw = getattr(t, 'units_hint', None)
@@ -4529,8 +4799,14 @@ def run_scan(
             else:
                 units_hint_display = str(units_hint_raw).strip() if units_hint_raw is not None and str(units_hint_raw).strip() else None
 
-            effective_range_min = range_min_schema if range_min_schema is not None else smart_line_min
-            effective_range_max = range_max_schema if range_max_schema is not None else smart_line_max
+            if range_min_disabled:
+                effective_range_min = None
+            else:
+                effective_range_min = range_min_schema if range_min_schema is not None else smart_line_min
+            if range_max_disabled:
+                effective_range_max = None
+            else:
+                effective_range_max = range_max_schema if range_max_schema is not None else smart_line_max
 
             pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
             parts = [p for p in pdf_stem.split("_") if p]
@@ -4694,10 +4970,9 @@ def run_scan(
         "smart_conflict", "smart_secondary_found",
         "group_after", "group_before", "error_reason",
     ]
-    wrote_xlsx = True  # XLSX disabled; do not write aggregate outputs
+    wrote_xlsx = True  # XLSX disabled for legacy block; using consolidated writer below
     if False:
-        try:
-            import pandas as _pd
+            # (legacy block disabled)
             display_names = {
                 "extracted_value": "Extracted Value",
                 "term_label": "Term Label",
@@ -4781,8 +5056,8 @@ def run_scan(
                     ws_err.set_column(i, i, min(60, max(10, max_len + 2)))
             wrote_xlsx = True
             print(f"[DONE] Extraction table -> {output_xlsx}")
-        except Exception as e:
-            print(f"[WARN] Could not write Excel extraction table: {e}")
+        # except Exception as e:
+        #     print(f"[WARN] Could not write Excel extraction table: {e}")
     if False:
         # Fallback: write CSV next to intended xlsx (same basename) if Excel writer not available
         try:
@@ -4803,6 +5078,22 @@ def run_scan(
             print(f"[DONE] Extraction table (CSV fallback) -> {fallback_csv}; errors -> {err_csv}")
         except Exception as e:
             print(f"[WARN] Could not write extraction table fallback: {e}")
+
+    # Consolidated outputs (results + metadata + errors + tables) to one workbook
+    try:
+        csv_prefix = output_xlsx.with_name(output_xlsx.stem)
+        write_outputs_excel_or_csv(
+            output_xlsx=output_xlsx,
+            results_matrix=results_matrix,
+            term_order=term_order,
+            term_pages_raw=term_pages_raw,
+            metadata_rows=metadata_rows,
+            errors_rows=errors_rows,
+            csv_fallback_prefix=csv_prefix,
+            tables_rows=(tables_rows_agg if tables_rows_agg else None),
+        )
+    except Exception as e:
+        print(f"[WARN] Could not write consolidated run workbook: {e}")
 
     print(f"[DONE] Details JSON -> {output_json}")
 

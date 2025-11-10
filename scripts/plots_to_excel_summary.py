@@ -6,8 +6,8 @@ Inputs:
   - Product_Data_File/plots/*.png (produced by plot_from_master.py)
 
 Output:
-  - Product_Data_File/plots_summary.xlsx (preferred; xlsxwriter)
-    Fallback: Product_Data_File/plots_summary.xlsx via openpyxl if xlsxwriter unavailable.
+  - Product_Data_File/plots/plots_summary.xlsx (preferred; xlsxwriter)
+    Fallback: same path via openpyxl if xlsxwriter unavailable.
 
 Behavior:
   - One sheet per plot image, sheet named from the plot filename (sanitized, <=31 chars).
@@ -20,13 +20,13 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPORTS = ROOT / "Product_Data_File"
 PLOTS_DIR = EXPORTS / "plots"
-OUT_XLSX = EXPORTS / "plots_summary.xlsx"
+OUT_XLSX = PLOTS_DIR / "plots_summary.xlsx"
 
 
 def list_plot_images(plots_dir: Path) -> List[Path]:
@@ -55,35 +55,36 @@ def sheet_name_from_file(path: Path, used: set[str]) -> str:
 
 
 def write_with_xlsxwriter(images: List[Path]) -> None:
-    import pandas as pd  # type: ignore
-    import xlsxwriter  # noqa: F401
+    import xlsxwriter  # type: ignore
 
     EXPORTS.mkdir(parents=True, exist_ok=True)
-    used: set[str] = set()
-    # Build index data
-    rows: List[Tuple[str, str]] = []
-    # Create workbook
-    with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
-        ws_index = writer.book.add_worksheet("Index")
-        writer.sheets["Index"] = ws_index
-        # Header
-        ws_index.write(0, 0, "Plot")
-        ws_index.write(0, 1, "Sheet")
-        # Per-plot sheets
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    workbook = xlsxwriter.Workbook(str(OUT_XLSX))
+    try:
+        header_fmt = workbook.add_format({"bold": True, "bg_color": "#dde7f5"})
+        title_fmt = workbook.add_format({"bold": True, "font_size": 14})
+        link_fmt = workbook.add_format({"font_color": "blue", "underline": True})
+
+        ws_index = workbook.add_worksheet("Index")
+        ws_index.write(0, 0, "Plot", header_fmt)
+        ws_index.write(0, 1, "Sheet", header_fmt)
+        ws_index.set_column(0, 0, 45)
+        ws_index.set_column(1, 1, 30)
+
+        used: set[str] = set()
         for idx, img in enumerate(images, start=1):
             sheet = sheet_name_from_file(img, used)
-            ws = writer.book.add_worksheet(sheet)
-            writer.sheets[sheet] = ws
-            # Put title and image
-            ws.write(0, 0, img.stem)
-            # Leave a row, insert image starting at A3
-            ws.insert_image(2, 0, str(img), {"x_scale": 1.0, "y_scale": 1.0})
-            # Index row with hyperlink to sheet
-            ws_index.write(idx, 0, img.name)
-            ws_index.write_url(idx, 1, f"internal:'{sheet}'!A1", string=sheet)
-        # Autofit index columns
-        ws_index.set_column(0, 0, 50)
-        ws_index.set_column(1, 1, 24)
+            ws = workbook.add_worksheet(sheet)
+            ws.write(0, 0, img.stem, title_fmt)
+            ws.set_row(0, 24)
+            try:
+                ws.insert_image(2, 0, str(img), {"object_position": 2})
+            except Exception as exc:
+                raise RuntimeError(f"Unable to embed image {img}: {exc}") from exc
+            ws_index.write_url(idx, 0, f"internal:'{sheet}'!A1", link_fmt, string=img.stem)
+            ws_index.write(idx, 1, sheet)
+    finally:
+        workbook.close()
     print(f"[DONE] Plot summary workbook -> {OUT_XLSX}")
 
 
@@ -92,8 +93,8 @@ def write_with_openpyxl(images: List[Path]) -> None:
     from openpyxl.drawing.image import Image as XLImage  # type: ignore
 
     EXPORTS.mkdir(parents=True, exist_ok=True)
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
-    # Use active as Index
     ws_index = wb.active
     ws_index.title = "Index"
     ws_index.cell(row=1, column=1, value="Plot")
@@ -107,14 +108,13 @@ def write_with_openpyxl(images: List[Path]) -> None:
         try:
             xlimg = XLImage(str(img))
             ws.add_image(xlimg, "A3")
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(
+                f"openpyxl was unable to embed {img} (ensure Pillow is installed): {exc}"
+            ) from exc
         ws_index.cell(row=idx, column=1, value=img.name)
-        # No internal hyperlink API here; write sheet name
         ws_index.cell(row=idx, column=2, value=sheet)
 
-    # Remove default empty sheet if present and unused
-    # (openpyxl created active already used as Index)
     wb.save(OUT_XLSX)
     print(f"[DONE] Plot summary workbook -> {OUT_XLSX}")
 
@@ -140,4 +140,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

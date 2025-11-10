@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import shutil
@@ -11,6 +12,7 @@ from typing import Dict, Iterable, Mapping, Optional
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
+DEFAULT_PROPOSED_PLOTS_JSON = ROOT / "user_inputs" / "proposed_plots.json"
 DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
 # Default repository root where PDFs may live (user-organized, nested or flat)
 DEFAULT_REPO_ROOT = ROOT / "Data Packages"
@@ -37,7 +39,7 @@ TERMS_SCHEMA_COLUMNS = [
     "Secondary Term",
     "Smart Position",
 ]
-TERMS_MODE_CHOICES = ["smart"]
+TERMS_MODE_CHOICES = ["smart", "full table"]
 TERMS_SMART_TYPE_CHOICES = ["", "auto", "number", "date", "time", "title"]
 
 
@@ -730,7 +732,7 @@ def open_plots_folder() -> None:
 
 
 def open_plots_summary() -> None:
-    target = ROOT / "Product_Data_File" / "plots_summary.xlsx"
+    target = PLOTS_DIR / "plots_summary.xlsx"
     if not target.exists():
         raise FileNotFoundError("No plots_summary.xlsx found (export first)")
     open_path(target)
@@ -769,7 +771,8 @@ def check_environment() -> subprocess.Popen:
     return spawn([py, "-c", code])
 
 
-ID_COLS = ["Term", "Grouping", "Row Label", "Column Label", "Units"]
+ID_COLS = ["Term Label", "Data Group"]
+Y_AXIS_COL = "Y Axis Label"
 
 
 def read_plot_terms_table() -> list[dict]:
@@ -809,6 +812,7 @@ def write_plot_terms_table(rows: list[dict]) -> None:
             **{k: "" for k in ID_COLS},
             "Min": "",
             "Max": "",
+            Y_AXIS_COL: "",
             "Series Label": "",
         }]
     keys: list[str] = list(rows[0].keys())
@@ -833,45 +837,82 @@ def write_plot_terms_table(rows: list[dict]) -> None:
         raise RuntimeError(f"Unable to write plot_terms.xlsx: {e}")
 
 
-def set_plot_flags(active_keys: set[tuple[str, str, str, str, str]]) -> None:
-    """Update 'Plot?' column to 'Y' for rows whose ID tuple is in active_keys, else ''.
-
-    ID tuple order: (Term, Grouping, Row Label, Column Label, Units)
-    """
+def list_plot_series_options() -> list[dict]:
+    """Return catalog of available plot series derived from plot_terms."""
     rows = read_plot_terms_table()
-    if not rows:
-        return
-    updated: list[dict] = []
-    for r in rows:
-        key = tuple(str(r.get(k, "") or "").strip() for k in ID_COLS)
-        r["Plot?"] = "Y" if key in active_keys else (r.get("Plot?", "") if key not in active_keys else "")
-        updated.append(r)
-    write_plot_terms_table(updated)
-
-def read_plot_names() -> list[tuple[str, bool]]:
-    # Build (plot_name, selected) from plot_terms rows
-    rows = read_plot_terms_table()
-    seen: dict[str, bool] = {}
-    order: list[str] = []
+    catalog: list[dict] = []
     for r in rows:
         name = str(r.get("Plot Name") or "").strip()
         if not name:
             continue
-        sel = str(r.get("Plot?") or "").strip().upper() == "Y"
-        if name not in seen:
-            seen[name] = sel
-            order.append(name)
-        else:
-            seen[name] = seen[name] or sel
-    return [(name, seen[name]) for name in order]
+        entry = {
+            "name": name,
+            "term_label": str(r.get("Term Label") or "").strip(),
+            "data_group": str(r.get("Data Group") or "").strip(),
+            "units": str(r.get("Units") or "").strip(),
+            "default_y_axis": str(r.get(Y_AXIS_COL) or "").strip(),
+        }
+        catalog.append(entry)
+    catalog.sort(key=lambda item: item["name"].lower())
+    return catalog
 
-def set_plot_flags_by_plot_names(selected_names: set[str]) -> None:
-    # Set Plot?='Y' for rows whose Plot Name is selected, else ''
-    rows = read_plot_terms_table()
-    updated: list[dict] = []
-    for r in rows:
-        name = str(r.get('Plot Name') or '').strip()
-        r['Plot?'] = 'Y' if name and name in selected_names else ''
-        updated.append(r)
-    write_plot_terms_table(updated)
+
+def read_proposed_plots() -> list[dict]:
+    path = DEFAULT_PROPOSED_PLOTS_JSON
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("plots", [])
+    if not isinstance(data, list):
+        return []
+    cleaned: list[dict] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        y_axis = str(entry.get("y_axis") or "").strip()
+        x_axis = str(entry.get("x_axis") or "SN").strip() or "SN"
+        series = entry.get("series") or []
+        if isinstance(series, str):
+            series = [series]
+        if not isinstance(series, list):
+            series = []
+        series_names = [str(s or "").strip() for s in series if str(s or "").strip()]
+        cleaned.append({
+            "name": name or "Plot",
+            "series": series_names,
+            "y_axis": y_axis,
+            "x_axis": x_axis,
+        })
+    return cleaned
+
+
+def write_proposed_plots(plots: list[dict]) -> None:
+    """Persist proposed plot definitions to user_inputs."""
+    DEFAULT_PROPOSED_PLOTS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    payload: list[dict] = []
+    for entry in plots:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        y_axis = str(entry.get("y_axis") or "").strip()
+        x_axis = str(entry.get("x_axis") or "SN").strip() or "SN"
+        series = entry.get("series") or []
+        if isinstance(series, str):
+            series = [series]
+        if not isinstance(series, list):
+            series = []
+        series_names = [str(s or "").strip() for s in series if str(s or "").strip()]
+        payload.append({
+            "name": name or "Plot",
+            "series": series_names,
+            "y_axis": y_axis,
+            "x_axis": x_axis,
+        })
+    DEFAULT_PROPOSED_PLOTS_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

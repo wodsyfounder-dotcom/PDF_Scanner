@@ -507,6 +507,304 @@ class TermsEditorDialog(QtWidgets.QDialog):
                 return
         super().keyPressEvent(event)
 
+
+class SeriesDropdown(QtWidgets.QWidget):
+    """Dropdown button with checkable items for selecting multiple series."""
+
+    changed = QtCore.Signal()
+
+    def __init__(self, options: list[dict], selected: list[str] | None = None, parent=None):
+        super().__init__(parent)
+        self._options = options or []
+        self._actions: dict[str, QtGui.QAction] = {}
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self.button = QtWidgets.QToolButton()
+        self.button.setText("Select Series")
+        self.button.setMinimumWidth(140)
+        self.button.setMinimumHeight(32)
+        self.button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.menu = QtWidgets.QMenu(self)
+        self.button.setMenu(self.menu)
+
+        self.summary = QtWidgets.QLabel("No series selected")
+        self.summary.setStyleSheet("color: #5b6b7a;")
+        self.summary.setMinimumWidth(260)
+
+        layout.addWidget(self.button)
+        layout.addWidget(self.summary, 1)
+
+        self.set_options(self._options, selected or [])
+
+    def set_options(self, options: list[dict], selected: list[str] | None = None) -> None:
+        self._options = options or []
+        existing = set(selected or self.selected_series())
+        self.menu.clear()
+        self._actions = {}
+        for opt in self._options:
+            name = opt.get("name") or ""
+            if not name:
+                continue
+            act = QtGui.QAction(name, self.menu)
+            act.setCheckable(True)
+            act.setChecked(name in existing)
+            act.toggled.connect(self._on_action_toggled)
+            self.menu.addAction(act)
+            self._actions[name] = act
+        self._update_summary()
+
+    def selected_series(self) -> list[str]:
+        return [name for name, act in self._actions.items() if act.isChecked()]
+
+    def set_selected(self, names: list[str]) -> None:
+        target = set(names or [])
+        for name, act in self._actions.items():
+            act.blockSignals(True)
+            act.setChecked(name in target)
+            act.blockSignals(False)
+        self._update_summary()
+
+    def _on_action_toggled(self, _: bool) -> None:
+        self._update_summary()
+        self.changed.emit()
+
+    def _update_summary(self) -> None:
+        sel = self.selected_series()
+        self.summary.setText(", ".join(sel) if sel else "No series selected")
+
+
+class PlotRowWidget(QtWidgets.QWidget):
+    """One proposed plot row with editable fields and dropdown series selector."""
+
+    changed = QtCore.Signal()
+
+    def __init__(self, series_options: list[dict], data: dict | None = None, parent=None):
+        super().__init__(parent)
+        data = data or {}
+        self._series_options = series_options or []
+        self._series_axis_map: dict[str, str] = {}
+        self._manual_y_axis = bool(str(data.get("y_axis") or "").strip())
+        self._x_axis = str(data.get("x_axis") or "SN").strip() or "SN"
+
+        layout = QtWidgets.QGridLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setHorizontalSpacing(8)
+
+        self.name_edit = QtWidgets.QLineEdit(str(data.get("name") or ""))
+        self.name_edit.setPlaceholderText("Plot name")
+        self.name_edit.setMinimumWidth(260)
+        self.name_edit.setMinimumHeight(34)
+        self.name_edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.name_edit.textChanged.connect(self.changed.emit)
+        layout.addWidget(self.name_edit, 0, 0)
+
+        self.y_axis_edit = QtWidgets.QLineEdit(str(data.get("y_axis") or ""))
+        self.y_axis_edit.setPlaceholderText("Y axis label")
+        self.y_axis_edit.setMinimumWidth(220)
+        self.y_axis_edit.setMinimumHeight(34)
+        self.y_axis_edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.y_axis_edit.textEdited.connect(self._handle_y_axis_edited)
+        layout.addWidget(self.y_axis_edit, 0, 1)
+
+        self.series_dropdown = SeriesDropdown(self._series_options, list(data.get("series") or []))
+        self.series_dropdown.changed.connect(self._on_series_toggled)
+        layout.addWidget(self.series_dropdown, 0, 2)
+
+        layout.setColumnStretch(0, 3)
+        layout.setColumnStretch(1, 3)
+        layout.setColumnStretch(2, 4)
+
+        self.update_series_options(self._series_options, initial_selection=list(data.get("series") or []))
+        if not self._manual_y_axis:
+            self._auto_update_y_axis()
+
+    def _handle_y_axis_edited(self, text: str) -> None:
+        self._manual_y_axis = bool(text.strip())
+        self.changed.emit()
+
+    def _set_y_axis_text(self, value: str) -> None:
+        current = self.y_axis_edit.text()
+        if current == value:
+            return
+        self.y_axis_edit.blockSignals(True)
+        self.y_axis_edit.setText(value)
+        self.y_axis_edit.blockSignals(False)
+        self.changed.emit()
+
+    def selected_series(self) -> list[str]:
+        return self.series_dropdown.selected_series()
+
+    def update_series_options(self, options: list[dict], initial_selection: list[str] | None = None) -> None:
+        self._series_options = options or []
+        if initial_selection is None:
+            initial_selection = self.selected_series()
+        self._series_axis_map = {}
+        for opt in self._series_options:
+            name = opt.get("name")
+            if not name:
+                continue
+            axis_value = (
+                str(opt.get("default_y_axis") or "").strip()
+                or str(opt.get("units") or "").strip()
+            )
+            self._series_axis_map[name] = axis_value
+        self.series_dropdown.set_options(self._series_options, initial_selection)
+        self._auto_update_y_axis()
+
+    def _on_series_toggled(self, _: bool) -> None:
+        self._auto_update_y_axis()
+        self.changed.emit()
+
+    def _auto_update_y_axis(self) -> None:
+        if self._manual_y_axis:
+            return
+        candidates: list[str] = []
+        for name in self.selected_series():
+            axis = self._series_axis_map.get(name, "")
+            if axis:
+                candidates.append(axis)
+        unique: list[str] = []
+        seen: set[str] = set()
+        for axis in candidates:
+            key = axis.lower()
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(axis)
+        if len(unique) == 1:
+            self._set_y_axis_text(unique[0])
+        elif not candidates:
+            self._set_y_axis_text("")
+
+    def to_dict(self) -> dict:
+        name = self.name_edit.text().strip() or "Plot"
+        return {
+            "name": name,
+            "series": self.selected_series(),
+            "y_axis": self.y_axis_edit.text().strip(),
+            "x_axis": self._x_axis,
+        }
+
+
+class ProposedPlotsDialog(QtWidgets.QDialog):
+    """Popup dialog for managing proposed plot definitions."""
+
+    def __init__(self, series_options: list[dict], plots: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Proposed Plots")
+        self.resize(1100, 560)
+        self._series_options = series_options or []
+        self._plots: list[dict] = [dict(p) for p in plots] if plots else []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        intro = QtWidgets.QLabel(
+            "Add plots, choose the plot series from the dropdown, and optionally override the Y-axis label."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.setSpacing(6)
+        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        layout.addWidget(self.list_widget, 1)
+
+        controls = QtWidgets.QHBoxLayout()
+        self.btn_add = QtWidgets.QPushButton("Add Plot")
+        self.btn_remove = QtWidgets.QPushButton("Remove Selected")
+        controls.addWidget(self.btn_add)
+        controls.addWidget(self.btn_remove)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+
+        btn_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Save | QtWidgets.QDialogButtonBox.StandardButton.Close
+        )
+        btn_box.accepted.connect(self._save_and_close)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self.btn_add.clicked.connect(self._add_plot)
+        self.btn_remove.clicked.connect(self._remove_selected)
+
+        if self._plots:
+            for plot in self._plots:
+                self._append_row(plot)
+        else:
+            self._add_plot()
+
+    def _append_row(self, data: dict | None = None) -> PlotRowWidget:
+        item = QtWidgets.QListWidgetItem()
+        widget = PlotRowWidget(self._series_options, data=data)
+        widget.changed.connect(self._sync_item_size)
+        item.setSizeHint(widget.sizeHint())
+        self.list_widget.addItem(item)
+        self.list_widget.setItemWidget(item, widget)
+        return widget
+
+    def _add_plot(self):
+        name = self._generate_plot_name()
+        widget = self._append_row({"name": name, "series": [], "y_axis": "", "x_axis": "SN"})
+        widget.name_edit.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+        self.list_widget.setCurrentRow(self.list_widget.count() - 1)
+
+    def _remove_selected(self):
+        row = self.list_widget.currentRow()
+        if row < 0:
+            return
+        item = self.list_widget.takeItem(row)
+        if item:
+            widget = self.list_widget.itemWidget(item)
+            if widget:
+                widget.deleteLater()
+            del item
+        if self.list_widget.count() == 0:
+            self._add_plot()
+
+    def _generate_plot_name(self) -> str:
+        existing = set()
+        for i in range(self.list_widget.count()):
+            widget = self._row_widget(i)
+            if widget:
+                existing.add(widget.name_edit.text().strip())
+        idx = max(1, len(existing) + 1)
+        while True:
+            candidate = f"Plot {idx}"
+            if candidate not in existing:
+                return candidate
+            idx += 1
+
+    def _row_widget(self, index: int) -> PlotRowWidget | None:
+        item = self.list_widget.item(index)
+        if not item:
+            return None
+        widget = self.list_widget.itemWidget(item)
+        return widget if isinstance(widget, PlotRowWidget) else None
+
+    def _sync_item_size(self):
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            widget = self.list_widget.itemWidget(item)
+            if widget:
+                item.setSizeHint(widget.sizeHint())
+
+    def _collect_plots(self) -> list[dict]:
+        collected: list[dict] = []
+        for i in range(self.list_widget.count()):
+            widget = self._row_widget(i)
+            if widget:
+                collected.append(widget.to_dict())
+        return collected
+
+    def _save_and_close(self):
+        self._plots = self._collect_plots()
+        self.accept()
+
+    def plots(self) -> list[dict]:
+        return self._plots
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -514,6 +812,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1280, 860)
 
         be.ensure_scaffold()
+        self._refresh_plot_series_after_worker = False
 
         # Global styling to reflect the provided mock
         self.setStyleSheet(
@@ -851,23 +1150,25 @@ class MainWindow(QtWidgets.QMainWindow):
         ld.addWidget(self.btn_open_plot_terms, 0, 1)
 
         grp_gen = QtWidgets.QGroupBox("Proposed Plots")
-        lg = QtWidgets.QGridLayout(grp_gen)
-        self.list_plot_names = QtWidgets.QListWidget()
-        self.list_plot_names.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
-        self.list_plot_names.itemChanged.connect(self._on_plot_name_toggled)
-        lg.addWidget(self.list_plot_names, 0, 0, 1, 2)
-        self.btn_apply_plot_names = QtWidgets.QPushButton("Use Selection")
-        self.btn_apply_plot_names.clicked.connect(self._apply_plot_name_selection)
-        self.btn_refresh_plot_names = QtWidgets.QPushButton("Refresh")
-        self.btn_refresh_plot_names.clicked.connect(self._load_plot_names_list)
-        lg.addWidget(self.btn_apply_plot_names, 1, 0)
-        lg.addWidget(self.btn_refresh_plot_names, 1, 1)
+        lg = QtWidgets.QVBoxLayout(grp_gen)
+        self.lbl_proposed_summary = QtWidgets.QLabel("No plots configured.")
+        self.lbl_proposed_summary.setWordWrap(True)
+        lg.addWidget(self.lbl_proposed_summary)
+        controls = QtWidgets.QHBoxLayout()
+        self.btn_manage_proposed = QtWidgets.QPushButton("Manage Proposed Plots…")
+        self.btn_manage_proposed.clicked.connect(self._open_proposed_plots_dialog)
+        self.btn_refresh_series = QtWidgets.QPushButton("Reload Series List")
+        self.btn_refresh_series.clicked.connect(self._refresh_series_catalog)
+        controls.addWidget(self.btn_manage_proposed)
+        controls.addWidget(self.btn_refresh_series)
+        controls.addStretch(1)
+        lg.addLayout(controls)
 
         grp_ops = QtWidgets.QGroupBox("Generate Plots")
         lo = QtWidgets.QHBoxLayout(grp_ops)
         self.btn_plots_generate = QtWidgets.QPushButton("Generate Plots")
         self.btn_plots_generate.setProperty("variant", "primary")
-        self.btn_plots_generate.clicked.connect(self._act_generate_plots_save_selection)
+        self.btn_plots_generate.clicked.connect(self._act_generate_plots)
         self.btn_plot_summary = QtWidgets.QPushButton("Plot Summary Report")
         self.btn_plot_summary.clicked.connect(self._act_export_plot_summary)
         self.btn_plots_open_folder = QtWidgets.QPushButton("Open Plots Folder")
@@ -882,6 +1183,12 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.addWidget(grp_ops, 2, 0, 1, 2)
         grid.setRowStretch(3, 1)
 
+        self._plot_series_options: list[dict] = []
+        self._proposed_plots_cache: list[dict] = []
+        self._refresh_series_catalog()
+        self._load_proposed_plots()
+
+        self._plot_series_options: list[dict] = []
     def _setup_tab_outputs(self):
         grid = QtWidgets.QGridLayout(self.tab_outputs)
         grid.addWidget(QtWidgets.QLabel("Run Registry UI coming soon. Use buttons above to open registry and master."), 0, 0)
@@ -892,7 +1199,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self._apply_tab_widths()
             if self.tabs.widget(idx) is self.tab_plot:
-                self._load_plot_names_list()
+                self._refresh_series_catalog()
             if self.tabs.widget(idx) is self.tab_process or self.tabs.widget(idx) is self.tab_outputs:
                 self._refresh_run_registry()
         except Exception:
@@ -938,6 +1245,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._enrich_after_run = False
             try:
                 self._refresh_run_registry()
+            except Exception:
+                pass
+        if getattr(self, "_refresh_plot_series_after_worker", False):
+            self._refresh_plot_series_after_worker = False
+            try:
+                self._refresh_series_catalog()
             except Exception:
                 pass
         self._scan_refresh()
@@ -1030,12 +1343,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._start_worker(be.compile_master, status_msg="Compiling master workbook...")
 
     def _act_generate_plot_terms(self):
+        self._refresh_plot_series_after_worker = True
         self._start_worker(be.generate_plot_terms, status_msg="Generating plot terms...")
-
-    def _act_generate_plots_save_selection(self):
-        # Persist plot name selection before generating
-        self._apply_plot_name_selection(show_status=False)
-        self._act_generate_plots()
 
     def _act_generate_plots(self):
         try:
@@ -1492,7 +1801,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Workspace sync banner refresh handled by periodic timer
 
-        # Plotting selection\n        self._load_plot_names_list()
+        # Plotting selection
+        self._refresh_series_catalog()
         # Inline viewer removed; popup will build data on demand
 
     # Upload ingestion
@@ -1647,39 +1957,48 @@ class MainWindow(QtWidgets.QMainWindow):
             self._ingest_paths([path])
 
     # Plot selection helpers
-    def _load_plot_names_list(self):
-        if not hasattr(self, "list_plot_names"):
-            return
+    def _refresh_series_catalog(self):
         try:
-            items = be.read_plot_names()
+            options = be.list_plot_series_options()
         except Exception:
-            items = []
-        self.list_plot_names.blockSignals(True)
-        self.list_plot_names.clear()
-        for name, selected in items:
-            it = QtWidgets.QListWidgetItem(name)
-            it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-            it.setCheckState(QtCore.Qt.CheckState.Checked if selected else QtCore.Qt.CheckState.Unchecked)
-            self.list_plot_names.addItem(it)
-        self.list_plot_names.blockSignals(False)
+            options = []
+        self._plot_series_options = options
+        if not options and hasattr(self, "status_bar"):
+            self.status_bar.showMessage("No plot series found. Generate the term list first.", 4000)
 
-    def _on_plot_name_toggled(self, item: QtWidgets.QListWidgetItem):
-        self._apply_plot_name_selection(show_status=False)
-
-    def _apply_plot_name_selection(self, *, show_status: bool = True):
-        if not hasattr(self, "list_plot_names"):
-            return
-        selected: set[str] = set()
-        for i in range(self.list_plot_names.count()):
-            it = self.list_plot_names.item(i)
-            if it and it.checkState() == QtCore.Qt.CheckState.Checked:
-                selected.add(it.text())
+    def _load_proposed_plots(self):
         try:
-            be.set_plot_flags_by_plot_names(selected)
-            if show_status and hasattr(self, "status_bar"):
-                self.status_bar.showMessage("Plot selection saved", 1500)
+            records = be.read_proposed_plots()
         except Exception:
-            pass
+            records = []
+        self._proposed_plots_cache = records
+        self._refresh_proposed_summary()
+
+    def _refresh_proposed_summary(self):
+        if not hasattr(self, "lbl_proposed_summary"):
+            return
+        if not self._proposed_plots_cache:
+            self.lbl_proposed_summary.setText("No plots configured. Click 'Manage Proposed Plots…' to add some.")
+            return
+        lines: list[str] = []
+        for entry in self._proposed_plots_cache:
+            name = entry.get("name") or "Plot"
+            series = entry.get("series") or []
+            summary = ", ".join(series) if series else "No series selected"
+            lines.append(f"{name}: {summary}")
+        self.lbl_proposed_summary.setText("\n".join(lines))
+
+    def _open_proposed_plots_dialog(self):
+        dlg = ProposedPlotsDialog(self._plot_series_options, list(self._proposed_plots_cache), parent=self)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            new_plots = dlg.plots()
+            try:
+                be.write_proposed_plots(new_plots)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Save failed", str(exc))
+                return
+            self._proposed_plots_cache = new_plots
+            self._refresh_proposed_summary()
 
     def _apply_tab_widths(self) -> None:
         if not hasattr(self, "_tab_style_template"):

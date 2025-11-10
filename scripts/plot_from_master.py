@@ -16,6 +16,7 @@ Behavior:
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import sys
@@ -38,17 +39,19 @@ MASTER_CSV = EXPORTS / "master.csv"
 USER = ROOT / "user_inputs"
 PLOT_TERMS_XLSX = USER / "plot_terms.xlsx"
 PLOT_TERMS_CSV = USER / "plot_terms.csv"
+PROPOSED_PLOTS_JSON = USER / "proposed_plots.json"
 
 
-ID_COLS = ["Term", "Grouping", "Row Label", "Column Label", "Units"]
+ID_COLS = ["Term Label", "Data Group"]
+BASE_COLS = ["Term Label", "Data Group", "Units", "Min", "Max"]
+META_ROW_COUNT = 3
+Y_AXIS_COL = "Y Axis Label"
 
 
 def read_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str]]:
-    """Return (serials, data_rows, program_by_sn, sv_by_sn) from master workbook.
-
-    Skips first two metadata rows in data_rows.
-    """
+    """Return (serials, data_rows, program_by_sn, sv_by_sn) from master workbook."""
     import pandas as pd  # type: ignore
+
     programs: Dict[str, str] = {}
     vehicles: Dict[str, str] = {}
 
@@ -60,15 +63,33 @@ def read_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict
         print("[ERROR] No master workbook found. Compile master first.")
         return [], [], {}, {}
 
-    serials = [c for c in df.columns if c not in ("Term", "Grouping", "Units", "Row Label", "Column Label")]
-    # Extract program/vehicle rows
-    if len(df) >= 2:
+    rename_map: Dict[str, str] = {}
+    if "Term Label" not in df.columns and "Term" in df.columns:
+        rename_map["Term"] = "Term Label"
+    if "Data Group" not in df.columns and "Grouping" in df.columns:
+        rename_map["Grouping"] = "Data Group"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    for col in BASE_COLS:
+        if col not in df.columns:
+            df[col] = ""
+
+    df = df.fillna("")
+    exclude = set(BASE_COLS) | {"Term", "Grouping", "Row Label", "Column Label"}
+    serials = [c for c in df.columns if c not in exclude]
+
+    meta_rows = min(META_ROW_COUNT, len(df))
+    if meta_rows >= 1:
         row_programs = df.iloc[0]
-        row_vehicles = df.iloc[1]
         for sn in serials:
             programs[sn] = str(row_programs.get(sn) or "").strip()
+    if meta_rows >= 2:
+        row_vehicles = df.iloc[1]
+        for sn in serials:
             vehicles[sn] = str(row_vehicles.get(sn) or "").strip()
-    data_rows = df.iloc[2:].fillna("").to_dict(orient="records")
+
+    data_rows = df.iloc[meta_rows:].fillna("").to_dict(orient="records") if meta_rows < len(df) else []
     return serials, data_rows, programs, vehicles
 
 
@@ -86,9 +107,53 @@ def read_plot_terms() -> List[Dict[str, Any]]:
     return df.to_dict(orient="records")
 
 
+def read_proposed_plots() -> List[Dict[str, Any]]:
+    if not PROPOSED_PLOTS_JSON.exists():
+        return []
+    try:
+        with PROPOSED_PLOTS_JSON.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("plots", [])
+    if not isinstance(data, list):
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        y_axis = str(entry.get("y_axis") or "").strip()
+        x_axis = str(entry.get("x_axis") or "SN").strip() or "SN"
+        series = entry.get("series") or []
+        if isinstance(series, str):
+            series = [series]
+        if not isinstance(series, list):
+            series = []
+        series_names = [str(s or "").strip() for s in series if str(s or "").strip()]
+        cleaned.append({
+            "name": name or "Plot",
+            "series": series_names,
+            "y_axis": y_axis,
+            "x_axis": x_axis,
+        })
+    return cleaned
+
+
+def to_float(value: Any) -> Optional[float]:
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return float(s.replace(",", ""))
+    except Exception:
+        return None
+
+
 @dataclass
 class SeriesSpec:
-    id_tuple: Tuple[str, str, str, str, str]
+    id_tuple: Tuple[str, str]
     series_label: str
     units: str
     bounds_min: Optional[float] = None
@@ -100,6 +165,7 @@ class PlotSpec:
     name: str
     x_axis: str  # SN | Program | Space Vehicle
     series: List[SeriesSpec] = field(default_factory=list)
+    y_axis: Optional[str] = None
 
 
 def slugify(name: str) -> str:
@@ -108,7 +174,57 @@ def slugify(name: str) -> str:
     return s[:150] or "plot"
 
 
-def build_plot_specs(rows: List[Dict[str, Any]]) -> List[PlotSpec]:
+def build_series_catalog(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    catalog: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        name = str(r.get("Plot Name") or "").strip()
+        if not name:
+            continue
+        key = tuple(str(r.get(k) or "").strip() for k in ID_COLS)
+        catalog[name] = {
+            "id_tuple": key,
+            "series_label": str(r.get("Series Label") or "").strip() or name,
+            "units": str(r.get("Units") or "").strip(),
+            "bounds_min": to_float(r.get("Min")),
+            "bounds_max": to_float(r.get("Max")),
+            "y_axis": str(r.get(Y_AXIS_COL) or "").strip(),
+        }
+    return catalog
+
+
+def build_plot_specs_from_proposals(rows: List[Dict[str, Any]], proposals: List[Dict[str, Any]]) -> List[PlotSpec]:
+    catalog = build_series_catalog(rows)
+    specs: List[PlotSpec] = []
+    for entry in proposals:
+        title = entry.get("name") or "Plot"
+        series_names = entry.get("series") or []
+        if not series_names:
+            continue
+        plot = PlotSpec(name=str(title).strip() or "Plot", x_axis=str(entry.get("x_axis") or "SN").strip() or "SN")
+        y_axis = str(entry.get("y_axis") or "").strip()
+        if y_axis:
+            plot.y_axis = y_axis
+        for s_name in series_names:
+            meta = catalog.get(s_name)
+            if not meta:
+                print(f"[WARN] Proposed plot '{title}' references missing series '{s_name}'.")
+                continue
+            spec = SeriesSpec(
+                id_tuple=meta["id_tuple"],
+                series_label=meta["series_label"],
+                units=meta["units"],
+                bounds_min=meta["bounds_min"],
+                bounds_max=meta["bounds_max"],
+            )
+            plot.series.append(spec)
+            if not plot.y_axis and meta["y_axis"]:
+                plot.y_axis = meta["y_axis"]
+        if plot.series:
+            specs.append(plot)
+    return specs
+
+
+def build_plot_specs_from_flags(rows: List[Dict[str, Any]]) -> List[PlotSpec]:
     # Collect plots by name
     plots: Dict[str, PlotSpec] = {}
 
@@ -121,17 +237,11 @@ def build_plot_specs(rows: List[Dict[str, Any]]) -> List[PlotSpec]:
         x_axis = str(r.get("X Axis") or "SN").strip()
         if pname not in plots:
             plots[pname] = PlotSpec(name=pname, x_axis=x_axis)
+        axis_label = str(r.get(Y_AXIS_COL) or "").strip()
+        if axis_label and not plots[pname].y_axis:
+            plots[pname].y_axis = axis_label
 
     # Second pass: add series based on either declared plot or tie-to-plot
-    def to_float(v) -> Optional[float]:
-        s = str(v).strip()
-        if not s:
-            return None
-        try:
-            return float(s.replace(",", ""))
-        except Exception:
-            return None
-
     for r in rows:
         plot_flag = str(r.get("Plot?") or "").strip().lower()
         pname = str(r.get("Plot Name") or "").strip()
@@ -165,6 +275,15 @@ def build_plot_specs(rows: List[Dict[str, Any]]) -> List[PlotSpec]:
     # Stable sort plots by name
     out.sort(key=lambda p: p.name.lower())
     return out
+
+
+def build_plot_specs(rows: List[Dict[str, Any]]) -> List[PlotSpec]:
+    proposals = read_proposed_plots()
+    if proposals:
+        plots = build_plot_specs_from_proposals(rows, proposals)
+        if plots:
+            return plots
+    return build_plot_specs_from_flags(rows)
 
 
 def extract_series(master_rows: List[Dict[str, Any]], serials: List[str], spec: SeriesSpec) -> Tuple[List[int], List[float]]:
@@ -236,7 +355,9 @@ def main() -> None:
             xlabel = "Serial Number"
 
         fig, ax = plt.subplots(figsize=(10, 5.5), constrained_layout=True)
-        y_label, _all_units = pick_y_units(p.series)
+        auto_y_label, _all_units = pick_y_units(p.series)
+        manual_y_label = (p.y_axis or "").strip()
+        effective_y_label = manual_y_label or auto_y_label
         cmap = plt.get_cmap("tab10")
 
         for i, s in enumerate(p.series):
@@ -245,7 +366,7 @@ def main() -> None:
                 print(f"[WARN] Series not found in master: {s.series_label}")
                 continue
             label = s.series_label
-            if y_label is None:
+            if not effective_y_label:
                 u = (s.units or "").strip()
                 if u:
                     label = f"{label} ({u})"
@@ -259,8 +380,8 @@ def main() -> None:
 
         ax.set_title(p.name)
         ax.set_xlabel(xlabel)
-        if y_label:
-            ax.set_ylabel(y_label)
+        if effective_y_label:
+            ax.set_ylabel(effective_y_label)
         ax.set_xticks(list(range(len(xticklabels))))
         ax.set_xticklabels(xticklabels, rotation=20, ha="right")
         ax.grid(True, which="major", axis="both", alpha=0.25)
@@ -274,4 +395,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
