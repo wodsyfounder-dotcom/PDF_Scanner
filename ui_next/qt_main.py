@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import threading
 from pathlib import Path
@@ -52,6 +53,120 @@ class ProcWorker(QtCore.QThread):
                 self._proc.terminate()
         except Exception:
             pass
+
+
+class RunProgressDialog(QtWidgets.QDialog):
+    """Large popup that visualizes term progress with a simple spinner animation."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Running EIDP Scanner")
+        self.setModal(True)
+        self.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowCloseButtonHint, False)
+        self.resize(480, 260)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(16)
+
+        self.lbl_heading = QtWidgets.QLabel("Executing run...")
+        font = self.lbl_heading.font()
+        font.setPointSize(18)
+        font.setBold(True)
+        self.lbl_heading.setFont(font)
+        self.lbl_heading.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        self.lbl_status = QtWidgets.QLabel("Preparing scanner")
+        self.lbl_status.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.lbl_status.setWordWrap(True)
+        self.lbl_status.setStyleSheet("color: #1b2838; font-size: 13px;")
+
+        self.spinner_label = QtWidgets.QLabel("◐")
+        spin_font = self.spinner_label.font()
+        spin_font.setPointSize(32)
+        spin_font.setBold(True)
+        self.spinner_label.setFont(spin_font)
+        self.spinner_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 0)  # indeterminate until totals stream in
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("Working...")
+
+        self.detail_label = QtWidgets.QLabel("Terms found: 0 / 0 \u2022 0 remaining")
+        self.detail_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.detail_label.setStyleSheet("color: #1f3a56; font-size: 12px;")
+
+        self.hint_label = QtWidgets.QLabel("This window closes automatically when the run finishes.")
+        self.hint_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.hint_label.setStyleSheet("color: #5c7089; font-size: 11px;")
+
+        layout.addWidget(self.lbl_heading)
+        layout.addWidget(self.lbl_status)
+        layout.addWidget(self.spinner_label)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.detail_label)
+        layout.addWidget(self.hint_label)
+
+        self._spinner_frames = ["◐", "◓", "◑", "◒"]
+        self._spinner_index = 0
+        self._anim_timer = QtCore.QTimer(self)
+        self._anim_timer.setInterval(170)
+        self._anim_timer.timeout.connect(self._advance_spinner)
+
+    def _advance_spinner(self):
+        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+        self.spinner_label.setText(self._spinner_frames[self._spinner_index])
+
+    def begin(self, status_text: str):
+        self.lbl_status.setText(status_text)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setFormat("Working...")
+        self.detail_label.setText("Terms found: 0 / 0 \u2022 0 remaining")
+        self._spinner_index = 0
+        self.spinner_label.setText(self._spinner_frames[0])
+        self._anim_timer.start()
+        self.show()
+        try:
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+
+    def update_progress(self, completed: int, total: int):
+        if total <= 0:
+            if self.progress_bar.maximum() != 0:
+                self.progress_bar.setRange(0, 0)
+                self.progress_bar.setFormat("Working...")
+            self.detail_label.setText(f"Terms processed: {completed}")
+            return
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setRange(0, 100)
+        pct = max(0, min(100, int(round((completed * 100) / max(1, total)))))
+        remaining = max(0, total - completed)
+        self.progress_bar.setValue(pct)
+        self.progress_bar.setFormat(f"{pct}%")
+        self.detail_label.setText(f"Terms found: {completed} / {total} \u2022 {remaining} remaining")
+
+    def finish(self, message: str, success: bool = True):
+        self._anim_timer.stop()
+        self.spinner_label.setText("✓" if success else "!")
+        self.lbl_status.setText(message)
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100 if success else self.progress_bar.value())
+        self.progress_bar.setFormat("Done")
+        QtCore.QTimer.singleShot(1200, self.hide)
+
+    def abort(self):
+        self._anim_timer.stop()
+        self.hide()
+
+    def closeEvent(self, event: QtGui.QCloseEvent):  # type: ignore[override]
+        self._anim_timer.stop()
+        super().closeEvent(event)
 
 
 class _DropZone(QtWidgets.QFrame):
@@ -919,6 +1034,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_toggle_log.clicked.connect(self._toggle_log_panel)
         pol_log = self.btn_toggle_log.sizePolicy(); pol_log.setHorizontalStretch(1); pol_log.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_toggle_log.setSizePolicy(pol_log)
         self.status_bar = self.statusBar()
+        self._progress_dialog = RunProgressDialog(self)
+        self._progress_pattern = re.compile(r"\[PROGRESS\]\s*Terms:\s*(\d+)%\s*\((\d+)/(\d+)\)")
+        self._progress_total = 0
+        self._progress_completed = 0
+        self._progress_popup_active = False
 
         layout = QtWidgets.QVBoxLayout(central)
         layout.addWidget(header)
@@ -1216,13 +1336,56 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
-    def _start_worker(self, popen_factory, *, status_msg: str):
+    def _on_worker_line(self, text: str):
+        self._append_log(text)
+        self._maybe_update_run_progress(text)
+
+    def _maybe_update_run_progress(self, text: str):
+        if "[PROGRESS] Terms" not in text:
+            return
+        match = self._progress_pattern.search(text)
+        if not match:
+            return
+        try:
+            completed = int(match.group(2))
+            total = int(match.group(3))
+        except Exception:
+            return
+        self._progress_total = max(total, 0)
+        self._progress_completed = max(0, min(completed, self._progress_total or completed))
+        self._update_progress_widgets()
+
+    def _update_progress_widgets(self):
+        if not self._progress_popup_active:
+            return
+        total = self._progress_total
+        completed = min(self._progress_completed, total if total else self._progress_completed)
+        self._progress_dialog.update_progress(completed, total)
+
+    def _finalize_run_progress(self, success: bool):
+        if not self._progress_popup_active:
+            return
+        if self._progress_total and self._progress_completed < self._progress_total:
+            self._progress_completed = self._progress_total
+        self._update_progress_widgets()
+        message = "Run complete" if success else "Run finished with errors"
+        self._progress_dialog.finish(message, success=success)
+        self._progress_popup_active = False
+
+    def _start_worker(self, popen_factory, *, status_msg: str, show_run_progress: bool = False):
         if self._worker is not None and self._worker.isRunning():
             return
         self._append_log(f"[GUI] {status_msg}")
         self.status_bar.showMessage(status_msg)
+        self._progress_total = 0
+        self._progress_completed = 0
+        self._progress_popup_active = show_run_progress
+        if show_run_progress:
+            self._progress_dialog.begin(status_msg)
+        else:
+            self._progress_dialog.abort()
         self._worker = ProcWorker(popen_factory)
-        self._worker.line.connect(self._append_log)
+        self._worker.line.connect(self._on_worker_line)
         self._worker.finished.connect(self._on_worker_done)
         self._worker.start()
 
@@ -1240,6 +1403,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_worker_done(self, rc: int):
         self.status_bar.showMessage("Ready.", 3000)
         self._append_log(f"[INFO] Process finished with code {rc}")
+        self._finalize_run_progress(success=(rc == 0))
         # Refresh UI after a scan; no post-run enrichment step
         if getattr(self, "_enrich_after_run", False):
             self._enrich_after_run = False
@@ -1330,7 +1494,7 @@ class MainWindow(QtWidgets.QMainWindow):
         scanned.mkdir(parents=True, exist_ok=True)
         # Only enrich registry after a scan completes
         self._enrich_after_run = True
-        self._start_worker(lambda: be.run_scanner(terms, pdfs, scanned), status_msg="Scanning PDFs...")
+        self._start_worker(lambda: be.run_scanner(terms, pdfs, scanned), status_msg="Scanning PDFs...", show_run_progress=True)
 
     def _act_stop_scan(self):
         try:
@@ -1710,7 +1874,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...")
+                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...", show_run_progress=True)
                 dlg.accept()
 
             def _run_all():
@@ -1722,7 +1886,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...")
+                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...", show_run_progress=True)
                 dlg.accept()
 
             btn_run.clicked.connect(_run_selected)
