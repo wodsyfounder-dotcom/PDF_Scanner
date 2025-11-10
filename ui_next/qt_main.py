@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -58,6 +59,8 @@ class ProcWorker(QtCore.QThread):
 class RunProgressDialog(QtWidgets.QDialog):
     """Large popup that visualizes term progress with a simple spinner animation."""
 
+    canceled = QtCore.Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Running EIDP Scanner")
@@ -66,6 +69,35 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.setWindowFlag(QtCore.Qt.WindowType.WindowContextHelpButtonHint, False)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowCloseButtonHint, False)
         self.resize(480, 260)
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color: #0b1526;
+                color: #f6fbff;
+            }
+            QDialog QLabel {
+                color: #f6fbff;
+            }
+            QProgressBar {
+                background-color: #14253d;
+                color: #0b1526;
+                border: 1px solid #284364;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #3db6ff;
+            }
+            QPushButton[variant="ghost"] {
+                background: transparent;
+                color: #f6fbff;
+                border: 1px solid #3db6ff;
+            }
+            QPushButton[variant="ghost"]:disabled {
+                color: #94a6c3;
+                border-color: #2a3b52;
+            }
+            """
+        )
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
@@ -81,7 +113,7 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.lbl_status = QtWidgets.QLabel("Preparing scanner")
         self.lbl_status.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.lbl_status.setWordWrap(True)
-        self.lbl_status.setStyleSheet("color: #1b2838; font-size: 13px;")
+        self.lbl_status.setStyleSheet("font-size: 13px;")
 
         self.spinner_label = QtWidgets.QLabel("◐")
         spin_font = self.spinner_label.font()
@@ -97,11 +129,15 @@ class RunProgressDialog(QtWidgets.QDialog):
 
         self.detail_label = QtWidgets.QLabel("Terms found: 0 / 0 \u2022 0 remaining")
         self.detail_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.detail_label.setStyleSheet("color: #1f3a56; font-size: 12px;")
+        self.detail_label.setStyleSheet("font-size: 12px;")
 
         self.hint_label = QtWidgets.QLabel("This window closes automatically when the run finishes.")
         self.hint_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.hint_label.setStyleSheet("color: #5c7089; font-size: 11px;")
+        self.hint_label.setStyleSheet("color: #a5b8d6; font-size: 11px;")
+
+        self.btn_cancel = QtWidgets.QPushButton("Abort Run")
+        self.btn_cancel.setProperty("variant", "ghost")
+        self.btn_cancel.clicked.connect(self._on_cancel_clicked)
 
         layout.addWidget(self.lbl_heading)
         layout.addWidget(self.lbl_status)
@@ -109,6 +145,7 @@ class RunProgressDialog(QtWidgets.QDialog):
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.detail_label)
         layout.addWidget(self.hint_label)
+        layout.addWidget(self.btn_cancel)
 
         self._spinner_frames = ["◐", "◓", "◑", "◒"]
         self._spinner_index = 0
@@ -128,6 +165,8 @@ class RunProgressDialog(QtWidgets.QDialog):
         self._spinner_index = 0
         self.spinner_label.setText(self._spinner_frames[0])
         self._anim_timer.start()
+        self.btn_cancel.setEnabled(True)
+        self.btn_cancel.setText("Abort Run")
         self.show()
         try:
             self.raise_()
@@ -158,15 +197,23 @@ class RunProgressDialog(QtWidgets.QDialog):
             self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100 if success else self.progress_bar.value())
         self.progress_bar.setFormat("Done")
+        self.btn_cancel.setEnabled(False)
         QtCore.QTimer.singleShot(1200, self.hide)
 
     def abort(self):
         self._anim_timer.stop()
+        self.btn_cancel.setEnabled(False)
         self.hide()
 
     def closeEvent(self, event: QtGui.QCloseEvent):  # type: ignore[override]
         self._anim_timer.stop()
         super().closeEvent(event)
+
+    def _on_cancel_clicked(self):
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setText("Aborting...")
+        self.lbl_status.setText("Stopping run...")
+        self.canceled.emit()
 
 
 class _DropZone(QtWidgets.QFrame):
@@ -923,7 +970,7 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EIDAT - Engineering End Item Data Analysis Tool")
+        self.setWindowTitle("EIDAT - End Item Data Analysis Tool")
         self.resize(1280, 860)
 
         be.ensure_scaffold()
@@ -981,7 +1028,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         title = QtWidgets.QLabel("EIDAT")
         font = title.font(); font.setPointSize(20); font.setBold(True); title.setFont(font)
-        subtitle = QtWidgets.QLabel("Engineering End Item Data Analysis Tool"); subtitle.setStyleSheet("color:#5b6b7a; font-size: 12px;")
+        subtitle = QtWidgets.QLabel("End Item Data Analysis Tool"); subtitle.setStyleSheet("color:#5b6b7a; font-size: 12px;")
         tbox = QtWidgets.QVBoxLayout(); tbox.addWidget(title); tbox.addWidget(subtitle)
         hbox.addLayout(tbox); hbox.addStretch(1)
         self.lbl_ready = QtWidgets.QLabel("System Ready"); self.lbl_ready.setObjectName("statusBadge"); hbox.addWidget(self.lbl_ready)
@@ -1035,10 +1082,13 @@ class MainWindow(QtWidgets.QMainWindow):
         pol_log = self.btn_toggle_log.sizePolicy(); pol_log.setHorizontalStretch(1); pol_log.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_toggle_log.setSizePolicy(pol_log)
         self.status_bar = self.statusBar()
         self._progress_dialog = RunProgressDialog(self)
+        self._progress_dialog.canceled.connect(self._on_progress_canceled)
         self._progress_pattern = re.compile(r"\[PROGRESS\]\s*Terms:\s*(\d+)%\s*\((\d+)/(\d+)\)")
         self._progress_total = 0
         self._progress_completed = 0
         self._progress_popup_active = False
+        self._progress_was_canceled = False
+        self._last_run_dir: Path | None = None
 
         layout = QtWidgets.QVBoxLayout(central)
         layout.addWidget(header)
@@ -1194,7 +1244,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_terms_edit.clicked.connect(self._open_terms_editor)
         self.btn_terms_refresh.clicked.connect(self._act_generate_terms)
         self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
-        self.ed_scanned = QtWidgets.QLineEdit(str(be.DEFAULT_SCANNED_DIR))
         li.addWidget(self.btn_terms_edit, 0, 0, 1, 2)
         li.addWidget(self.btn_terms_refresh, 1, 0, 1, 2)
         # Keep internal path field for logic, but do not show it
@@ -1339,6 +1388,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_worker_line(self, text: str):
         self._append_log(text)
         self._maybe_update_run_progress(text)
+        self._maybe_track_run_dir(text)
 
     def _maybe_update_run_progress(self, text: str):
         if "[PROGRESS] Terms" not in text:
@@ -1355,6 +1405,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_completed = max(0, min(completed, self._progress_total or completed))
         self._update_progress_widgets()
 
+    def _maybe_track_run_dir(self, text: str):
+        if "Outputs will be saved under:" not in text:
+            return
+        try:
+            _, tail = text.split("Outputs will be saved under:", 1)
+        except ValueError:
+            return
+        candidate = tail.strip().strip('"')
+        if not candidate:
+            return
+        path = Path(candidate)
+        if not path.is_absolute():
+            path = Path(be.ROOT) / path
+        self._last_run_dir = path
+
+    def _on_progress_canceled(self):
+        if not self._progress_popup_active or self._progress_was_canceled:
+            return
+        self._progress_was_canceled = True
+        self._enrich_after_run = False
+        try:
+            self.lbl_ready.setText("Stopping run...")
+        except Exception:
+            pass
+        self._append_log("[GUI] User requested run abort.")
+        self._progress_dialog.lbl_status.setText("Stopping run...")
+        self._act_stop_scan()
+
     def _update_progress_widgets(self):
         if not self._progress_popup_active:
             return
@@ -1368,9 +1446,38 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._progress_total and self._progress_completed < self._progress_total:
             self._progress_completed = self._progress_total
         self._update_progress_widgets()
-        message = "Run complete" if success else "Run finished with errors"
-        self._progress_dialog.finish(message, success=success)
+        final_success = success and not self._progress_was_canceled
+        if self._progress_was_canceled:
+            message = "Run aborted"
+        elif final_success:
+            message = "Run complete"
+        else:
+            message = "Run finished with errors"
+        self._progress_dialog.finish(message, success=final_success)
         self._progress_popup_active = False
+        self._progress_was_canceled = False
+        if final_success:
+            self._last_run_dir = None
+
+    def _cleanup_last_run_dir(self):
+        path = self._last_run_dir
+        if not path:
+            return
+        try:
+            runs_root = Path(be.RUNS_DIR).resolve()
+        except Exception:
+            runs_root = Path(be.RUNS_DIR)
+        try:
+            target = path.resolve()
+        except Exception:
+            target = path
+        if runs_root not in target.parents and target != runs_root:
+            self._last_run_dir = None
+            return
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+        finally:
+            self._last_run_dir = None
 
     def _start_worker(self, popen_factory, *, status_msg: str, show_run_progress: bool = False):
         if self._worker is not None and self._worker.isRunning():
@@ -1380,6 +1487,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_total = 0
         self._progress_completed = 0
         self._progress_popup_active = show_run_progress
+        self._progress_was_canceled = False
+        self._last_run_dir = None
         if show_run_progress:
             self._progress_dialog.begin(status_msg)
         else:
@@ -1403,7 +1512,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_worker_done(self, rc: int):
         self.status_bar.showMessage("Ready.", 3000)
         self._append_log(f"[INFO] Process finished with code {rc}")
+        was_canceled = self._progress_was_canceled
         self._finalize_run_progress(success=(rc == 0))
+        if was_canceled:
+            self._cleanup_last_run_dir()
         # Refresh UI after a scan; no post-run enrichment step
         if getattr(self, "_enrich_after_run", False):
             self._enrich_after_run = False
@@ -1484,17 +1596,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def _act_start_scan(self):
         terms = Path(self.ed_terms.text()).expanduser()
         pdfs = Path(self.ed_pdfs.text()).expanduser()
-        scanned = Path(self.ed_scanned.text()).expanduser()
         if not terms.exists():
             QtWidgets.QMessageBox.critical(self, "Missing terms", f"Terms file not found:\n{terms}")
             return
         if not pdfs.exists():
             QtWidgets.QMessageBox.critical(self, "Missing PDFs folder", f"PDFs folder not found:\n{pdfs}")
             return
-        scanned.mkdir(parents=True, exist_ok=True)
         # Only enrich registry after a scan completes
         self._enrich_after_run = True
-        self._start_worker(lambda: be.run_scanner(terms, pdfs, scanned), status_msg="Scanning PDFs...", show_run_progress=True)
+        self._start_worker(lambda: be.run_scanner(terms, pdfs), status_msg="Scanning PDFs...", show_run_progress=True)
 
     def _act_stop_scan(self):
         try:

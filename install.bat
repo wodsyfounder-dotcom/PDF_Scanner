@@ -65,8 +65,7 @@ if errorlevel 1 (
 
 rem --- Scaffold expected folders and sample terms file ---
 if not exist "%ROOT%user_inputs" mkdir "%ROOT%user_inputs"
-if not exist "%ROOT%user_inputs\EIDP_Import_Docs" mkdir "%ROOT%user_inputs\EIDP_Import_Docs"
-if not exist "%ROOT%user_inputs\Scanned_Docs" mkdir "%ROOT%user_inputs\Scanned_Docs"
+if not exist "%ROOT%Data Packages" mkdir "%ROOT%Data Packages"
 if not exist "%ROOT%Product_Data_File" mkdir "%ROOT%Product_Data_File"
 if not exist "%ROOT%Product_Data_File\run_data" mkdir "%ROOT%Product_Data_File\run_data"
 if not exist "%ROOT%user_inputs\terms.xlsx" if not exist "%ROOT%user_inputs\terms.csv" if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
@@ -92,7 +91,7 @@ echo   - Vendored Python deps in Lib\site-packages for non-venv runs
 echo   - OCR handled via EasyOCR (pure Python). No external OCR tools required.
 echo.
 echo Next steps:
-echo   1) Place PDFs under user_inputs\EIDP_Import_Docs
+echo   1) Point the app at your PDF repository (default: "Data Packages")
 echo   2) Edit user_inputs\terms.xlsx (or .csv)
 echo   3) Run: run.bat   or  "%VENV_DIR%\Scripts\python.exe" ui_next\qt_main.py
 

@@ -2,8 +2,8 @@
 #!/usr/bin/env python3
 # Application-consolidated build
 """
-EIDP Term Scanner (Matrix + Metadata + Auto-Move)
--------------------------------------------------
+EIDP Term Scanner (Matrix + Metadata)
+-------------------------------------
 - Scans PDFs in a given folder for configured "terms" within specified page ranges.
 - Extracts the closest numeric value near each term occurrence.
 - A serial component (data identifier) is inferred from each PDF's filename; results are arranged
@@ -11,7 +11,6 @@ EIDP Term Scanner (Matrix + Metadata + Auto-Move)
 - Produces an Excel workbook with:
     * "results"  : Term, Pages, and one column per data identifier with the matched number
     * "metadata" : detailed per-term/per-file records, for auditing/debugging
-- Moves scanned PDFs from the imports folder into "Scanned Docs" to avoid reprocessing.
 - Falls back to CSVs if Excel writer dependencies are not available.
 """
 
@@ -4237,28 +4236,6 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
     if not fallback_res.found and not fallback_res.error_reason:
         fallback_res.error_reason = "No line field matched the requested index"
     return fallback_res
-def move_file_safely(src: Path, dst_folder: Path) -> Path:
-    """
-    Move a file into a destination folder, avoiding collisions by appending (n)
-    if the filename already exists. Returns the final destination path.
-    """
-    dst_folder.mkdir(parents=True, exist_ok=True)
-    dst = dst_folder / src.name
-    if not dst.exists():
-        shutil.move(str(src), str(dst))
-        return dst
-
-    # Collision handling: add numeric suffix "(1)", "(2)", ...
-    stem = src.stem
-    ext = src.suffix
-    i = 1
-    while True:
-        candidate = dst_folder / f"{stem} ({i}){ext}"
-        if not candidate.exists():
-            shutil.move(str(src), str(candidate))
-            return candidate
-        i += 1
-
 
 def write_outputs_excel_or_csv(
     output_xlsx: Path,
@@ -4507,18 +4484,16 @@ def run_scan(
     output_csv: Path,
     output_json: Path,
     output_xlsx: Path,
-    scanned_folder: Path,
     window_chars: int,
     case_sensitive: bool
 ) -> None:
     """
     Orchestrate the entire scan:
       1) Load terms from input file
-      2) Iterate through PDFs in the import folder
+      2) Iterate through PDFs in the target folder
       3) For each (pdf, term) pair, collect the best match and record metadata
       4) Write progress JSON as we go (crash resilience)
-      5) Move scanned PDFs to the Scanned Docs folder
-      6) Produce the final Excel (or CSVs) and a flat CSV summary
+      5) Produce the final Excel (or CSVs) and a flat CSV summary
     """
     # Step 1: Load the term specs
     terms = load_terms(input_path)
@@ -4879,14 +4854,7 @@ def run_scan(
             except Exception:
                 pass
 
-        # Step 4: Move the scanned PDF to the "Scanned Docs" folder
-        try:
-            moved_to = move_file_safely(pdf_path, scanned_folder)
-            print(f"[INFO] Moved scanned PDF -> {moved_to}")
-        except Exception as e:
-            print(f"[WARN] Could not move {pdf_path.name} to '{scanned_folder}': {e}")
-
-        # Step 5: Persist JSON progress incrementally (so partial work isn't lost)
+        # Step 4: Persist JSON progress incrementally (so partial work isn't lost)
         try:
             with output_json.open("w", encoding="utf-8") as jf:
                 json.dump(summary, jf, ensure_ascii=False, indent=2)
@@ -5136,14 +5104,13 @@ def main() -> None:
     Parses arguments and calls run_scan(...).
     """
     parser = argparse.ArgumentParser(
-        description="Scan PDFs for terms and nearest numbers, produce a matrix by data identifier (serial component), and move scanned PDFs."
+        description="Scan PDFs for terms and nearest numbers, producing a matrix by data identifier (serial component)."
     )
     parser.add_argument("--input", required=True, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
     parser.add_argument("--pdf-folder", required=True, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')
     parser.add_argument("--output-csv", default="scan_results_flat.csv", help="Flat CSV summary (legacy)")
     parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")
     parser.add_argument("--output-xlsx", default="scan_results.xlsx", help="Excel workbook with 'results' and 'metadata' sheets")
-    parser.add_argument("--scanned-folder", default="Scanned Docs", help="Folder to move scanned PDFs into")
     parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± chars)")
     parser.add_argument("--case-sensitive", action="store_true", help="Enable case-sensitive term matching")
     parser.add_argument("--quiet", action="store_true", help="Reduce console output (suppress progress/debug)")
@@ -5155,7 +5122,6 @@ def main() -> None:
     output_csv = Path(args.output_csv)
     output_json = Path(args.output_json)
     output_xlsx = Path(args.output_xlsx)
-    scanned_folder = Path(args.scanned_folder)
 
     if not input_path.exists():
         print(f"[ERROR] Input file not found: {input_path}", file=sys.stderr)
@@ -5176,7 +5142,6 @@ def main() -> None:
         output_csv=output_csv,
         output_json=output_json,
         output_xlsx=output_xlsx,
-        scanned_folder=scanned_folder,
         window_chars=args.window_chars,
         case_sensitive=args.case_sensitive
     )

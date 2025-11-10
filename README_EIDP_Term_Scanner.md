@@ -1,6 +1,6 @@
 # EIDP Term Scanner
 
-Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest numeric value near each term within specified page ranges, and export a matrix (rows=terms, columns=Serial Numbers) plus detailed metadata. Scanned PDFs are moved out so the next run only processes new files.
+Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest numeric value near each term within specified page ranges, and export a matrix (rows=terms, columns=Serial Numbers) plus detailed metadata. PDFs remain in their source location; reruns simply re-read the same repository.
 
 ---
 
@@ -26,17 +26,15 @@ Notes:
 
 ## Super Simple Run
 
-- One-time setup: install.bat scaffolds folders and drops a sample terms CSV if none exists:
-  - `user_inputs\\EIDP_Import_Docs`, `user_inputs\\Scanned_Docs`
-  - `user_inputs\\terms.xlsx` or `user_inputs\\terms.csv` (headers: `Term, Pages`)
-- Put PDFs in `user_inputs\EIDP_Import_Docs`.
-- Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv` (headers: `Term, Pages`).
-- Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines)
+- One-time setup: `install.bat` scaffolds `user_inputs` and drops a sample terms file if none exists (`user_inputs\terms.xlsx` or `.csv` with headers `Term, Pages`).
+- Point the GUI/CLI at the folder that already contains your EIDP PDFs (default `Data Packages`, but any path works).
+- Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv`.
+- Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines).
 - Run one of:
   - Windows: double-click `run.bat`
-  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --scanned-folder .\user_inputs\Scanned_Docs --window-chars 400`
+  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder ".\Data Packages" --window-chars 400`
 
-Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Create `user_inputs\EIDP_Import_Docs` and `user_inputs\Scanned_Docs` on first run. Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
+Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Point the scanner at your existing PDF repository (e.g., `Data Packages`). Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
 Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 - A persistent run registry is maintained at `Product_Data_File\run_registry.xlsx` (CSV fallback if Excel not available).
 - To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `scripts/compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
@@ -60,7 +58,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 ## GUI Launcher
 
 - Start with a simple GUI: `py gui.py`
-  - Choose your Terms file, PDFs folder, and Scanned folder.
+  - Choose your Terms file and PDFs folder.
   - The GUI streams scanner logs and provides shortcuts to open the last run folder, run registry, and compile/open the master workbook.
   - The GUI runs in quiet mode by default to reduce log noise.
 
@@ -108,9 +106,6 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
   - Optional OCR paths:
     - OCRmyPDF (searchable PDF pre-processing) as primary or fallback (recommended for scanned tables)
     - Direct OCR via Tesseract (PyMuPDF/pdf2image renderers)
-- Auto-move scanned PDFs
-  - After scanning, PDFs are moved from `--pdf-folder` to `--scanned-folder`.
-
 ---
 
 ## Terms File Schema
@@ -157,14 +152,13 @@ Behavior
 --output-xlsx     Excel workbook output (ignored: artifacts always go to run_data)
 --output-json     JSON details output (ignored: artifacts always go to run_data)
 --output-csv      Flat CSV summary (ignored: artifacts always go to run_data)
---scanned-folder  Destination for processed PDFs (default: "Scanned Docs")
 --window-chars    Proximity window in characters around term (default: 160)
 --case-sensitive  Case-sensitive term matching (off by default)
 ```
 
 Examples:
 ```
-py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder .\user_inputs\EIDP_Import_Docs --window-chars 240 --case-sensitive
+py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder ".\Data Packages" --window-chars 240 --case-sensitive
 ```
 
 Line mode example
@@ -180,7 +174,7 @@ Line mode example
 - No outputs or empty results
   - Install the Python packages listed in Install (Windows).
   - If PDFs are scanned images, install Tesseract and Poppler; verify with `tesseract --version` and `pdftoppm -v`.
-  - Ensure PDFs exist in `user_inputs\EIDP_Import_Docs` and are not already moved to `Scanned_Docs`.
+- Ensure PDFs exist in the folder you pass via `--pdf-folder` (default `Data Packages`).
   - Verify `terms.csv` headers are exactly `Term, Pages` and pages are 1-indexed (e.g., `5-10; 22`).
 - Excel not generated
   - Install `pandas` plus `xlsxwriter` or `openpyxl`; otherwise CSVs are written.
@@ -225,7 +219,7 @@ OCRmyPDF integration (env vars)
 
 ## Changelog
 
-- v2: Serial-number columns, Excel results/metadata sheets, auto-move scanned PDFs, per-run outputs under run_data only, plus `VENV_DIR` support and automatic venv bootstrap in `run.bat`.
+- v2: Serial-number columns, Excel results/metadata sheets, per-run outputs under run_data only, plus `VENV_DIR` support and automatic venv bootstrap in `run.bat`.
 - v1: CSV/JSON summary per PDF-term, multi-extractor pipeline with optional OCR.
 
 ---

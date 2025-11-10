@@ -39,16 +39,13 @@ echo Open and edit: "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" and re-run.
 exit /b 1
 
 :has_terms
-set "IN_DIR=%ROOT%user_inputs\EIDP_Import_Docs"
-set "SCANNED=%ROOT%user_inputs\Scanned_Docs"
+set "IN_DIR=%ROOT%Data Packages"
 set "OUT_DIR=%ROOT%Product_Data_File"
 set "OUT_XLSX=%OUT_DIR%\scan_results.xlsx"
 set "OUT_JSON=%OUT_DIR%\scan_results.json"
 set "OUT_CSV=%OUT_DIR%\scan_results_flat.csv"
 
 rem Ensure directories exist
-if not exist "%IN_DIR%"       mkdir "%IN_DIR%"
-if not exist "%SCANNED%"      mkdir "%SCANNED%"
 if not exist "%OUT_DIR%"      mkdir "%OUT_DIR%"
 if not exist "%OUT_DIR%\run_data" mkdir "%OUT_DIR%\run_data"
 
@@ -116,7 +113,6 @@ if /I "%QUIET%"=="1" set "QUIET_FLAG=--quiet"
   --output-xlsx "%OUT_XLSX%" ^
   --output-json "%OUT_JSON%" ^
   --output-csv "%OUT_CSV%" ^
-  --scanned-folder "%SCANNED%" ^
   %QUIET_FLAG% ^
   %*
 

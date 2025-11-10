@@ -13,10 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PROPOSED_PLOTS_JSON = ROOT / "user_inputs" / "proposed_plots.json"
-DEFAULT_PDF_DIR = ROOT / "user_inputs" / "EIDP_Import_Docs"
 # Default repository root where PDFs may live (user-organized, nested or flat)
 DEFAULT_REPO_ROOT = ROOT / "Data Packages"
-DEFAULT_SCANNED_DIR = ROOT / "user_inputs" / "Scanned_Docs"
+DEFAULT_PDF_DIR = DEFAULT_REPO_ROOT
 SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
 APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
 RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
@@ -170,19 +169,18 @@ def run_install_full() -> subprocess.Popen:
     return spawn(["cmd.exe", "/c", str(ROOT / "install.bat")])
 
 
-def run_scanner(terms: Path, pdf_dir: Path, scanned_dir: Path) -> subprocess.Popen:
+def run_scanner(terms: Path, pdf_dir: Path) -> subprocess.Popen:
     if sys.platform.startswith("win"):
         cmd = [
             "cmd.exe", "/c", str(ROOT / "run.bat"),
             "--input", str(terms),
             "--pdf-folder", str(pdf_dir),
-            "--scanned-folder", str(scanned_dir),
             "--quiet",
         ]
         return spawn(cmd)
     else:
         py = resolve_project_python()
-        cmd = [py, str(APP_ENTRY), "--input", str(terms), "--pdf-folder", str(pdf_dir), "--scanned-folder", str(scanned_dir), "--quiet"]
+        cmd = [py, str(APP_ENTRY), "--input", str(terms), "--pdf-folder", str(pdf_dir), "--quiet"]
         return spawn(cmd)
 
 
@@ -606,8 +604,8 @@ def get_last_sync() -> tuple[dict, list[dict]]:
 def run_selected_pdfs(paths: list[Path], terms: Optional[Path] = None) -> subprocess.Popen:
     """Stage selected PDFs into a temp folder and run the scanner only on them.
 
-    Original repository files remain untouched. Staged copies will be moved to
-    the Scanned_Docs folder by the scanner after processing.
+    Original repository files remain untouched. Staged copies live only for the
+    duration of the run and are deleted the next time this action executes.
     """
     terms = Path(terms) if terms else DEFAULT_TERMS_XLSX
     stage = ROOT / "user_inputs" / "Staging_Selected"
@@ -624,7 +622,7 @@ def run_selected_pdfs(paths: list[Path], terms: Optional[Path] = None) -> subpro
                 pass
     except Exception:
         pass
-    return run_scanner(terms, stage, DEFAULT_SCANNED_DIR)
+    return run_scanner(terms, stage)
 
 
 def rebuild_registry_from_run_data() -> dict[str, dict[str, str]]:
@@ -741,7 +739,6 @@ def open_plots_summary() -> None:
 def ensure_scaffold() -> None:
     (ROOT / "user_inputs").mkdir(parents=True, exist_ok=True)
     DEFAULT_PDF_DIR.mkdir(parents=True, exist_ok=True)
-    DEFAULT_SCANNED_DIR.mkdir(parents=True, exist_ok=True)
     (ROOT / "Product_Data_File" / "run_data").mkdir(parents=True, exist_ok=True)
     if not SCANNER_ENV.exists():
         save_scanner_env({"QUIET": "1"})
