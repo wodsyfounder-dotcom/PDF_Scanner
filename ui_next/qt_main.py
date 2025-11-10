@@ -314,9 +314,54 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self._hidden_rows: list[dict[str, str]] = []
         self._dirty = False
         self._loading = False
+        self._pending_save_notice = False
 
         self.setWindowTitle("Smart-Snap Terms Editor")
         self.resize(1280, 680)
+        self.setObjectName("termsEditorDialog")
+        self.setStyleSheet("""
+            #termsEditorDialog {
+                background-color: #0f172a;
+                color: #e2e8f0;
+            }
+            #termsEditorDialog QLabel {
+                color: #e2e8f0;
+            }
+            #termsEditorDialog QLabel#termsPathLabel {
+                color: #94a3b8;
+            }
+            #termsEditorDialog QTableWidget {
+                background-color: #0b1220;
+                border: 1px solid #1f2a44;
+                gridline-color: #1f2a44;
+                selection-background-color: #1d4ed8;
+                selection-color: #f8fafc;
+            }
+            #termsEditorDialog QHeaderView::section {
+                background-color: #162238;
+                color: #cbd5f5;
+                padding: 6px;
+                border: none;
+            }
+            #termsEditorDialog QPushButton {
+                background-color: #1f2937;
+                color: #e2e8f0;
+                border: 1px solid #2d3b52;
+                border-radius: 6px;
+                padding: 8px 14px;
+            }
+            #termsEditorDialog QPushButton:hover {
+                background-color: #2a3852;
+            }
+            #termsEditorDialog QPushButton[variant="primary"] {
+                background-color: #2563eb;
+                border-color: #2563eb;
+                color: #ffffff;
+            }
+            #termsEditorDialog QPushButton[variant="primary"]:hover {
+                background-color: #1d4ed8;
+            }
+        """)
 
         self._combo_defs = {
             "Mode": {
@@ -344,10 +389,28 @@ class TermsEditorDialog(QtWidgets.QDialog):
         layout.addWidget(self.group_header)
 
         self.table = QtWidgets.QTableWidget()
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: #0b1220;
+                border: 1px solid #1f2a44;
+                gridline-color: #1f2a44;
+            }
+            QTableWidget::item {
+                padding: 6px;
+            }
+            QTableWidget QLineEdit {
+                background-color: #111b2f;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                padding: 4px;
+                color: #f8fafc;
+                selection-background-color: #1d4ed8;
+            }
+        """)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
         header.sectionResized.connect(self._sync_group_header_section)
@@ -357,12 +420,18 @@ class TermsEditorDialog(QtWidgets.QDialog):
         row_btns = QtWidgets.QHBoxLayout()
         self.btn_add_row = QtWidgets.QPushButton("Add Row")
         self.btn_duplicate_row = QtWidgets.QPushButton("Duplicate Row")
+        self.btn_move_up = QtWidgets.QPushButton("Move Up")
+        self.btn_move_down = QtWidgets.QPushButton("Move Down")
         self.btn_delete_row = QtWidgets.QPushButton("Delete Selected")
         self.btn_add_row.clicked.connect(self._add_blank_row)
         self.btn_duplicate_row.clicked.connect(self._duplicate_row)
+        self.btn_move_up.clicked.connect(lambda: self._move_rows(-1))
+        self.btn_move_down.clicked.connect(lambda: self._move_rows(1))
         self.btn_delete_row.clicked.connect(self._delete_rows)
         row_btns.addWidget(self.btn_add_row)
         row_btns.addWidget(self.btn_duplicate_row)
+        row_btns.addWidget(self.btn_move_up)
+        row_btns.addWidget(self.btn_move_down)
         row_btns.addWidget(self.btn_delete_row)
         row_btns.addStretch(1)
         layout.addLayout(row_btns)
@@ -370,7 +439,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         bottom = QtWidgets.QHBoxLayout()
         self._status_label = QtWidgets.QLabel("Loading...")
         self._status_label.setObjectName("termsStatusLabel")
-        self._status_label.setStyleSheet("color: #1b5e20;")
+        self._status_label.setStyleSheet("color: #38bdf8; font-weight: 600;")
         bottom.addWidget(self._status_label)
         bottom.addStretch(1)
         self.btn_save = QtWidgets.QPushButton("Save")
@@ -526,6 +595,24 @@ class TermsEditorDialog(QtWidgets.QDialog):
         config = self._combo_defs[header]
         combo = QtWidgets.QComboBox()
         combo.setEditable(False)
+        combo.setStyleSheet("""
+            QComboBox {
+                background-color: #111b2f;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                padding: 4px;
+                color: #f8fafc;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #0b1220;
+                color: #f8fafc;
+                selection-background-color: #1d4ed8;
+                selection-color: #f8fafc;
+            }
+        """)
         seen_values = set()
         for label, val in config["options"]:
             combo.addItem(label, val)
@@ -589,6 +676,38 @@ class TermsEditorDialog(QtWidgets.QDialog):
             self._insert_row({h: "" for h in self._all_headers})
         self._mark_dirty()
 
+    def _move_rows(self, direction: int) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        max_row = self.table.rowCount() - 1
+        if max_row <= 0:
+            return
+        if direction < 0 and rows[0] == 0:
+            return
+        if direction > 0 and rows[-1] >= max_row:
+            return
+        payloads = [self._combine_row_payload(i) for i in range(self.table.rowCount())]
+        if direction < 0:
+            for row in rows:
+                payloads[row - 1], payloads[row] = payloads[row], payloads[row - 1]
+        else:
+            for row in reversed(rows):
+                payloads[row + 1], payloads[row] = payloads[row], payloads[row + 1]
+        self._reset_table_from_payloads(payloads)
+        sel = self.table.selectionModel()
+        sel.clearSelection()
+        new_rows = [row + direction for row in rows]
+        for row in new_rows:
+            index = self.table.model().index(row, 0)
+            sel.select(
+                index,
+                QtCore.QItemSelectionModel.SelectionFlag.Select | QtCore.QItemSelectionModel.SelectionFlag.Rows,
+            )
+        if new_rows:
+            self.table.scrollTo(self.table.model().index(new_rows[0], 0))
+        self._mark_dirty()
+
     def _insert_row(self, payload: dict[str, str]) -> None:
         self._loading = True
         try:
@@ -602,6 +721,22 @@ class TermsEditorDialog(QtWidgets.QDialog):
             self._populate_row(idx, payload)
         finally:
             self._loading = False
+
+    def _reset_table_from_payloads(self, payloads: list[dict[str, str]]) -> None:
+        self._loading = True
+        try:
+            self.table.setRowCount(0)
+            self._hidden_rows = []
+            if not payloads:
+                payloads = [{h: "" for h in self._all_headers}]
+            for payload in payloads:
+                idx = self.table.rowCount()
+                self.table.insertRow(idx)
+                self._hidden_rows.append({h: payload.get(h, "") for h in self._hidden_headers})
+                self._populate_row(idx, payload)
+        finally:
+            self._loading = False
+        self._rebuild_group_header()
 
     def _row_data_from_table(self, row_idx: int) -> dict[str, str]:
         data: dict[str, str] = {}
@@ -648,6 +783,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
             return False
         self._dirty = False
         self._status_label.setText("All changes saved")
+        self._pending_save_notice = True
         return True
 
     def reject(self) -> None:  # type: ignore[override]
@@ -660,6 +796,13 @@ class TermsEditorDialog(QtWidgets.QDialog):
             )
             if resp != QtWidgets.QMessageBox.StandardButton.Yes:
                 return
+        if self._pending_save_notice:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Smart-Snap Terms",
+                "Changes saved successfully.",
+            )
+            self._pending_save_notice = False
         super().reject()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
@@ -975,65 +1118,224 @@ class MainWindow(QtWidgets.QMainWindow):
 
         be.ensure_scaffold()
         self._refresh_plot_series_after_worker = False
+        self._auto_update_plot_terms_on_success = False
+        self._plot_terms_pending = False
+        self._plot_terms_pending_reason = ""
 
-        # Global styling to reflect the provided mock
+        # Global styling - polished modern design with rounded corners
         self.setStyleSheet(
             """
-            QMainWindow { background: #f7f9fc; }
-            QLabel { color: #1f2937; }
-            QLabel.subtle { color: #5b6b7a; font-size: 12px; }
-            QGroupBox { font-weight: 700; font-size: 15px; border: 1px solid #e1e6ef; border-radius: 8px; margin-top: 26px; background: #ffffff; }
-            /* Make group titles pronounced, black, centered, and add padding below */
-            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; color: #000000; background: #ffffff; padding: 2px 8px 6px 8px; }
-            QPushButton { padding: 10px 16px; border-radius: 6px; background: #ffffff; color: #17324d; border: 1px solid #d1dae6; }
-            QPushButton:hover { background: #f1f4f9; }
-            QPushButton[variant="primary"] { background: #113a70; color: #ffffff; border: 1px solid #0f335f; }
-            QPushButton[variant="primary"]:disabled { background: #b9c6d9; color: #f7f9fc; }
-            QPushButton[variant="ghost"] { background: #ffffff; color: #17324d; border: 1px solid #d1dae6; }
+            QMainWindow {
+                background: #f0f4f8;
+            }
+            QWidget {
+                background: transparent;
+            }
+            QLabel {
+                color: #1f2937;
+            }
+            QLabel.subtle {
+                color: #6b7280;
+                font-size: 12px;
+            }
 
-            QLabel#statusBadge { background: #e8f5e9; color: #1b5e20; border-radius: 10px; padding: 4px 10px; }
-            QLabel#healthBadge { background: #e8f5e9; color: #1b5e20; border-radius: 10px; padding: 4px 10px; }
-            QLabel#healthBadge[status="bad"] { background: #fdecea; color: #b00020; }
+            QLineEdit {
+                background: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                padding: 10px 14px;
+                color: #374151;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #2563eb;
+                border-width: 2px;
+            }
 
-            QLineEdit, QComboBox { background: #ffffff; border: 1px solid #d1dae6; border-radius: 6px; padding: 8px; color: #17324d; }
-            /* Ensure popup list text is visible */
-            QComboBox QAbstractItemView { color: #17324d; background: #ffffff; selection-background-color: #e7edf6; }
-            QComboBox::drop-down { width: 28px; }
-
-            QSlider::groove:horizontal { height: 8px; background: #e7edf6; border-radius: 4px; }
-            QSlider::handle:horizontal { width: 18px; height: 18px; margin: -6px 0; border-radius: 9px; background: #113a70; }
-
-            QCheckBox::indicator { width: 44px; height: 24px; }
-            QCheckBox::indicator:unchecked { border-radius: 12px; background: #dfe7f2; }
-            QCheckBox::indicator:unchecked:hover { background: #cfd9e9; }
-            QCheckBox::indicator:checked { border-radius: 12px; background: #113a70; }
-            QCheckBox::indicator:checked:hover { background: #0f335f; }
             /* Improve QMessageBox legibility */
-            QMessageBox { background-color: #113a70; }
-            QMessageBox QLabel { color: #ffffff; }
+            QMessageBox {
+                background-color: #ffffff;
+                border-radius: 12px;
+            }
+            QMessageBox QLabel {
+                color: #1f2937;
+            }
+            QMessageBox QPushButton {
+                padding: 8px 20px;
+                border-radius: 8px;
+                background: #2563eb;
+                color: #ffffff;
+                border: none;
+                font-weight: 600;
+            }
+            QMessageBox QPushButton:hover {
+                background: #1d4ed8;
+            }
+
+            /* Plain text edit for debug console with rounded corners */
+            QPlainTextEdit {
+                background: #1f2937;
+                color: #e5e7eb;
+                border: 1px solid #374151;
+                border-radius: 10px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 11px;
+                padding: 12px;
+            }
+
+            /* Scrollbars */
+            QScrollBar:vertical {
+                border: none;
+                background: #f3f4f6;
+                width: 12px;
+                border-radius: 6px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #d1d5db;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9ca3af;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QScrollBar:horizontal {
+                border: none;
+                background: #f3f4f6;
+                height: 12px;
+                border-radius: 6px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #d1d5db;
+                border-radius: 6px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #9ca3af;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
             """
         )
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
 
-        # Header
+        # Header with gradient background - logo and tabs inline with modern design
         header = QtWidgets.QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #ffffff, stop:0.5 #f8fafc, stop:1 #ffffff);
+                border: none;
+                border-bottom: 3px solid qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2563eb, stop:0.5 #3b82f6, stop:1 #60a5fa);
+                margin: 0px;
+                padding: 0px;
+            }
+        """)
         hbox = QtWidgets.QHBoxLayout(header)
+        hbox.setContentsMargins(24, 20, 24, 16)
+        hbox.setSpacing(20)
+
+        # Logo with shadow effect (larger size for better visibility)
+        logo_container = QtWidgets.QFrame()
+        logo_container.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2563eb, stop:1 #1e40af);
+                border-radius: 14px;
+                border: 2px solid #1d4ed8;
+            }
+        """)
+        logo_container.setFixedSize(64, 64)
+        logo_layout = QtWidgets.QVBoxLayout(logo_container)
+        logo_layout.setContentsMargins(0, 0, 0, 0)
+
         logo = QtWidgets.QLabel()
-        logo_pix = self._build_logo_pixmap()
+        logo_pix = self._build_logo_pixmap(size=60)
         logo.setPixmap(logo_pix)
-        logo.setFixedSize(logo_pix.size())
-        hbox.addWidget(logo)
+        logo.setFixedSize(60, 60)
+        logo.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        logo_layout.addWidget(logo)
 
+        hbox.addWidget(logo_container)
+
+        # Title section with improved typography
         title = QtWidgets.QLabel("EIDAT")
-        font = title.font(); font.setPointSize(20); font.setBold(True); title.setFont(font)
-        subtitle = QtWidgets.QLabel("End Item Data Analysis Tool"); subtitle.setStyleSheet("color:#5b6b7a; font-size: 12px;")
-        tbox = QtWidgets.QVBoxLayout(); tbox.addWidget(title); tbox.addWidget(subtitle)
-        hbox.addLayout(tbox); hbox.addStretch(1)
-        self.lbl_ready = QtWidgets.QLabel("System Ready"); self.lbl_ready.setObjectName("statusBadge"); hbox.addWidget(self.lbl_ready)
+        font = title.font(); font.setPointSize(22); font.setBold(True); font.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 0.5); title.setFont(font)
+        title.setStyleSheet("color: #0f172a; padding: 0px;")
+        subtitle = QtWidgets.QLabel("End Item Data Analysis Tool");
+        subtitle.setStyleSheet("color:#64748b; font-size: 12px; font-weight: 500; letter-spacing: 0.3px;")
+        tbox = QtWidgets.QVBoxLayout();
+        tbox.setSpacing(4)
+        tbox.addWidget(title); tbox.addWidget(subtitle)
+        hbox.addLayout(tbox)
 
-        # Tabs and log
+        hbox.addStretch(1)
+
+        # Create clean, minimal tab buttons - larger and right-aligned
+        self.tab_buttons = QtWidgets.QWidget()
+        tab_btn_layout = QtWidgets.QHBoxLayout(self.tab_buttons)
+        tab_btn_layout.setContentsMargins(0, 0, 0, 0)
+        tab_btn_layout.setSpacing(0)
+
+        self.btn_tab_setup = QtWidgets.QPushButton("⚙  Setup")
+        self.btn_tab_process = QtWidgets.QPushButton("📄  EIDP Processing")
+        self.btn_tab_plot = QtWidgets.QPushButton("📊  Analysis")
+
+        for btn in [self.btn_tab_setup, self.btn_tab_process, self.btn_tab_plot]:
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    padding: 14px 48px;
+                    margin: 0;
+                    font-weight: 500;
+                    font-size: 15px;
+                    color: #6b7280;
+                    background: transparent;
+                    border: none;
+                    border-bottom: 3px solid transparent;
+                }
+                QPushButton:checked {
+                    color: #2563eb;
+                    font-weight: 600;
+                    background: transparent;
+                    border-bottom: 3px solid #2563eb;
+                }
+                QPushButton:hover:!checked {
+                    color: #374151;
+                    background: rgba(59, 130, 246, 0.05);
+                    border-bottom: 3px solid #cbd5e1;
+                }
+            """)
+            tab_btn_layout.addWidget(btn)
+
+        self.btn_tab_setup.setChecked(True)
+        hbox.addWidget(self.tab_buttons)
+
+        # Store status label but don't add it to layout (hidden)
+        self.lbl_ready = QtWidgets.QLabel("● System Ready");
+        self.lbl_ready.setObjectName("statusBadge");
+        self.lbl_ready.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #d1fae5, stop:1 #a7f3d0);
+            color: #065f46;
+            border-radius: 12px;
+            padding: 6px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 2px solid #10b981;
+        """)
+        self.lbl_ready.setVisible(False)
+
+        # Create tabs widget (hidden, only used for content management)
         self.tabs = QtWidgets.QTabWidget()
         self.tab_setup = QtWidgets.QWidget()
         self.tab_process = QtWidgets.QWidget()
@@ -1042,43 +1344,61 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.tab_setup, "Setup")
         self.tabs.addTab(self.tab_process, "EIDP Processing")
         self.tabs.addTab(self.tab_plot, "Analysis")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
-        # Center tabs across the top by expanding them
-        try:
-            self.tabs.tabBar().setExpanding(True)
-        except Exception:
-            pass
 
-        self._tab_style_template = (
-            "QTabWidget::pane { border: none; margin-top: -2px; background: transparent; border-top: 3px solid rgba(16, 52, 90, 0.85); }\n"
-            "QTabWidget::tab-bar { alignment: center; }\n"
-            "QTabBar { qproperty-drawBase: 0; }\n"
-            "QTabBar::tab {\n"
-            "    padding: 18px 0;\n"
-            "    margin: 0;\n"
-            "    font-weight: 700;\n"
-            "    letter-spacing: 0.5px;\n"
-            "    color: #ffffff;\n"
-            "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #173761, stop:1 #2c68af);\n"
-            "    border: none;\n"
-            "    border-right: 1px solid rgba(255,255,255,0.25);\n"
-            "    border-bottom: 4px solid rgba(0, 0, 0, 0.12);\n"
-            "    min-width: {width}px;\n"
-            "}\n"
-            "QTabBar::tab:last { border-right: none; }\n"
-            "QTabBar::tab:selected { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0d2a48, stop:1 #1b4d85); border-bottom: 4px solid rgba(255,255,255,0.45); }\n"
-            "QTabBar::tab:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4c82, stop:1 #2d79bd); }\n"
+        # Connect tab buttons to switch content
+        self.btn_tab_setup.clicked.connect(lambda: self._switch_tab(0))
+        self.btn_tab_process.clicked.connect(lambda: self._switch_tab(1))
+        self.btn_tab_plot.clicked.connect(lambda: self._switch_tab(2))
+
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
+        # Tab pane styling - clean look with no border-radius to match flat tabs
+        self.tabs.setStyleSheet(
+            """
+            QTabWidget::pane {
+                border: 1px solid #e5e7eb;
+                border-radius: 0;
+                border-top: none;
+                margin: 0px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QTabBar::tab {
+                width: 0px;
+                height: 0px;
+                margin: 0px;
+                padding: 0px;
+                border: none;
+            }
+            """
         )
 
-        self._apply_tab_widths()
-        QtCore.QTimer.singleShot(0, self._apply_tab_widths)
-
         self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumBlockCount(5000)
-        # Toggle to show/hide the debug log panel on demand
-        self.btn_toggle_log = QtWidgets.QPushButton("Show Debug Panel")
+        # Toggle to show/hide the debug log panel on demand - styled with rounded corners
+        self.btn_toggle_log = QtWidgets.QPushButton("\u25B6  Debug Console")
         self.btn_toggle_log.setCheckable(True)
         self.btn_toggle_log.setChecked(False)
         self.btn_toggle_log.clicked.connect(self._toggle_log_panel)
+        self.btn_toggle_log.setStyleSheet("""
+            QPushButton {
+                background: #374151;
+                color: #e5e7eb;
+                border: 1px solid #4b5563;
+                border-radius: 8px;
+                padding: 10px 16px;
+                text-align: left;
+                font-size: 12px;
+                font-weight: 500;
+                margin: 8px;
+            }
+            QPushButton:hover {
+                background: #4b5563;
+            }
+            QPushButton:checked {
+                background: #1f2937;
+                border-color: #374151;
+            }
+        """)
         pol_log = self.btn_toggle_log.sizePolicy(); pol_log.setHorizontalStretch(1); pol_log.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_toggle_log.setSizePolicy(pol_log)
         self.status_bar = self.statusBar()
         self._progress_dialog = RunProgressDialog(self)
@@ -1119,40 +1439,129 @@ class MainWindow(QtWidgets.QMainWindow):
     # Tabs
     def _setup_tab_setup(self):
         grid = QtWidgets.QGridLayout(self.tab_setup)
+        grid.setContentsMargins(24, 24, 24, 24)
+        grid.setSpacing(16)
 
         # Program Health
         grp_env = QtWidgets.QGroupBox("Program Health")
-        grp_env.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
-        l_env = QtWidgets.QGridLayout(grp_env)
-        l_env.addWidget(QtWidgets.QLabel("Ensure all dependencies are installed and up to date"), 0, 0, 1, 3)
-        self.lbl_env_health = QtWidgets.QLabel("Healthy"); self.lbl_env_health.setObjectName("healthBadge")
-        l_env.addWidget(
-            self.lbl_env_health,
-            0,
-            3,
-            alignment=QtCore.Qt.AlignmentFlag.AlignRight,
-        )
-        # spacing and stretch to prevent label/button overlap
-        l_env.setHorizontalSpacing(10)
-        l_env.setVerticalSpacing(10)
-        for c in range(3):
-            l_env.setColumnStretch(c, 1)
-        l_env.setColumnStretch(3, 0)
-        self.btn_check = QtWidgets.QPushButton("Check Environment"); self.btn_check.setProperty("variant", "ghost")
-        self.btn_install = QtWidgets.QPushButton("Update Packages"); self.btn_install.setProperty("variant", "primary")
+        grp_env.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        l_env = QtWidgets.QVBoxLayout(grp_env)
+        l_env.setSpacing(12)
+
+        # Header row with description and badge
+        header_row = QtWidgets.QHBoxLayout()
+        desc_label = QtWidgets.QLabel("Ensure all dependencies are installed and up to date")
+        desc_label.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        header_row.addWidget(desc_label)
+        header_row.addStretch()
+
+        self.lbl_env_health = QtWidgets.QLabel("Healthy")
+        self.lbl_env_health.setObjectName("healthBadge")
+        self.lbl_env_health.setStyleSheet("background: #d1fae5; color: #065f46; border-radius: 12px; padding: 4px 12px; font-size: 12px; font-weight: 600;")
+        header_row.addWidget(self.lbl_env_health)
+        l_env.addLayout(header_row)
+
+        # Button row
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.setSpacing(12)
+        self.btn_check = QtWidgets.QPushButton("Check Environment")
+        self.btn_check.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_install = QtWidgets.QPushButton("Update Packages")
+        self.btn_install.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
         self.btn_check.clicked.connect(self._act_check_env)
         self.btn_install.clicked.connect(self._act_install)
+        button_row.addWidget(self.btn_check)
+        button_row.addWidget(self.btn_install)
+        button_row.addStretch()
+        l_env.addLayout(button_row)
+
+        # Environment path display
         self.lbl_env = QtWidgets.QLabel("Env: Unknown")
-        l_env.addWidget(self.btn_check, 1, 0); l_env.addWidget(self.btn_install, 1, 1)
-        l_env.addWidget(self.lbl_env, 2, 0, 1, 4)
+        self.lbl_env.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 400; padding: 8px; background: #f9fafb; border-radius: 4px;")
+        self.lbl_env.setWordWrap(True)
+        l_env.addWidget(self.lbl_env)
 
         # Extraction Settings
         grp_set = QtWidgets.QGroupBox("Extraction Settings")
-        grp_set.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
-        ls = QtWidgets.QGridLayout(grp_set)
-        hint = QtWidgets.QLabel("Configure how EIDAT processes and extracts data from documents"); hint.setProperty("class", "subtle")
-        ls.addWidget(hint, 0, 0, 1, 3)
-        ls.addWidget(QtWidgets.QLabel("OCR Mode"), 1, 0)
+        grp_set.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        ls = QtWidgets.QVBoxLayout(grp_set)
+        ls.setSpacing(16)
+
+        # Description
+        hint = QtWidgets.QLabel("Configure how EIDAT processes and extracts data from documents")
+        hint.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        ls.addWidget(hint)
+
+        # OCR Mode
+        ocr_container = QtWidgets.QWidget()
+        ocr_layout = QtWidgets.QVBoxLayout(ocr_container)
+        ocr_layout.setContentsMargins(0, 0, 0, 0)
+        ocr_layout.setSpacing(6)
+        ocr_label = QtWidgets.QLabel("OCR Mode")
+        ocr_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        ocr_layout.addWidget(ocr_label)
         # Friendly OCR mode labels mapped to env values
         self._ocr_value_to_display = {
             "fallback": "Read PDF and fallback to OCR if needed",
@@ -1160,41 +1569,161 @@ class MainWindow(QtWidgets.QMainWindow):
             "no_ocr": "Read PDF, no OCR (may fail)",
         }
         self._ocr_display_to_value = {v: k for k, v in self._ocr_value_to_display.items()}
-        self.cmb_ocr_mode = QtWidgets.QComboBox();
-        self.cmb_ocr_mode.addItems(list(self._ocr_value_to_display.values())); ls.addWidget(self.cmb_ocr_mode, 2, 0, 1, 3)
-        # Separator
-        sep1 = QtWidgets.QFrame(); sep1.setFrameShape(QtWidgets.QFrame.Shape.HLine); sep1.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        ls.addWidget(sep1, 3, 0, 1, 3)
-        ls.addWidget(QtWidgets.QLabel("XY Fuzz Tolerance"), 4, 0)
-        self.sld_xy_fuzz = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal); self.sld_xy_fuzz.setRange(0, 100)
-        self.lbl_xy_val = QtWidgets.QLabel("0.50")
-        self.lbl_xy_val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        self.lbl_xy_val.setMinimumWidth(40)
-        ls.addWidget(self.sld_xy_fuzz, 5, 0, 1, 2); ls.addWidget(self.lbl_xy_val, 5, 2)
-        lbl_xy_desc = QtWidgets.QLabel("Tolerance for matching table cell positions (higher = more lenient)"); lbl_xy_desc.setProperty("class", "subtle"); ls.addWidget(lbl_xy_desc, 6, 0, 1, 3)
-        # Separator
-        sep2 = QtWidgets.QFrame(); sep2.setFrameShape(QtWidgets.QFrame.Shape.HLine); sep2.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        ls.addWidget(sep2, 7, 0, 1, 3)
-        # OCR DPI control (slider 500-1000)
-        ls.addWidget(QtWidgets.QLabel("OCR DPI"), 8, 0)
+        self.cmb_ocr_mode = QtWidgets.QComboBox()
+        self.cmb_ocr_mode.setStyleSheet("""
+            QComboBox {
+                background: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #374151;
+                font-size: 13px;
+                min-height: 20px;
+            }
+            QComboBox:hover {
+                border-color: #9ca3af;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                color: #374151;
+                background: #ffffff;
+                selection-background-color: #dbeafe;
+                border: 1px solid #d1d5db;
+                padding: 4px;
+            }
+        """)
+        self.cmb_ocr_mode.addItems(list(self._ocr_value_to_display.values()))
+        self.cmb_ocr_mode.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Enable scrollbar for dropdown if needed
+        self.cmb_ocr_mode.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        ocr_layout.addWidget(self.cmb_ocr_mode)
+        ls.addWidget(ocr_container)
+
+        # XY Fuzz Tolerance with info icon
+        xy_container = QtWidgets.QWidget()
+        xy_layout = QtWidgets.QVBoxLayout(xy_container)
+        xy_layout.setContentsMargins(0, 0, 0, 0)
+        xy_layout.setSpacing(6)
+        xy_header = QtWidgets.QHBoxLayout()
+        xy_label = QtWidgets.QLabel("XY Fuzz Tolerance")
+        xy_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        xy_header.addWidget(xy_label)
+        xy_info = QtWidgets.QLabel("\u24D8")  # Info icon
+        xy_info.setStyleSheet("color: #9ca3af; font-size: 14px;")
+        xy_info.setToolTip("Tolerance for matching table cell positions (higher = more lenient)")
+        xy_header.addWidget(xy_info)
+        xy_header.addStretch()
+        self.lbl_xy_val = QtWidgets.QLabel("0.46")
+        self.lbl_xy_val.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
+        xy_header.addWidget(self.lbl_xy_val)
+        xy_layout.addLayout(xy_header)
+        self.sld_xy_fuzz = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.sld_xy_fuzz.setRange(0, 100)
+        self.sld_xy_fuzz.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #e5e7eb;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+                background: #2563eb;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #1d4ed8;
+            }
+        """)
+        xy_layout.addWidget(self.sld_xy_fuzz)
+        ls.addWidget(xy_container)
+
+        # OCR DPI
+        dpi_container = QtWidgets.QWidget()
+        dpi_layout = QtWidgets.QVBoxLayout(dpi_container)
+        dpi_layout.setContentsMargins(0, 0, 0, 0)
+        dpi_layout.setSpacing(6)
+        dpi_header = QtWidgets.QHBoxLayout()
+        dpi_label = QtWidgets.QLabel("OCR DPI")
+        dpi_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        dpi_header.addWidget(dpi_label)
+        dpi_info = QtWidgets.QLabel("\u24D8")
+        dpi_info.setStyleSheet("color: #9ca3af; font-size: 14px;")
+        dpi_info.setToolTip("Higher DPI may improve OCR accuracy at the cost of speed")
+        dpi_header.addWidget(dpi_info)
+        dpi_header.addStretch()
+        self.lbl_dpi_val = QtWidgets.QLabel("763")
+        self.lbl_dpi_val.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
+        dpi_header.addWidget(self.lbl_dpi_val)
+        dpi_layout.addLayout(dpi_header)
         self.sld_ocr_dpi = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.sld_ocr_dpi.setRange(500, 1000)
         self.sld_ocr_dpi.setSingleStep(25)
-        self.lbl_dpi_val = QtWidgets.QLabel("500")
-        self.lbl_dpi_val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        self.lbl_dpi_val.setMinimumWidth(48)
-        ls.addWidget(self.sld_ocr_dpi, 9, 0, 1, 2)
-        ls.addWidget(self.lbl_dpi_val, 9, 2)
-        lbl_dpi_desc = QtWidgets.QLabel("Higher DPI may improve OCR accuracy at the cost of speed")
-        lbl_dpi_desc.setProperty("class", "subtle"); ls.addWidget(lbl_dpi_desc, 10, 0, 1, 3)
-        # Separator
-        sep3 = QtWidgets.QFrame(); sep3.setFrameShape(QtWidgets.QFrame.Shape.HLine); sep3.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        ls.addWidget(sep3, 11, 0, 1, 3)
-        self.chk_logging = QtWidgets.QCheckBox("Show Debug Logs")
-        self.chk_logging.setToolTip("Writes detailed messages to help troubleshoot issues (slightly slower)")
-        ls.addWidget(self.chk_logging, 12, 0, 1, 3)
-        lbl_log_desc = QtWidgets.QLabel("Show detailed debug logs (slightly slower)"); lbl_log_desc.setProperty("class", "subtle"); ls.addWidget(lbl_log_desc, 13, 0, 1, 3)
-        ls.addWidget(QtWidgets.QLabel("OCR Language"), 14, 0)
+        self.sld_ocr_dpi.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #e5e7eb;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+                background: #2563eb;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #1d4ed8;
+            }
+        """)
+        dpi_layout.addWidget(self.sld_ocr_dpi)
+        ls.addWidget(dpi_container)
+
+        # Show detailed debug logs toggle
+        debug_container = QtWidgets.QWidget()
+        debug_layout = QtWidgets.QHBoxLayout(debug_container)
+        debug_layout.setContentsMargins(0, 0, 0, 0)
+        debug_layout.setSpacing(8)
+        debug_left = QtWidgets.QVBoxLayout()
+        debug_left.setSpacing(2)
+        debug_title = QtWidgets.QLabel("Show detailed debug logs")
+        debug_title.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        debug_desc = QtWidgets.QLabel("(slightly slower)")
+        debug_desc.setStyleSheet("color: #9ca3af; font-size: 12px;")
+        debug_left.addWidget(debug_title)
+        debug_left.addWidget(debug_desc)
+        debug_layout.addLayout(debug_left)
+        debug_layout.addStretch()
+        self.chk_logging = QtWidgets.QCheckBox()
+        self.chk_logging.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 40px;
+                height: 20px;
+            }
+            QCheckBox::indicator:unchecked {
+                border-radius: 10px;
+                background: #d1d5db;
+            }
+            QCheckBox::indicator:checked {
+                border-radius: 10px;
+                background: #2563eb;
+            }
+        """)
+        debug_layout.addWidget(self.chk_logging)
+        ls.addWidget(debug_container)
+
+        # OCR Language
+        lang_container = QtWidgets.QWidget()
+        lang_layout = QtWidgets.QVBoxLayout(lang_container)
+        lang_layout.setContentsMargins(0, 0, 0, 0)
+        lang_layout.setSpacing(6)
+        lang_label = QtWidgets.QLabel("OCR Language")
+        lang_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        lang_layout.addWidget(lang_label)
         # Language display mapping (user-friendly names)
         self._lang_display_to_code = {
             "English": "en",
@@ -1204,12 +1733,38 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         self._lang_code_to_display = {v: k for k, v in self._lang_display_to_code.items()}
         self.cmb_lang = QtWidgets.QComboBox()
+        self.cmb_lang.setStyleSheet("""
+            QComboBox {
+                background: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #374151;
+                font-size: 13px;
+                min-height: 20px;
+            }
+            QComboBox:hover {
+                border-color: #9ca3af;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                color: #374151;
+                background: #ffffff;
+                selection-background-color: #dbeafe;
+                border: 1px solid #d1d5db;
+                padding: 4px;
+            }
+        """)
         self.cmb_lang.addItems(list(self._lang_display_to_code.keys()))
-        ls.addWidget(self.cmb_lang, 15, 0, 1, 3)
-        # layout spacing & stretch to avoid overlap
-        ls.setHorizontalSpacing(10)
-        ls.setVerticalSpacing(8)
-        ls.setColumnStretch(0, 1); ls.setColumnStretch(1, 1); ls.setColumnStretch(2, 0)
+        self.cmb_lang.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Enable scrollbar for dropdown if needed
+        self.cmb_lang.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        lang_layout.addWidget(self.cmb_lang)
+        ls.addWidget(lang_container)
+
         # Persist on change
         self.cmb_ocr_mode.currentTextChanged.connect(self._persist_settings_from_panel)
         self.sld_xy_fuzz.valueChanged.connect(self._on_xy_slider)
@@ -1222,135 +1777,574 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.setRowStretch(2, 1)
 
     def _setup_tab_process(self):
-        grid = QtWidgets.QGridLayout(self.tab_process)
+        # Main container with two columns
+        main_layout = QtWidgets.QHBoxLayout(self.tab_process)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(16)
 
-        # Master button at top (above Define Inputs)
-        self.btn_open_master_tab = QtWidgets.QPushButton("Open Master Database")
-        # Black outline style for differentiation
-        self.btn_open_master_tab.setStyleSheet("QPushButton { border: 2px solid #000; color: #000; background: #ffffff; padding: 10px 16px; border-radius: 6px; } QPushButton:hover { background: #f5f5f5; }")
-        polm = self.btn_open_master_tab.sizePolicy(); polm.setHorizontalStretch(1); polm.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_open_master_tab.setSizePolicy(polm)
+        # Left column
+        left_column = QtWidgets.QVBoxLayout()
+        left_column.setSpacing(16)
+
+        # === Master Database Section ===
+        grp_master = QtWidgets.QGroupBox("Master Database")
+        grp_master.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        master_layout = QtWidgets.QVBoxLayout(grp_master)
+        master_layout.setSpacing(12)
+
+        master_desc = QtWidgets.QLabel("Access and manage the central EIDAT database")
+        master_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        master_layout.addWidget(master_desc)
+
+        self.btn_open_master_tab = QtWidgets.QPushButton("\U0001F5C4  Open Master Database")
+        self.btn_open_master_tab.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_open_master_tab.clicked.connect(lambda: self._safe_open(be.open_master_workbook))
-        grid.addWidget(self.btn_open_master_tab, 0, 0, 1, 2)
+        master_layout.addWidget(self.btn_open_master_tab)
 
-        # Define Inputs
-        grp_inputs = QtWidgets.QGroupBox("Define Inputs")
-        li = QtWidgets.QGridLayout(grp_inputs)
-        self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
-        btn_browse_terms = QtWidgets.QPushButton("Browse...")
-        btn_browse_terms.clicked.connect(lambda: self._browse_file(self.ed_terms, be.DEFAULT_TERMS_XLSX.parent, "Smart Snap Terms (*.xlsx);;All files (*.*)"))
-        self.btn_terms_edit = QtWidgets.QPushButton("Edit Smart-Snap Terms")
-        self.btn_terms_edit.setProperty("variant", "primary")
-        self.btn_terms_refresh = QtWidgets.QPushButton("Create/Refresh Input Spreadsheet")
+        left_column.addWidget(grp_master)
+
+        # === Processing Controls Section (formerly Define Inputs) ===
+        grp_inputs = QtWidgets.QGroupBox("Processing Controls")
+        grp_inputs.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        inputs_layout = QtWidgets.QVBoxLayout(grp_inputs)
+        inputs_layout.setSpacing(12)
+
+        inputs_desc = QtWidgets.QLabel("Configure extraction terms and execute processing operations")
+        inputs_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        inputs_layout.addWidget(inputs_desc)
+
+        self.btn_terms_edit = QtWidgets.QPushButton("\u270E  Edit Smart-Snap Terms")
+        self.btn_terms_edit.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
         self.btn_terms_edit.clicked.connect(self._open_terms_editor)
+        inputs_layout.addWidget(self.btn_terms_edit)
+
+        self.btn_terms_refresh = QtWidgets.QPushButton("\U0001F4C4  Create/Refresh Input Spreadsheet")
+        self.btn_terms_refresh.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_terms_refresh.clicked.connect(self._act_generate_terms)
+        inputs_layout.addWidget(self.btn_terms_refresh)
+
+        # Add separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        separator.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
+        inputs_layout.addWidget(separator)
+
+        # Smart Processing Controls (moved from bottom)
+        proc_label = QtWidgets.QLabel("Batch Processing")
+        proc_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600; margin-top: 4px;")
+        inputs_layout.addWidget(proc_label)
+
+        self.btn_start = QtWidgets.QPushButton("\u25B6  Extract and Update All")
+        self.btn_start.setStyleSheet("""
+            QPushButton {
+                padding: 12px 20px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
+        self.btn_start.clicked.connect(self._show_extraction_options)  # Updated to show options
+        inputs_layout.addWidget(self.btn_start)
+
+        proc_secondary = QtWidgets.QHBoxLayout()
+        proc_secondary.setSpacing(8)
+
+        self.btn_stop = QtWidgets.QPushButton("\u23F9  Stop Scan")
+        self.btn_stop.setStyleSheet("""
+            QPushButton {
+                padding: 10px 16px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_stop.clicked.connect(self._act_stop_scan)
+
+        self.btn_open_last = QtWidgets.QPushButton("\U0001F4C2  Open Last Run Folder")
+        self.btn_open_last.setStyleSheet("""
+            QPushButton {
+                padding: 10px 16px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_open_last.clicked.connect(lambda: self._safe_open(be.open_last_run_folder))
+
+        proc_secondary.addWidget(self.btn_stop)
+        proc_secondary.addWidget(self.btn_open_last)
+        inputs_layout.addLayout(proc_secondary)
+
+        # Keep internal fields for logic
+        self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
+        self.ed_terms.setVisible(False)
         self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
-        li.addWidget(self.btn_terms_edit, 0, 0, 1, 2)
-        li.addWidget(self.btn_terms_refresh, 1, 0, 1, 2)
-        # Keep internal path field for logic, but do not show it
+        self.ed_pdfs.setVisible(False)
 
-        # Upload (repurposed as workspace sync)
-        grp_upload = QtWidgets.QGroupBox("Data Upload")
-        up = QtWidgets.QGridLayout(grp_upload)
-        self.btn_sync_workspace = QtWidgets.QPushButton("Sync Workspace Now")
-        self.btn_sync_workspace.setProperty("variant", "primary")
+        left_column.addWidget(grp_inputs)
+        left_column.addStretch(1)
+
+        # Right column
+        right_column = QtWidgets.QVBoxLayout()
+        right_column.setSpacing(16)
+
+        # === Data Upload Section ===
+        grp_upload = QtWidgets.QGroupBox("Data Controls and Status")
+        grp_upload.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        upload_layout = QtWidgets.QVBoxLayout(grp_upload)
+        upload_layout.setSpacing(12)
+
+        upload_desc = QtWidgets.QLabel("Sync workspace and update the EIDAT database")
+        upload_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        upload_layout.addWidget(upload_desc)
+
+        self.btn_sync_workspace = QtWidgets.QPushButton("\u2B73  Sync Workspace Now")
+        self.btn_sync_workspace.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
         self.btn_sync_workspace.clicked.connect(self._act_sync_workspace)
-        up.addWidget(self.btn_sync_workspace, 0, 0, 1, 2)
+        upload_layout.addWidget(self.btn_sync_workspace)
 
-        # Repository root picker
-        up.addWidget(QtWidgets.QLabel("Repository Root"), 1, 0)
+        # Repository Root
+        repo_label = QtWidgets.QLabel("Repository Root")
+        repo_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500; margin-top: 8px;")
+        upload_layout.addWidget(repo_label)
+
+        repo_row = QtWidgets.QHBoxLayout()
+        repo_row.setSpacing(8)
         self.ed_repo = QtWidgets.QLineEdit(str(getattr(be, 'get_repo_root', lambda: be.DEFAULT_REPO_ROOT)()))
-        btn_repo = QtWidgets.QPushButton("Browse…")
+        self.ed_repo.setStyleSheet("""
+            QLineEdit {
+                background: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #374151;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #2563eb;
+            }
+        """)
+        btn_repo = QtWidgets.QPushButton("Browse...")
+        btn_repo.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         btn_repo.clicked.connect(lambda: self._browse_folder(self.ed_repo, be.DEFAULT_PDF_DIR))
-        row_repo = QtWidgets.QHBoxLayout(); row_repo.addWidget(self.ed_repo, 1); row_repo.addWidget(btn_repo)
-        wrapper = QtWidgets.QWidget(); wrapper.setLayout(row_repo)
-        up.addWidget(wrapper, 1, 1)
+        repo_row.addWidget(self.ed_repo, 1)
+        repo_row.addWidget(btn_repo)
+        upload_layout.addLayout(repo_row)
 
+        # Sync banner/status
         self.lbl_sync_banner = QtWidgets.QLabel("No sync run yet.")
         self.lbl_sync_banner.setObjectName("syncBanner")
         self.lbl_sync_banner.setWordWrap(True)
         self.lbl_sync_banner.setStyleSheet(
-            "#syncBanner { background: #f0f3f7; color: #0f2a46; border: 1px solid #c8d3e5; border-radius: 6px; padding: 8px 12px; }"
+            "background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 10px 12px; font-size: 12px;"
         )
-        up.addWidget(self.lbl_sync_banner, 2, 0, 1, 2)
+        upload_layout.addWidget(self.lbl_sync_banner)
 
-        self.btn_view_outdated = QtWidgets.QPushButton("View Data Package List and Update EIDAT Database")
-        self.btn_view_outdated.setProperty("variant", "primary")
-        pol = self.btn_view_outdated.sizePolicy(); pol.setHorizontalStretch(1); pol.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_view_outdated.setSizePolicy(pol)
+        self.btn_view_outdated = QtWidgets.QPushButton("\U0001F4CB  View Data Package List and Update EIDAT Database")
+        self.btn_view_outdated.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+        """)
         self.btn_view_outdated.clicked.connect(self._show_outdated_popup)
-        up.addWidget(self.btn_view_outdated, 3, 0, 1, 2)
+        upload_layout.addWidget(self.btn_view_outdated)
 
-        self.btn_view_registry2 = QtWidgets.QPushButton("View Registry")
+        # Secondary buttons row
+        secondary_row = QtWidgets.QHBoxLayout()
+        secondary_row.setSpacing(8)
+
+        self.btn_view_registry2 = QtWidgets.QPushButton("\U0001F4D6  View Registry")
+        self.btn_view_registry2.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_view_registry2.clicked.connect(self._act_view_registry)
-        pol2 = self.btn_view_registry2.sizePolicy(); pol2.setHorizontalStretch(1); pol2.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_view_registry2.setSizePolicy(pol2)
-        up.addWidget(self.btn_view_registry2, 4, 0, 1, 2)
 
-        # Quick cleanup: remove run_data folders not referenced by registry
-        self.btn_clear_old_runs = QtWidgets.QPushButton("Clear Old Run Cache")
+        self.btn_clear_old_runs = QtWidgets.QPushButton("\U0001F5D1  Clear Old Run Cache")
+        self.btn_clear_old_runs.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_clear_old_runs.clicked.connect(self._act_clear_old_runs)
-        pol3 = self.btn_clear_old_runs.sizePolicy(); pol3.setHorizontalStretch(1); pol3.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding); self.btn_clear_old_runs.setSizePolicy(pol3)
-        up.addWidget(self.btn_clear_old_runs, 5, 0, 1, 2)
 
-        # Removed Open Repository Folder button per UX simplification
+        secondary_row.addWidget(self.btn_view_registry2)
+        secondary_row.addWidget(self.btn_clear_old_runs)
+        upload_layout.addLayout(secondary_row)
 
-        # Processing + Outputs
-        grp_proc = QtWidgets.QGroupBox("Smart Processing Controls")
-        lp = QtWidgets.QHBoxLayout(grp_proc)
-        self.btn_start = QtWidgets.QPushButton("Extract and Update All"); self.btn_start.setProperty("variant", "primary")
-        self.btn_stop = QtWidgets.QPushButton("Stop Scan")
-        self.btn_open_last = QtWidgets.QPushButton("Open Last Run Folder")
-        self.btn_start.clicked.connect(self._act_start_scan)
-        self.btn_stop.clicked.connect(self._act_stop_scan)
-        self.btn_open_last.clicked.connect(lambda: self._safe_open(be.open_last_run_folder))
-        lp.addWidget(self.btn_start); lp.addWidget(self.btn_stop); lp.addWidget(self.btn_open_last)
+        right_column.addWidget(grp_upload)
+        right_column.addStretch(1)
 
-        grid.addWidget(grp_inputs, 1, 0, 1, 2)
-        grid.addWidget(grp_upload, 2, 0, 1, 2)
-        grid.addWidget(grp_proc, 3, 0, 1, 2)
-        grid.setRowStretch(4, 1)
+        # Add columns to main layout
+        main_layout.addLayout(left_column, 1)
+        main_layout.addLayout(right_column, 1)
     def _setup_tab_plot(self):
-        grid = QtWidgets.QGridLayout(self.tab_plot)
-        grp_dash = QtWidgets.QGroupBox("Plotting Dashboard")
-        ld = QtWidgets.QGridLayout(grp_dash)
-        self.btn_plot_terms_create = QtWidgets.QPushButton("Generate Available Term List")
-        self.btn_plot_terms_create.clicked.connect(self._act_generate_plot_terms)
-        self.btn_open_plot_terms = QtWidgets.QPushButton("View Terms List")
+        main_layout = QtWidgets.QVBoxLayout(self.tab_plot)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(16)
+
+        # === Plotting Dashboard Section ===
+        grp_plot = QtWidgets.QGroupBox("Plotting Dashboard")
+        grp_plot.setStyleSheet("""
+            QGroupBox {
+                font-weight: 900;
+                font-size: 24px;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-top: 16px;
+                background: #ffffff;
+                padding: 16px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 4px 8px;
+                color: #111827;
+            }
+        """)
+        plot_layout = QtWidgets.QVBoxLayout(grp_plot)
+        plot_layout.setSpacing(16)
+
+        # Description
+        desc = QtWidgets.QLabel("Manage terms, configure plots, and generate reports")
+        desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        plot_layout.addWidget(desc)
+
+        # === Terms Management Subsection ===
+        terms_label = QtWidgets.QLabel("Terms Management")
+        terms_label.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600; margin-top: 8px;")
+        plot_layout.addWidget(terms_label)
+
+        self.btn_open_plot_terms = QtWidgets.QPushButton("\U0001F441  View Terms List")
+        self.btn_open_plot_terms.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_open_plot_terms.clicked.connect(lambda: self._safe_open(lambda: be.open_path(be.DEFAULT_PLOT_TERMS_XLSX)))
-        ld.addWidget(self.btn_plot_terms_create, 0, 0)
-        ld.addWidget(self.btn_open_plot_terms, 0, 1)
+        plot_layout.addWidget(self.btn_open_plot_terms)
 
-        grp_gen = QtWidgets.QGroupBox("Proposed Plots")
-        lg = QtWidgets.QVBoxLayout(grp_gen)
-        self.lbl_proposed_summary = QtWidgets.QLabel("No plots configured.")
-        self.lbl_proposed_summary.setWordWrap(True)
-        lg.addWidget(self.lbl_proposed_summary)
-        controls = QtWidgets.QHBoxLayout()
-        self.btn_manage_proposed = QtWidgets.QPushButton("Manage Proposed Plots…")
+        # Separator
+        separator1 = QtWidgets.QFrame()
+        separator1.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        separator1.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
+        plot_layout.addWidget(separator1)
+
+        # === Proposed Plots Subsection ===
+        plots_label = QtWidgets.QLabel("Plots")
+        plots_label.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
+        plot_layout.addWidget(plots_label)
+
+        plots_desc = QtWidgets.QLabel("Manage and configure plot series: Isp1 Pre Test Functional - Specific Impulse")
+        plots_desc.setStyleSheet("color: #6b7280; font-size: 12px; font-style: italic;")
+        plots_desc.setWordWrap(True)
+        self.lbl_proposed_summary = plots_desc  # Keep reference for updates
+        plot_layout.addWidget(plots_desc)
+
+        # Proposed plots buttons side by side
+        proposed_row = QtWidgets.QHBoxLayout()
+        proposed_row.setSpacing(12)
+
+        self.btn_manage_proposed = QtWidgets.QPushButton("\u2699  Manage Plots...")
+        self.btn_manage_proposed.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_manage_proposed.clicked.connect(self._open_proposed_plots_dialog)
-        self.btn_refresh_series = QtWidgets.QPushButton("Reload Series List")
+
+        self.btn_refresh_series = QtWidgets.QPushButton("\U0001F504  Reload Series List")
+        self.btn_refresh_series.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
         self.btn_refresh_series.clicked.connect(self._refresh_series_catalog)
-        controls.addWidget(self.btn_manage_proposed)
-        controls.addWidget(self.btn_refresh_series)
-        controls.addStretch(1)
-        lg.addLayout(controls)
 
-        grp_ops = QtWidgets.QGroupBox("Generate Plots")
-        lo = QtWidgets.QHBoxLayout(grp_ops)
-        self.btn_plots_generate = QtWidgets.QPushButton("Generate Plots")
-        self.btn_plots_generate.setProperty("variant", "primary")
+        proposed_row.addWidget(self.btn_manage_proposed)
+        proposed_row.addWidget(self.btn_refresh_series)
+        proposed_row.addStretch()
+        plot_layout.addLayout(proposed_row)
+
+        # Separator
+        separator2 = QtWidgets.QFrame()
+        separator2.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        separator2.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
+        plot_layout.addWidget(separator2)
+
+        # === Generate Plots Subsection ===
+        generate_label = QtWidgets.QLabel("Generate Plots")
+        generate_label.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
+        plot_layout.addWidget(generate_label)
+
+        # Generate plots buttons
+        generate_row = QtWidgets.QHBoxLayout()
+        generate_row.setSpacing(12)
+
+        self.btn_plots_generate = QtWidgets.QPushButton("\U0001F4CA  Generate Plots")
+        self.btn_plots_generate.setStyleSheet("""
+            QPushButton {
+                padding: 12px 24px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
         self.btn_plots_generate.clicked.connect(self._act_generate_plots)
-        self.btn_plot_summary = QtWidgets.QPushButton("Plot Summary Report")
-        self.btn_plot_summary.clicked.connect(self._act_export_plot_summary)
-        self.btn_plots_open_folder = QtWidgets.QPushButton("Open Plots Folder")
-        self.btn_plots_open_folder.clicked.connect(lambda: self._safe_open(be.open_plots_folder))
-        lo.addWidget(self.btn_plots_generate)
-        lo.addWidget(self.btn_plot_summary)
-        lo.addStretch(1)
-        lo.addWidget(self.btn_plots_open_folder)
 
-        grid.addWidget(grp_dash, 0, 0, 1, 2)
-        grid.addWidget(grp_gen, 1, 0, 1, 2)
-        grid.addWidget(grp_ops, 2, 0, 1, 2)
-        grid.setRowStretch(3, 1)
+        self.btn_plot_summary = QtWidgets.QPushButton("\U0001F4C4  Plot Summary Report")
+        self.btn_plot_summary.setStyleSheet("""
+            QPushButton {
+                padding: 12px 24px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_plot_summary.clicked.connect(self._act_export_plot_summary)
+
+        self.btn_plots_open_folder = QtWidgets.QPushButton("\U0001F4C2  Open Plots Folder")
+        self.btn_plots_open_folder.setStyleSheet("""
+            QPushButton {
+                padding: 12px 24px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_plots_open_folder.clicked.connect(lambda: self._safe_open(be.open_plots_folder))
+
+        generate_row.addWidget(self.btn_plots_generate)
+        generate_row.addWidget(self.btn_plot_summary)
+        generate_row.addWidget(self.btn_plots_open_folder)
+        generate_row.addStretch()
+        plot_layout.addLayout(generate_row)
+
+        main_layout.addWidget(grp_plot)
+        main_layout.addStretch(1)
 
         self._plot_series_options: list[dict] = []
         self._proposed_plots_cache: list[dict] = []
@@ -1364,9 +2358,17 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.setRowStretch(1, 1)
 
     # Actions & helpers
+    def _switch_tab(self, idx: int):
+        """Switch to a tab by index and update button states."""
+        # Update button checked states
+        self.btn_tab_setup.setChecked(idx == 0)
+        self.btn_tab_process.setChecked(idx == 1)
+        self.btn_tab_plot.setChecked(idx == 2)
+        # Switch the actual tab
+        self.tabs.setCurrentIndex(idx)
+
     def _on_tab_changed(self, idx: int):
         try:
-            self._apply_tab_widths()
             if self.tabs.widget(idx) is self.tab_plot:
                 self._refresh_series_catalog()
             if self.tabs.widget(idx) is self.tab_process or self.tabs.widget(idx) is self.tab_outputs:
@@ -1479,9 +2481,23 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             self._last_run_dir = None
 
-    def _start_worker(self, popen_factory, *, status_msg: str, show_run_progress: bool = False):
+    def _schedule_plot_terms_update(self, reason: str):
+        label = "Refreshing available plot terms"
+        if reason:
+            label += f" ({reason})"
+        if self._worker is not None and self._worker.isRunning():
+            self._plot_terms_pending = True
+            self._plot_terms_pending_reason = reason
+            return
+        self._plot_terms_pending = False
+        self._plot_terms_pending_reason = ""
+        self._refresh_plot_series_after_worker = True
+        self._start_worker(be.generate_plot_terms, status_msg=label)
+
+    def _start_worker(self, popen_factory, *, status_msg: str, show_run_progress: bool = False, refresh_plot_terms_after: bool = False):
         if self._worker is not None and self._worker.isRunning():
             return
+        self._auto_update_plot_terms_on_success = bool(refresh_plot_terms_after)
         self._append_log(f"[GUI] {status_msg}")
         self.status_bar.showMessage(status_msg)
         self._progress_total = 0
@@ -1505,11 +2521,13 @@ class MainWindow(QtWidgets.QMainWindow):
             visible = True
         self.log.setVisible(visible)
         try:
-            self.btn_toggle_log.setText("Hide Debug Panel" if visible else "Show Debug Panel")
+            # Update arrow direction based on visibility
+            self.btn_toggle_log.setText("\u25BC  Debug Console" if visible else "\u25B6  Debug Console")
         except Exception:
             pass
 
     def _on_worker_done(self, rc: int):
+        self._worker = None
         self.status_bar.showMessage("Ready.", 3000)
         self._append_log(f"[INFO] Process finished with code {rc}")
         was_canceled = self._progress_was_canceled
@@ -1529,7 +2547,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._refresh_series_catalog()
             except Exception:
                 pass
+        auto_refresh = self._auto_update_plot_terms_on_success and not was_canceled and rc == 0
+        self._auto_update_plot_terms_on_success = False
+        if auto_refresh:
+            self._schedule_plot_terms_update("latest scan")
         self._scan_refresh()
+        if self._plot_terms_pending and (self._worker is None or not self._worker.isRunning()):
+            reason = self._plot_terms_pending_reason or "refresh"
+            self._plot_terms_pending = False
+            self._plot_terms_pending_reason = ""
+            self._schedule_plot_terms_update(reason)
 
     def _act_install(self):
         self._start_worker(be.run_install_full, status_msg="Installing environment...")
@@ -1571,27 +2598,155 @@ class MainWindow(QtWidgets.QMainWindow):
         # No immediate auto-sync; the periodic timer will refresh the banner
 
     def _act_generate_terms(self):
-        # Warn if a terms spreadsheet exists and will be overwritten
         try:
             target = Path(self.ed_terms.text()).expanduser()
         except Exception:
             target = be.DEFAULT_TERMS_XLSX if hasattr(be, "DEFAULT_TERMS_XLSX") else Path("terms.xlsx")
         if target.exists():
             msg = (
-                f"A terms spreadsheet already exists and will be overwritten.\n\n"
-                f"{target}\n\n"
-                "If you wish to keep it, please back it up first.\n\n"
-                "Do you want to overwrite it?"
+                f"A Smart-Snap terms workbook already exists:\n\n{target}\n\n"
+                "Generating a new template will overwrite it.\n\nContinue?"
             )
             if (
                 QtWidgets.QMessageBox.question(
-                    self, "Overwrite terms.xlsx?", msg
+                    self, "Overwrite Smart-Snap workbook?", msg
                 )
                 != QtWidgets.QMessageBox.StandardButton.Yes
             ):
                 return
-        # Kick off generation (backend creates terms.schema.smartsnap.xlsx)
         self._start_worker(be.generate_terms, status_msg="Generating Smart-Snap terms spreadsheet...")
+
+    def _show_extraction_options(self):
+        """Show dialog with extraction options: out-of-date only, force all, or choose files."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Extraction Options")
+        dlg.resize(500, 280)
+        dlg.setStyleSheet("""
+            QDialog {
+                background: #ffffff;
+            }
+            QPushButton {
+                padding: 12px 20px;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+        """)
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        # Title and description
+        title = QtWidgets.QLabel("Choose Extraction Method")
+        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #111827;")
+        layout.addWidget(title)
+
+        desc = QtWidgets.QLabel("Select how you want to process your documents:")
+        desc.setStyleSheet("font-size: 13px; color: #6b7280; margin-bottom: 8px;")
+        layout.addWidget(desc)
+
+        # Option 1: Extract out-of-date only
+        btn_outdated = QtWidgets.QPushButton("\u26A1  Extract All Out-of-Date")
+        btn_outdated.setStyleSheet("""
+            QPushButton {
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+        """)
+        btn_outdated.setToolTip("Process only files marked as 'New' or 'Out-of-Date'")
+
+        # Option 2: Force extract all
+        btn_force = QtWidgets.QPushButton("\U0001F504  Force Extract All")
+        btn_force.setStyleSheet("""
+            QPushButton {
+                background: #dc2626;
+                color: #ffffff;
+                border: 1px solid #dc2626;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover {
+                background: #b91c1c;
+            }
+        """)
+        btn_force.setToolTip("Re-run extraction on the entire database (may take longer)")
+
+        # Option 3: Choose specific files
+        btn_choose = QtWidgets.QPushButton("\U0001F4CB  Choose Files to Extract")
+        btn_choose.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        btn_choose.setToolTip("Manually select which files to process")
+
+        layout.addWidget(btn_outdated)
+        layout.addWidget(btn_force)
+        layout.addWidget(btn_choose)
+
+        # Cancel button
+        layout.addStretch()
+        btn_cancel = QtWidgets.QPushButton("Cancel")
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #6b7280;
+                border: 1px solid #d1d5db;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+            }
+        """)
+        layout.addWidget(btn_cancel)
+
+        # Connect buttons
+        def extract_outdated():
+            dlg.accept()
+            # Get all out-of-date files (new or pdf_newer or terms_newer)
+            details = getattr(self, "_sync_details", None) or []
+            rows = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
+            paths = [Path(d.get("pdf")) for d in rows if d.get("pdf")]
+            if not paths:
+                QtWidgets.QMessageBox.information(self, "Nothing to extract", "No out-of-date files found. Run 'Sync Workspace Now' first.")
+                return
+            try:
+                terms = Path(self.ed_terms.text()).expanduser()
+            except Exception:
+                terms = be.DEFAULT_TERMS_XLSX
+            self._enrich_after_run = True
+            self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Extracting out-of-date files...", show_run_progress=True, refresh_plot_terms_after=True)
+
+        def force_extract_all():
+            dlg.accept()
+            # Force run on all PDFs
+            self._act_start_scan()
+
+        def choose_files():
+            dlg.accept()
+            # Show the file selection dialog
+            self._show_outdated_popup()
+
+        btn_outdated.clicked.connect(extract_outdated)
+        btn_force.clicked.connect(force_extract_all)
+        btn_choose.clicked.connect(choose_files)
+        btn_cancel.clicked.connect(dlg.reject)
+
+        dlg.exec()
 
     def _act_start_scan(self):
         terms = Path(self.ed_terms.text()).expanduser()
@@ -1604,7 +2759,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         # Only enrich registry after a scan completes
         self._enrich_after_run = True
-        self._start_worker(lambda: be.run_scanner(terms, pdfs), status_msg="Scanning PDFs...", show_run_progress=True)
+        self._start_worker(lambda: be.run_scanner(terms, pdfs), status_msg="Scanning PDFs...", show_run_progress=True, refresh_plot_terms_after=True)
 
     def _act_stop_scan(self):
         try:
@@ -1905,6 +3060,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     pass
             if not auto:
                 self._append_log("[GUI] Workspace sync complete")
+            self._schedule_plot_terms_update("workspace sync")
         except Exception as e:
             self.lbl_sync_banner.setText(f"Sync failed: {e}")
 
@@ -1920,63 +3076,258 @@ class MainWindow(QtWidgets.QMainWindow):
             details = getattr(self, "_sync_details", None) or []
             rows = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
             dlg = QtWidgets.QDialog(self)
-            dlg.setWindowTitle("Out-of-Date EIDPs")
-            dlg.resize(900, 520)
+            dlg.setWindowTitle("View Data Package List and Update EIDAT Database")
+            dlg.resize(1100, 600)
+            dlg.setStyleSheet("""
+                QDialog {
+                    background: #ffffff;
+                }
+            """)
+
             v = QtWidgets.QVBoxLayout(dlg)
+            v.setContentsMargins(20, 20, 20, 20)
+            v.setSpacing(16)
+
+            # Title and description
+            title = QtWidgets.QLabel("Select documents to process")
+            title.setStyleSheet("font-size: 16px; font-weight: 600; color: #111827;")
+            v.addWidget(title)
+
+            desc = QtWidgets.QLabel("Check the boxes to select which documents to extract and update")
+            desc.setStyleSheet("font-size: 13px; color: #6b7280;")
+            v.addWidget(desc)
+
+            # Toolbar with Select All/None buttons
             toolbar = QtWidgets.QHBoxLayout()
+            toolbar.setSpacing(8)
+
             btn_sel_all = QtWidgets.QPushButton("Select All")
+            btn_sel_all.setStyleSheet("""
+                QPushButton {
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    background: #ffffff;
+                    color: #374151;
+                    border: 1px solid #d1d5db;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background: #f9fafb;
+                    border-color: #9ca3af;
+                }
+            """)
+
             btn_sel_none = QtWidgets.QPushButton("Select None")
+            btn_sel_none.setStyleSheet("""
+                QPushButton {
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    background: #ffffff;
+                    color: #374151;
+                    border: 1px solid #d1d5db;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background: #f9fafb;
+                    border-color: #9ca3af;
+                }
+            """)
+
             toolbar.addWidget(btn_sel_all)
             toolbar.addWidget(btn_sel_none)
             toolbar.addStretch(1)
             v.addLayout(toolbar)
+
+            # Table with checkboxes
             cols = ["Select", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
             tbl = QtWidgets.QTableWidget(0, len(cols))
             tbl.setHorizontalHeaderLabels(cols)
             tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+            tbl.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
             tbl.setAlternatingRowColors(True)
+            tbl.verticalHeader().setVisible(False)
+
+            # Consistent styling matching Terms Editor
+            tbl.setStyleSheet("""
+                QTableWidget {
+                    background-color: #ffffff;
+                    alternate-background-color: #f9fafb;
+                    selection-background-color: #dbeafe;
+                    selection-color: #111827;
+                    gridline-color: #e5e7eb;
+                    border: 1px solid #d1d5db;
+                    border-radius: 6px;
+                }
+                QTableWidget::item {
+                    padding: 10px 8px;
+                    color: #374151;
+                }
+                QTableWidget::item:selected {
+                    background-color: #dbeafe;
+                    color: #111827;
+                }
+                QHeaderView::section {
+                    background-color: #f3f4f6;
+                    color: #111827;
+                    padding: 12px 8px;
+                    border: none;
+                    border-right: 1px solid #e5e7eb;
+                    border-bottom: 2px solid #d1d5db;
+                    font-weight: 600;
+                    font-size: 13px;
+                }
+                QCheckBox {
+                    spacing: 0px;
+                }
+                QCheckBox::indicator {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 4px;
+                    border: 2px solid #d1d5db;
+                    background: #ffffff;
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #2563eb;
+                }
+                QCheckBox::indicator:checked {
+                    background: #2563eb;
+                    border-color: #2563eb;
+                    image: url(none);
+                }
+                QCheckBox::indicator:checked:after {
+                    content: "✓";
+                    color: #ffffff;
+                }
+            """)
+
             v.addWidget(tbl, 1)
+
+            # Populate table with checkboxes
             for r, d in enumerate(rows):
                 tbl.insertRow(r)
-                it = QtWidgets.QTableWidgetItem()
-                it.setFlags(QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsEnabled)
-                it.setCheckState(QtCore.Qt.CheckState.Checked)
-                tbl.setItem(r, 0, it)
+
+                # Create checkbox widget for Select column
+                checkbox = QtWidgets.QCheckBox()
+                checkbox.setChecked(True)
+                checkbox.setStyleSheet("""
+                    QCheckBox {
+                        margin-left: 8px;
+                    }
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 3px;
+                        border: 2px solid #d1d5db;
+                        background: #ffffff;
+                    }
+                    QCheckBox::indicator:hover {
+                        border-color: #2563eb;
+                    }
+                    QCheckBox::indicator:checked {
+                        background: #2563eb;
+                        border-color: #2563eb;
+                    }
+                """)
+
+                # Center the checkbox
+                checkbox_widget = QtWidgets.QWidget()
+                checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
+                checkbox_layout.addWidget(checkbox)
+                checkbox_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                tbl.setCellWidget(r, 0, checkbox_widget)
+
+                # Add data to other columns
                 tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(d.get("serial_component", "")))
                 tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(d.get("reason", "")))
                 tbl.setItem(r, 3, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
                 tbl.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
                 tbl.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
                 tbl.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
+
             tbl.resizeColumnsToContents()
+            tbl.setColumnWidth(0, 80)  # Fixed width for checkbox column
 
-            def _set_all(state: QtCore.Qt.CheckState):
+            # Update Select All/None to work with checkbox widgets
+            def _set_all_checkboxes(checked: bool):
                 for r in range(tbl.rowCount()):
-                    it = tbl.item(r, 0)
-                    if it:
-                        it.setCheckState(state)
+                    widget = tbl.cellWidget(r, 0)
+                    if widget:
+                        checkbox = widget.findChild(QtWidgets.QCheckBox)
+                        if checkbox:
+                            checkbox.setChecked(checked)
 
-            btn_sel_all.clicked.connect(lambda: _set_all(QtCore.Qt.CheckState.Checked))
-            btn_sel_none.clicked.connect(lambda: _set_all(QtCore.Qt.CheckState.Unchecked))
+            btn_sel_all.clicked.connect(lambda: _set_all_checkboxes(True))
+            btn_sel_none.clicked.connect(lambda: _set_all_checkboxes(False))
 
+            # Bottom buttons with consistent styling
             btns = QtWidgets.QHBoxLayout()
+            btns.setSpacing(12)
+
             btn_run_all = QtWidgets.QPushButton("Run All Out-of-Date")
+            btn_run_all.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    background: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #2563eb;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background: #1d4ed8;
+                }
+            """)
+
             btn_run = QtWidgets.QPushButton("Run Selected")
+            btn_run.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    background: #2563eb;
+                    color: #ffffff;
+                    border: 1px solid #2563eb;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background: #1d4ed8;
+                }
+            """)
+
             btn_close = QtWidgets.QPushButton("Close")
+            btn_close.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    background: #ffffff;
+                    color: #6b7280;
+                    border: 1px solid #d1d5db;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background: #f9fafb;
+                }
+            """)
+
             btns.addStretch(1)
             btns.addWidget(btn_run_all)
             btns.addWidget(btn_run)
             btns.addWidget(btn_close)
             v.addLayout(btns)
 
+            # Update run functions to work with checkbox widgets
             def _run_selected():
                 paths: list[Path] = []
                 for r in range(tbl.rowCount()):
-                    it = tbl.item(r, 0)
-                    if it and it.checkState() == QtCore.Qt.CheckState.Checked:
-                        p = tbl.item(r, 3).text() if tbl.item(r, 3) else ""
-                        if p:
-                            paths.append(Path(p))
+                    widget = tbl.cellWidget(r, 0)
+                    if widget:
+                        checkbox = widget.findChild(QtWidgets.QCheckBox)
+                        if checkbox and checkbox.isChecked():
+                            p = tbl.item(r, 3).text() if tbl.item(r, 3) else ""
+                            if p:
+                                paths.append(Path(p))
                 if not paths:
                     QtWidgets.QMessageBox.information(dlg, "Nothing selected", "Choose at least one EIDP to run.")
                     return
@@ -1984,7 +3335,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...", show_run_progress=True)
+                self._enrich_after_run = True
+                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...", show_run_progress=True, refresh_plot_terms_after=True)
                 dlg.accept()
 
             def _run_all():
@@ -1996,7 +3348,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...", show_run_progress=True)
+                self._enrich_after_run = True
+                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...", show_run_progress=True, refresh_plot_terms_after=True)
                 dlg.accept()
 
             btn_run.clicked.connect(_run_selected)
@@ -2290,10 +3643,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        try:
-            self._apply_tab_widths()
-        except Exception:
-            pass
 
     def _build_logo_pixmap(self, size: int = 52) -> QtGui.QPixmap:
         """Load external app logo if present; otherwise draw the fallback glyph.
@@ -2322,18 +3671,43 @@ class MainWindow(QtWidgets.QMainWindow):
                         return scaled
             except Exception:
                 pass
-        # Fallback: draw the original glyph
+        # Fallback: draw a modern, professional logo
         pix = QtGui.QPixmap(size, size)
         pix.fill(QtCore.Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(pix)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        bg = QtGui.QColor("#1f5c9a")
-        painter.setBrush(QtGui.QBrush(bg))
+
+        # Create gradient background
+        gradient = QtGui.QLinearGradient(0, 0, 0, size)
+        gradient.setColorAt(0, QtGui.QColor("#3b82f6"))
+        gradient.setColorAt(1, QtGui.QColor("#1e40af"))
+        painter.setBrush(QtGui.QBrush(gradient))
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(0, 0, size, size, 8, 8)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
-        font = painter.font(); font.setBold(True); font.setPointSize(int(size * 0.42)); painter.setFont(font)
+        painter.drawRoundedRect(0, 0, size, size, size * 0.2, size * 0.2)
+
+        # Draw stylized "E" with modern design
+        painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff"), size * 0.06))
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(int(size * 0.48))
+        font.setFamily("Arial")
+        painter.setFont(font)
+
+        # Add subtle shadow effect to text
+        shadow_path = QtGui.QPainterPath()
+        shadow_path.addText(size * 0.17, size * 0.68, font, "E")
+        painter.fillPath(shadow_path, QtGui.QColor(0, 0, 0, 40))
+
+        # Draw main text
+        painter.setPen(QtGui.QColor("#ffffff"))
         painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "E")
+
+        # Add accent line/dot decoration
+        accent_color = QtGui.QColor("#60a5fa")
+        painter.setBrush(QtGui.QBrush(accent_color))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawEllipse(int(size * 0.75), int(size * 0.15), int(size * 0.12), int(size * 0.12))
+
         painter.end()
         try:
             self.setWindowIcon(QtGui.QIcon(pix))

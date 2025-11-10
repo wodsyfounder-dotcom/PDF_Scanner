@@ -57,7 +57,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 
 ## GUI Launcher
 
-- Start with a simple GUI: `py gui.py`
+- Start with the GUI via `run_gui.bat` (uses the project `.venv`) or `py ui_next\qt_main.py`.
   - Choose your Terms file and PDFs folder.
   - The GUI streams scanner logs and provides shortcuts to open the last run folder, run registry, and compile/open the master workbook.
   - The GUI runs in quiet mode by default to reduce log noise.
@@ -79,7 +79,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 - Create a single `install.bat` using: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_single_installer.ps1`
   - Output: `dist\install.bat`
   - On a clean machine: copy `install.bat` to an empty folder and run it.
-  - It extracts the app files and automatically runs project setup (creates a venv, installs deps, scaffolds folders, and generates `scanner.env` and `terms.schema.xlsx`).
+  - It extracts the app files and automatically runs project setup (creates a venv, installs deps, scaffolds folders, and generates `scanner.env`).
   - Optional: pass a custom venv location: `install.bat C:\\MyVenvs\\PDF_Scanner.venv` (equivalent to calling the internal setup with that argument).
 
 - Option B: Full-text installer (no embedded zip)

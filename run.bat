@@ -35,6 +35,7 @@ if exist "%TERMS_LEGACY%" (
 echo [WARN] No Smart-Snap terms file found.
 echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
 "%PY%" "%ROOT%scripts\generate_terms_schema_smartsnap.py"
+if errorlevel 1 exit /b 1
 echo Open and edit: "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" and re-run.
 exit /b 1
 

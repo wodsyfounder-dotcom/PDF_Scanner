@@ -68,9 +68,11 @@ if not exist "%ROOT%user_inputs" mkdir "%ROOT%user_inputs"
 if not exist "%ROOT%Data Packages" mkdir "%ROOT%Data Packages"
 if not exist "%ROOT%Product_Data_File" mkdir "%ROOT%Product_Data_File"
 if not exist "%ROOT%Product_Data_File\run_data" mkdir "%ROOT%Product_Data_File\run_data"
-if not exist "%ROOT%user_inputs\terms.xlsx" if not exist "%ROOT%user_inputs\terms.csv" if not exist "%ROOT%user_inputs\terms.schema.xlsx" (
-  echo [SETUP] Creating Excel terms template (user_inputs\terms.schema.xlsx)
-  "%VPY%" "%ROOT%scripts\generate_terms_schema.py"
+if not exist "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" (
+  echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
+  "%VPY%" "%ROOT%scripts\generate_terms_schema_smartsnap.py"
+) else (
+  echo [INFO] Smart-Snap template already present.
 )
 
 rem Create scanner.env with sensible defaults if missing
