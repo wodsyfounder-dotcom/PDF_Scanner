@@ -2029,6 +2029,38 @@ class MainWindow(QtWidgets.QMainWindow):
         proc_secondary.addWidget(self.btn_open_last)
         inputs_layout.addLayout(proc_secondary)
 
+        # Table Extraction Section
+        separator2 = QtWidgets.QFrame()
+        separator2.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        separator2.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
+        inputs_layout.addWidget(separator2)
+
+        table_label = QtWidgets.QLabel("Table Extraction")
+        table_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600; margin-top: 4px;")
+        inputs_layout.addWidget(table_label)
+
+        self.btn_extract_tables = QtWidgets.QPushButton("\U0001F4CA  Extract Tables from PDFs")
+        self.btn_extract_tables.setStyleSheet("""
+            QPushButton {
+                padding: 12px 20px;
+                border-radius: 6px;
+                background: #10b981;
+                color: #ffffff;
+                border: 1px solid #10b981;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #059669;
+            }
+            QPushButton:disabled {
+                background: #86efac;
+                border-color: #86efac;
+            }
+        """)
+        self.btn_extract_tables.clicked.connect(self._show_table_extraction_dialog)
+        inputs_layout.addWidget(self.btn_extract_tables)
+
         # Keep internal fields for logic
         self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
         self.ed_terms.setVisible(False)
@@ -3884,6 +3916,391 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status_bar.showMessage("Settings saved", 2000)
         except Exception:
             pass
+
+    def _show_table_extraction_dialog(self):
+        """Show dialog for table extraction with PDF selection and parameters."""
+        # Guard against duplicate dialogs
+        if getattr(self, "_dlg_table_extraction", False):
+            return
+        self._dlg_table_extraction = True
+
+        try:
+            # Get available PDFs from workspace sync
+            details = getattr(self, "_sync_details", None) or []
+            all_pdfs = [(d.get("pdf"), d.get("serial_component", ""), d.get("reason", "")) for d in details if d.get("pdf")]
+
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle("Extract Tables from Data Packages")
+            dlg.resize(1200, 700)
+            dlg.setStyleSheet("""
+                QDialog {
+                    background: #ffffff;
+                }
+                QGroupBox {
+                    font-weight: 600;
+                    font-size: 13px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    margin-top: 12px;
+                    padding: 12px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    subcontrol-position: top left;
+                    padding: 0 4px;
+                }
+            """)
+
+            main_layout = QtWidgets.QVBoxLayout(dlg)
+            main_layout.setContentsMargins(20, 20, 20, 20)
+            main_layout.setSpacing(16)
+
+            # Title
+            title = QtWidgets.QLabel("Extract Tables from Data Packages")
+            title.setStyleSheet("font-size: 18px; font-weight: 700; color: #111827;")
+            main_layout.addWidget(title)
+
+            desc = QtWidgets.QLabel("Select documents and configure table extraction parameters")
+            desc.setStyleSheet("font-size: 13px; color: #6b7280;")
+            main_layout.addWidget(desc)
+
+            # Main content in horizontal split
+            content_layout = QtWidgets.QHBoxLayout()
+            content_layout.setSpacing(16)
+
+            # ========== LEFT: PDF Selection ==========
+            left_widget = QtWidgets.QWidget()
+            left_layout = QtWidgets.QVBoxLayout(left_widget)
+            left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.setSpacing(8)
+
+            pdf_label = QtWidgets.QLabel("Select Data Packages")
+            pdf_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #111827;")
+            left_layout.addWidget(pdf_label)
+
+            # Toolbar
+            toolbar = QtWidgets.QHBoxLayout()
+            toolbar.setSpacing(8)
+
+            btn_sel_all = QtWidgets.QPushButton("Select All")
+            btn_sel_all.setStyleSheet("""
+                QPushButton {
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    background: #ffffff;
+                    color: #374151;
+                    border: 1px solid #d1d5db;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #f9fafb; }
+            """)
+
+            btn_sel_none = QtWidgets.QPushButton("Select None")
+            btn_sel_none.setStyleSheet("""
+                QPushButton {
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    background: #ffffff;
+                    color: #374151;
+                    border: 1px solid #d1d5db;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #f9fafb; }
+            """)
+
+            toolbar.addWidget(btn_sel_all)
+            toolbar.addWidget(btn_sel_none)
+            toolbar.addStretch()
+            left_layout.addLayout(toolbar)
+
+            # PDF list with checkboxes
+            pdf_scroll = QtWidgets.QScrollArea()
+            pdf_scroll.setWidgetResizable(True)
+            pdf_scroll.setStyleSheet("""
+                QScrollArea {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    background: #f9fafb;
+                }
+            """)
+
+            pdf_container = QtWidgets.QWidget()
+            pdf_layout = QtWidgets.QVBoxLayout(pdf_container)
+            pdf_layout.setContentsMargins(8, 8, 8, 8)
+            pdf_layout.setSpacing(4)
+
+            checkboxes = []
+            if not all_pdfs:
+                no_pdfs_label = QtWidgets.QLabel("No PDFs found. Run 'Sync Workspace Now' first.")
+                no_pdfs_label.setStyleSheet("color: #6b7280; font-style: italic; padding: 16px;")
+                pdf_layout.addWidget(no_pdfs_label)
+            else:
+                for pdf_path, serial, reason in all_pdfs:
+                    checkbox = QtWidgets.QCheckBox(f"{serial or Path(pdf_path).stem}")
+                    checkbox.setToolTip(str(pdf_path))
+                    checkbox.setProperty("pdf_path", pdf_path)
+                    checkbox.setStyleSheet("""
+                        QCheckBox {
+                            padding: 4px;
+                            color: #374151;
+                        }
+                        QCheckBox::indicator {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 3px;
+                            border: 2px solid #d1d5db;
+                            background: #ffffff;
+                        }
+                        QCheckBox::indicator:hover { border-color: #10b981; }
+                        QCheckBox::indicator:checked {
+                            background: #10b981;
+                            border-color: #10b981;
+                        }
+                    """)
+                    pdf_layout.addWidget(checkbox)
+                    checkboxes.append(checkbox)
+
+            pdf_layout.addStretch()
+            pdf_scroll.setWidget(pdf_container)
+            left_layout.addWidget(pdf_scroll, 1)
+
+            # Connect toolbar buttons
+            btn_sel_all.clicked.connect(lambda: [cb.setChecked(True) for cb in checkboxes])
+            btn_sel_none.clicked.connect(lambda: [cb.setChecked(False) for cb in checkboxes])
+
+            content_layout.addWidget(left_widget, 1)
+
+            # ========== RIGHT: Parameters ==========
+            right_widget = QtWidgets.QWidget()
+            right_layout = QtWidgets.QVBoxLayout(right_widget)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(12)
+
+            param_label = QtWidgets.QLabel("Extraction Parameters")
+            param_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #111827;")
+            right_layout.addWidget(param_label)
+
+            # Parameters form
+            form_scroll = QtWidgets.QScrollArea()
+            form_scroll.setWidgetResizable(True)
+            form_scroll.setStyleSheet("""
+                QScrollArea {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    background: #ffffff;
+                }
+            """)
+
+            # Helper function to create styled labels
+            def make_label(text: str) -> QtWidgets.QLabel:
+                lbl = QtWidgets.QLabel(text)
+                lbl.setStyleSheet("color: #1f2937; font-size: 13px; font-weight: 600;")
+                return lbl
+
+            # Helper for input styling
+            input_style = """
+                QLineEdit, QSpinBox, QDoubleSpinBox {
+                    padding: 6px 8px;
+                    border: 1px solid #d1d5db;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    background: #ffffff;
+                }
+                QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+                    border-color: #10b981;
+                }
+            """
+
+            form_container = QtWidgets.QWidget()
+            form_layout = QtWidgets.QFormLayout(form_container)
+            form_layout.setContentsMargins(16, 16, 16, 16)
+            form_layout.setSpacing(16)
+            form_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+            # Pages (required)
+            pages_input = QtWidgets.QLineEdit("1")
+            pages_input.setPlaceholderText("e.g., 1,3-5,7")
+            pages_input.setToolTip("Page range (1-indexed). Examples: 1 or 1,3-5 or 1-10")
+            pages_input.setStyleSheet(input_style)
+            form_layout.addRow(make_label("Pages* (required):"), pages_input)
+
+            # Fixed column count
+            num_cols_input = QtWidgets.QLineEdit("0")
+            num_cols_input.setPlaceholderText("0 = Auto-detect")
+            num_cols_input.setToolTip("Set exact number of columns (0 = auto-detect, range: 0-20)")
+            num_cols_input.setStyleSheet(input_style)
+            num_cols_input.setMaxLength(2)
+            form_layout.addRow(make_label("Fixed Columns:"), num_cols_input)
+
+            # Min columns
+            min_cols_input = QtWidgets.QLineEdit("2")
+            min_cols_input.setPlaceholderText("Default: 2")
+            min_cols_input.setToolTip("Minimum columns required (auto-detect mode only, range: 1-20)")
+            min_cols_input.setStyleSheet(input_style)
+            min_cols_input.setMaxLength(2)
+            form_layout.addRow(make_label("Min Columns:"), min_cols_input)
+
+            # Min rows
+            min_rows_input = QtWidgets.QLineEdit("3")
+            min_rows_input.setPlaceholderText("Default: 3")
+            min_rows_input.setToolTip("Minimum consecutive rows to form a table (range: 1-50)")
+            min_rows_input.setStyleSheet(input_style)
+            min_rows_input.setMaxLength(2)
+            form_layout.addRow(make_label("Min Rows:"), min_rows_input)
+
+            # Match threshold
+            threshold_input = QtWidgets.QLineEdit("0.5")
+            threshold_input.setPlaceholderText("Default: 0.5")
+            threshold_input.setToolTip("Type matching threshold for column alignment (range: 0.0-1.0)")
+            threshold_input.setStyleSheet(input_style)
+            threshold_input.setMaxLength(4)
+            form_layout.addRow(make_label("Match Threshold:"), threshold_input)
+
+            # OCR mode
+            ocr_checkbox = QtWidgets.QCheckBox("Force OCR mode")
+            ocr_checkbox.setToolTip("Use EasyOCR instead of PyMuPDF text extraction")
+            ocr_checkbox.setStyleSheet("font-size: 13px; color: #374151;")
+            form_layout.addRow(make_label(""), ocr_checkbox)
+
+            # DPI
+            dpi_input = QtWidgets.QLineEdit("300")
+            dpi_input.setPlaceholderText("Default: 300")
+            dpi_input.setToolTip("DPI for OCR rendering if OCR mode enabled (range: 150-800)")
+            dpi_input.setStyleSheet(input_style)
+            dpi_input.setMaxLength(3)
+            form_layout.addRow(make_label("OCR DPI:"), dpi_input)
+
+            # Delimiter
+            delimiter_input = QtWidgets.QLineEdit()
+            delimiter_input.setPlaceholderText("Auto-detect")
+            delimiter_input.setToolTip("Field delimiter (leave empty for auto-detect)")
+            delimiter_input.setStyleSheet(input_style)
+            form_layout.addRow(make_label("Delimiter:"), delimiter_input)
+
+            form_scroll.setWidget(form_container)
+            right_layout.addWidget(form_scroll, 1)
+
+            # Help text
+            help_text = QtWidgets.QLabel(
+                "<b>Tips:</b><br>"
+                "• Fixed Columns: Set to exact column count for smart alignment<br>"
+                "• Match Threshold: Higher = stricter type matching<br>"
+                "• Output saved to Data Packages/<filename>_table.xlsx"
+            )
+            help_text.setStyleSheet("color: #6b7280; font-size: 11px; padding: 8px; background: #f9fafb; border-radius: 4px;")
+            help_text.setWordWrap(True)
+            right_layout.addWidget(help_text)
+
+            content_layout.addWidget(right_widget, 1)
+            main_layout.addLayout(content_layout, 1)
+
+            # ========== BOTTOM: Action buttons ==========
+            button_layout = QtWidgets.QHBoxLayout()
+            button_layout.setSpacing(8)
+
+            btn_extract = QtWidgets.QPushButton("\U0001F4CA Extract Tables")
+            btn_extract.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    background: #10b981;
+                    color: #ffffff;
+                    border: none;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                QPushButton:hover { background: #059669; }
+                QPushButton:disabled {
+                    background: #d1d5db;
+                    color: #9ca3af;
+                }
+            """)
+
+            btn_cancel = QtWidgets.QPushButton("Cancel")
+            btn_cancel.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    background: #ffffff;
+                    color: #6b7280;
+                    border: 1px solid #d1d5db;
+                    font-size: 13px;
+                }
+                QPushButton:hover { background: #f9fafb; }
+            """)
+
+            button_layout.addStretch()
+            button_layout.addWidget(btn_cancel)
+            button_layout.addWidget(btn_extract)
+            main_layout.addLayout(button_layout)
+
+            # ========== Connect actions ==========
+            def extract_tables():
+                selected = [cb for cb in checkboxes if cb.isChecked()]
+                if not selected:
+                    QtWidgets.QMessageBox.warning(dlg, "No Selection", "Please select at least one PDF")
+                    return
+
+                pages = pages_input.text().strip()
+                if not pages:
+                    QtWidgets.QMessageBox.warning(dlg, "Missing Pages", "Please specify page range (e.g., 1 or 1,3-5)")
+                    return
+
+                # Extract and validate parameters
+                try:
+                    num_cols_val = int(num_cols_input.text().strip() or "0")
+                    if not (0 <= num_cols_val <= 20):
+                        raise ValueError("Fixed Columns must be between 0 and 20")
+                    num_cols = num_cols_val if num_cols_val > 0 else None
+
+                    min_cols = int(min_cols_input.text().strip() or "2")
+                    if not (1 <= min_cols <= 20):
+                        raise ValueError("Min Columns must be between 1 and 20")
+
+                    min_rows = int(min_rows_input.text().strip() or "3")
+                    if not (1 <= min_rows <= 50):
+                        raise ValueError("Min Rows must be between 1 and 50")
+
+                    match_threshold = float(threshold_input.text().strip() or "0.5")
+                    if not (0.0 <= match_threshold <= 1.0):
+                        raise ValueError("Match Threshold must be between 0.0 and 1.0")
+
+                    dpi = int(dpi_input.text().strip() or "300")
+                    if not (150 <= dpi <= 800):
+                        raise ValueError("OCR DPI must be between 150 and 800")
+
+                except ValueError as e:
+                    QtWidgets.QMessageBox.warning(dlg, "Invalid Input", str(e))
+                    return
+
+                ocr = ocr_checkbox.isChecked()
+                delimiter = delimiter_input.text().strip() or None
+
+                dlg.accept()
+
+                # Process each selected PDF
+                for cb in selected:
+                    pdf_path = Path(cb.property("pdf_path"))
+                    try:
+                        self._start_worker(
+                            lambda p=pdf_path: be.extract_csv_tables(
+                                p, pages, num_cols, min_cols, min_rows,
+                                match_threshold, ocr, dpi, delimiter
+                            ),
+                            status_msg=f"Extracting tables from {pdf_path.name}..."
+                        )
+                    except Exception as e:
+                        QtWidgets.QMessageBox.critical(self, "Extraction Error", f"Failed to extract from {pdf_path.name}:\n{e}")
+
+                self._show_toast(f"Table extraction started for {len(selected)} document(s)")
+
+            btn_extract.clicked.connect(extract_tables)
+            btn_cancel.clicked.connect(dlg.reject)
+
+            dlg.exec()
+
+        finally:
+            self._dlg_table_extraction = False
 
 
 def main():

@@ -267,16 +267,237 @@ def split_line_into_fields(line: str, delimiter: Optional[str] = None) -> List[s
     return fields
 
 
-def detect_tables_in_text(text: str, min_cols: int = 2, min_rows: int = 3,
-                          delimiter: Optional[str] = None, debug: bool = False) -> List[Dict]:
+# ============================================================================
+# Type Detection and Smart Column Alignment
+# ============================================================================
+
+def detect_value_type(value: str) -> str:
     """
-    Detect tables in text by finding consecutive lines with the same field count.
+    Detect the type of a value: 'number', 'date', or 'text'.
+    """
+    value = value.strip()
+    if not value:
+        return 'empty'
+
+    # Check for number (including scientific notation, negative, decimals)
+    # Allow numbers with units like "500" or "42.5"
+    number_pattern = r'^[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?(?:\s*[a-zA-Z%]+)?$'
+    if re.match(number_pattern, value):
+        return 'number'
+
+    # Check for date patterns (MM/DD/YYYY, YYYY-MM-DD, DD-MM-YYYY, etc.)
+    date_patterns = [
+        r'^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$',  # MM/DD/YYYY or DD-MM-YYYY
+        r'^\d{4}[/-]\d{1,2}[/-]\d{1,2}$',     # YYYY-MM-DD
+        r'^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}$',  # 15 January 2024
+    ]
+    for pattern in date_patterns:
+        if re.match(pattern, value):
+            return 'date'
+
+    return 'text'
+
+
+def profile_column_types(rows: List[List[str]], skip_first_n: int = 1) -> List[Dict]:
+    """
+    Analyze column types by examining values in each column.
+
+    Returns list of dicts with type frequencies for each column.
+    skip_first_n: number of header rows to skip (default 1)
+    """
+    if not rows or len(rows) <= skip_first_n:
+        return []
+
+    # Determine max column count
+    max_cols = max(len(row) for row in rows)
+
+    # Initialize profiles
+    profiles = []
+    for col_idx in range(max_cols):
+        profiles.append({
+            'number': 0,
+            'date': 0,
+            'text': 0,
+            'empty': 0,
+            'values': []
+        })
+
+    # Analyze data rows (skip headers)
+    for row in rows[skip_first_n:]:
+        for col_idx, value in enumerate(row):
+            if col_idx >= max_cols:
+                break
+
+            value_type = detect_value_type(value)
+            profiles[col_idx][value_type] += 1
+            profiles[col_idx]['values'].append(value)
+
+    # Determine dominant type for each column
+    for profile in profiles:
+        total = sum([profile['number'], profile['date'], profile['text']])
+        if total > 0:
+            if profile['number'] / total > 0.5:
+                profile['dominant_type'] = 'number'
+            elif profile['date'] / total > 0.3:
+                profile['dominant_type'] = 'date'
+            else:
+                profile['dominant_type'] = 'text'
+        else:
+            profile['dominant_type'] = 'text'
+
+    return profiles
+
+
+def calculate_type_match_score(value: str, expected_type: str, col_values: List[str]) -> float:
+    """
+    Calculate how well a value matches the expected column type.
+
+    Returns score between 0.0 (no match) and 1.0 (perfect match).
+    """
+    if not value.strip():
+        return 0.5  # Empty can fit anywhere
+
+    actual_type = detect_value_type(value)
+
+    # Type match
+    if actual_type == expected_type:
+        score = 1.0
+    elif actual_type == 'empty':
+        score = 0.5
+    else:
+        score = 0.0
+
+    # Length similarity bonus (for text columns)
+    if expected_type == 'text' and col_values:
+        non_empty_values = [v for v in col_values if v.strip()]
+        if non_empty_values:
+            avg_len = sum(len(v) for v in non_empty_values) / len(non_empty_values)
+            len_ratio = min(len(value), avg_len) / max(len(value), avg_len, 1)
+            score = (score + len_ratio) / 2
+
+    return score
+
+
+def align_row_to_columns(fields: List[str], expected_cols: int,
+                        column_profiles: Optional[List[Dict]] = None,
+                        match_threshold: float = 0.5,
+                        debug: bool = False) -> Optional[List[str]]:
+    """
+    Try to align a row with mismatched field count to expected columns.
+
+    Uses type matching to snap values to correct columns.
+    Returns aligned row or None if alignment fails.
+    """
+    if len(fields) == expected_cols:
+        return fields
+
+    if debug:
+        print(f"[DEBUG] Aligning {len(fields)} fields to {expected_cols} columns")
+
+    # If no profiles, can't do smart alignment
+    if not column_profiles or len(column_profiles) != expected_cols:
+        # Simple strategy: pad with empty or truncate
+        if len(fields) < expected_cols:
+            return fields + [''] * (expected_cols - len(fields))
+        else:
+            return fields[:expected_cols]
+
+    # Smart alignment using type matching
+    aligned = [''] * expected_cols
+    used_fields = [False] * len(fields)
+
+    # Try to match each field to best column
+    for field_idx, field in enumerate(fields):
+        if used_fields[field_idx]:
+            continue
+
+        best_col = None
+        best_score = match_threshold
+
+        for col_idx in range(expected_cols):
+            if aligned[col_idx]:  # Column already filled
+                continue
+
+            profile = column_profiles[col_idx]
+            score = calculate_type_match_score(
+                field,
+                profile['dominant_type'],
+                profile['values']
+            )
+
+            if debug:
+                print(f"[DEBUG]   Field '{field}' -> Col {col_idx} ({profile['dominant_type']}): score={score:.2f}")
+
+            if score > best_score:
+                best_score = score
+                best_col = col_idx
+
+        if best_col is not None:
+            aligned[best_col] = field
+            used_fields[field_idx] = True
+            if debug:
+                print(f"[DEBUG]   ✓ Matched '{field}' to column {best_col} (score={best_score:.2f})")
+
+    # Check if alignment is successful (at least some fields matched)
+    if any(aligned):
+        return aligned
+    else:
+        return None
+
+
+def is_likely_header(fields: List[str], next_fields: Optional[List[str]] = None) -> bool:
+    """
+    Determine if a row is likely a header row.
+
+    Headers typically:
+    - Are mostly text
+    - Have different types than data rows below
+    - Have descriptive words (min, max, value, name, etc.)
+    """
+    if not fields:
+        return False
+
+    # Check if mostly text
+    text_count = sum(1 for f in fields if detect_value_type(f) == 'text')
+    if text_count / len(fields) < 0.6:  # Less than 60% text
+        return False
+
+    # Check for common header keywords
+    header_keywords = ['min', 'max', 'value', 'name', 'units', 'measurement',
+                      'type', 'id', 'resistance', 'test', 'date', 'time']
+    has_keyword = any(
+        any(keyword in f.lower() for keyword in header_keywords)
+        for f in fields
+    )
+
+    # If next row exists and has different types, likely header
+    if next_fields and len(next_fields) == len(fields):
+        type_matches = sum(
+            1 for i in range(len(fields))
+            if detect_value_type(fields[i]) == detect_value_type(next_fields[i])
+        )
+        if type_matches / len(fields) < 0.3:  # Less than 30% type match
+            return True
+
+    return has_keyword
+
+
+def detect_tables_in_text(text: str, min_cols: int = 2, min_rows: int = 3,
+                          delimiter: Optional[str] = None, debug: bool = False,
+                          fixed_cols: Optional[int] = None, match_threshold: float = 0.5) -> List[Dict]:
+    """
+    Detect tables in text with smart column alignment and type-based row matching.
+
+    Parameters:
+    - fixed_cols: If set, enforce this exact column count and use smart alignment
+    - match_threshold: Minimum score (0-1) for type-based column matching
 
     Returns list of table dictionaries with:
     - start_line: starting line number
     - end_line: ending line number
     - num_cols: number of columns
     - rows: list of field lists
+    - headers: detected header rows
     """
     lines = text.split('\n')
     tables: List[Dict] = []
@@ -289,47 +510,135 @@ def detect_tables_in_text(text: str, min_cols: int = 2, min_rows: int = 3,
         if len(lines) > 50:
             print(f"... ({len(lines) - 50} more lines)")
         print("=" * 80)
-        print(f"\n[DEBUG] Detection parameters: min_cols={min_cols}, min_rows={min_rows}, delimiter={delimiter!r}\n")
+        mode = f"fixed_cols={fixed_cols}" if fixed_cols else f"min_cols={min_cols}"
+        print(f"\n[DEBUG] Detection parameters: {mode}, min_rows={min_rows}, match_threshold={match_threshold}\n")
 
     i = 0
     while i < len(lines):
         line = lines[i]
         fields = split_line_into_fields(line, delimiter)
 
-        if debug and i < 20:  # Debug first 20 lines
+        if debug and i < 30:  # Debug first 30 lines
             print(f"[DEBUG] Line {i}: {len(fields)} fields -> {fields}")
 
-        if not fields or len(fields) < min_cols:
+        # Skip empty or too-short lines
+        if not fields or (not fixed_cols and len(fields) < min_cols):
             i += 1
             continue
 
-        # Found a potential table start
-        num_cols = len(fields)
-        table_rows: List[List[str]] = [fields]
-        start_line = i
+        # Determine expected column count
+        if fixed_cols:
+            expected_cols = fixed_cols
+            # Check if this line could start a table with fixed columns
+            if len(fields) not in [expected_cols, expected_cols - 1, expected_cols + 1]:
+                # Too different from expected, skip
+                i += 1
+                continue
+        else:
+            expected_cols = len(fields)
+
+        # Check if this might be a header
+        next_fields = split_line_into_fields(lines[i + 1], delimiter) if i + 1 < len(lines) else None
+        is_header = is_likely_header(fields, next_fields)
 
         if debug:
-            print(f"[DEBUG] Potential table start at line {i} with {num_cols} columns")
+            header_str = " [HEADER]" if is_header else ""
+            print(f"[DEBUG] Potential table start at line {i} with {len(fields)} fields (expected {expected_cols}){header_str}")
 
-        # Look ahead for consecutive lines with same field count
-        j = i + 1
-        while j < len(lines):
-            next_fields = split_line_into_fields(lines[j], delimiter)
-            if len(next_fields) == num_cols:
-                table_rows.append(next_fields)
-                j += 1
+        # Start building table
+        table_rows: List[List[str]] = []
+        headers: List[str] = []
+        start_line = i
+
+        # Add first row (might be header or data)
+        if len(fields) == expected_cols:
+            if is_header:
+                headers = fields
             else:
+                table_rows.append(fields)
+        else:
+            # Try to align
+            aligned = align_row_to_columns(fields, expected_cols, None, match_threshold, debug)
+            if aligned:
+                if is_header:
+                    headers = aligned
+                else:
+                    table_rows.append(aligned)
+            else:
+                i += 1
+                continue
+
+        j = i + 1
+
+        # Look ahead and try to add more rows
+        # After collecting a few rows, build column profiles for smart matching
+        while j < len(lines):
+            line_fields = split_line_into_fields(lines[j], delimiter)
+
+            if not line_fields:  # Empty line might signal table end
+                if debug:
+                    print(f"[DEBUG]   Line {j}: empty, checking if table should end...")
+                # Allow one empty line, but if next line also empty, break
+                if j + 1 < len(lines) and not split_line_into_fields(lines[j + 1], delimiter):
+                    break
+                j += 1
+                continue
+
+            # Build column profiles if we have enough data rows
+            column_profiles = None
+            if len(table_rows) >= 3:
+                column_profiles = profile_column_types([headers] + table_rows if headers else table_rows)
+
+            # Try to add this row
+            if len(line_fields) == expected_cols:
+                # Check if it's a repeated header (page break continuation)
+                if headers and line_fields == headers:
+                    if debug:
+                        print(f"[DEBUG]   Line {j}: repeated header, continuing table")
+                    j += 1
+                    continue
+
+                table_rows.append(line_fields)
+                j += 1
+
+            elif fixed_cols:
+                # Try smart alignment in fixed column mode
+                aligned = align_row_to_columns(line_fields, expected_cols, column_profiles, match_threshold, debug)
+
+                if aligned:
+                    table_rows.append(aligned)
+                    j += 1
+                else:
+                    # Check if this is a table-ending indicator
+                    # All text or single value = likely not part of table
+                    all_text = all(detect_value_type(f) == 'text' for f in line_fields)
+                    single_value = len(line_fields) == 1
+
+                    if all_text or single_value:
+                        if debug:
+                            print(f"[DEBUG]   Line {j}: ending table (all text or single value)")
+                        break
+                    else:
+                        # Skip this malformed row but continue looking
+                        if debug:
+                            print(f"[DEBUG]   Line {j}: skipping malformed row")
+                        j += 1
+            else:
+                # In auto-detect mode, different column count breaks table
+                if debug:
+                    print(f"[DEBUG]   Line {j}: different column count ({len(line_fields)} vs {expected_cols}), ending table")
                 break
 
         # Check if we have enough rows to consider this a table
         if len(table_rows) >= min_rows:
             if debug:
-                print(f"[DEBUG] ✓ Table confirmed: lines {start_line}-{j-1}, {num_cols} cols, {len(table_rows)} rows")
+                print(f"[DEBUG] ✓ Table confirmed: lines {start_line}-{j-1}, {expected_cols} cols, {len(table_rows)} data rows")
             tables.append({
                 'start_line': start_line,
                 'end_line': j - 1,
-                'num_cols': num_cols,
-                'rows': table_rows
+                'num_cols': expected_cols,
+                'rows': table_rows,
+                'headers': headers
             })
             i = j  # Skip past this table
         else:
@@ -343,7 +652,9 @@ def detect_tables_in_text(text: str, min_cols: int = 2, min_rows: int = 3,
 def extract_tables_from_pages(pdf_path: Path, pages: List[int],
                               use_ocr: bool = False, dpi: int = 300,
                               min_cols: int = 2, min_rows: int = 3,
-                              delimiter: Optional[str] = None, debug: bool = False) -> Dict[int, List[Dict]]:
+                              delimiter: Optional[str] = None, debug: bool = False,
+                              fixed_cols: Optional[int] = None,
+                              match_threshold: float = 0.5) -> Dict[int, List[Dict]]:
     """
     Extract tables from specified pages.
 
@@ -381,7 +692,8 @@ def extract_tables_from_pages(pdf_path: Path, pages: List[int],
             results[page_num] = []
             continue
 
-        tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug)
+        tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug,
+                                       fixed_cols, match_threshold)
         results[page_num] = tables
 
         if tables:
@@ -446,13 +758,10 @@ def write_tables_to_excel(page_tables: Dict[int, List[Dict]], output_path: Path)
 
             # Create DataFrame
             rows = table['rows']
+            headers = table.get('headers', [])
 
-            # Try to detect header row (first row if it's different from others)
-            if len(rows) > 1:
-                # Use first row as header
-                headers = rows[0]
-                data_rows = rows[1:]
-
+            # Use detected headers or generate column names
+            if headers:
                 # Ensure headers are unique
                 seen = {}
                 unique_headers = []
@@ -464,9 +773,9 @@ def write_tables_to_excel(page_tables: Dict[int, List[Dict]], output_path: Path)
                         seen[h] = 0
                         unique_headers.append(h)
 
-                df = pd.DataFrame(data_rows, columns=unique_headers)
+                df = pd.DataFrame(rows, columns=unique_headers)
             else:
-                # Single row, use generic column names
+                # No headers detected, use generic column names
                 df = pd.DataFrame(rows, columns=[f"Col_{i+1}" for i in range(table['num_cols'])])
 
             df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -498,6 +807,8 @@ def main() -> None:
     parser.add_argument('--dpi', type=int, default=300, help='DPI for OCR (default: 300)')
     parser.add_argument('--min-cols', type=int, default=2, help='Minimum columns for table (default: 2)')
     parser.add_argument('--min-rows', type=int, default=3, help='Minimum consecutive rows (default: 3)')
+    parser.add_argument('--num-cols', type=int, default=None, help='Fixed column count mode - enforce exact number of columns')
+    parser.add_argument('--match-threshold', type=float, default=0.5, help='Type matching threshold 0-1 for column alignment (default: 0.5)')
     parser.add_argument('--delimiter', default=None, help='Field delimiter (default: auto-detect)')
     parser.add_argument('--out', default='', help='Output Excel path (default: Data Packages/<pdf-stem>_table.xlsx)')
     parser.add_argument('--debug', action='store_true', help='Print debug information (extracted text and field parsing)')
@@ -537,7 +848,9 @@ def main() -> None:
         min_cols=args.min_cols,
         min_rows=args.min_rows,
         delimiter=args.delimiter,
-        debug=args.debug
+        debug=args.debug,
+        fixed_cols=args.num_cols,
+        match_threshold=args.match_threshold
     )
 
     # Write to Excel

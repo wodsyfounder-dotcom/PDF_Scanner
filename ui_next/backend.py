@@ -224,6 +224,32 @@ def extract_page_tables(pdf: Path, pages: str | None = None) -> subprocess.Popen
     return run_script("scripts/extract_page_tables.py", *args)
 
 
+def extract_csv_tables(pdf: Path, pages: str, num_cols: Optional[int] = None,
+                      min_cols: int = 2, min_rows: int = 3,
+                      match_threshold: float = 0.5, ocr: bool = False,
+                      dpi: int = 300, delimiter: Optional[str] = None,
+                      output: Optional[Path] = None) -> subprocess.Popen:
+    """Extract tables using line-by-line CSV detection with smart alignment."""
+    args = ["--pdf", str(pdf), "--pages", pages]
+    if num_cols is not None:
+        args += ["--num-cols", str(num_cols)]
+    if min_cols != 2:
+        args += ["--min-cols", str(min_cols)]
+    if min_rows != 3:
+        args += ["--min-rows", str(min_rows)]
+    if match_threshold != 0.5:
+        args += ["--match-threshold", str(match_threshold)]
+    if ocr:
+        args += ["--ocr"]
+    if dpi != 300:
+        args += ["--dpi", str(dpi)]
+    if delimiter:
+        args += ["--delimiter", delimiter]
+    if output:
+        args += ["--out", str(output)]
+    return run_script("scripts/extract_table_csv_lines.py", *args)
+
+
 def open_path(p: Path) -> None:
     if sys.platform.startswith("win"):
         os.startfile(str(p))  # type: ignore[attr-defined]
