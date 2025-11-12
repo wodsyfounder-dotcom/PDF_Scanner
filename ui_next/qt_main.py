@@ -1163,7 +1163,7 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EIDAT - End Item Data Analysis Tool")
+        self.setWindowTitle("EIDAT Prototype - Demonstration Only")
         self.resize(1280, 860)
 
         be.ensure_scaffold()
@@ -1279,13 +1279,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Header with gradient background - logo and tabs inline with modern design
         header = QtWidgets.QFrame()
+        header.setObjectName("heroHeader")
         header.setStyleSheet("""
-            QFrame {
+            #heroHeader {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #ffffff, stop:0.5 #f8fafc, stop:1 #ffffff);
                 border: none;
-                border-bottom: 3px solid qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2563eb, stop:0.5 #3b82f6, stop:1 #60a5fa);
                 margin: 0px;
                 padding: 0px;
             }
@@ -1296,14 +1295,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Logo - simple and compact
         logo_container = QtWidgets.QFrame()
+        logo_container.setObjectName("logoBadge")
         logo_container.setStyleSheet("""
-            QFrame {
+            #logoBadge {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #2563eb, stop:1 #1e40af);
-                border-radius: 10px;
-                border: 2px solid #1d4ed8;
+                border-radius: 12px;
+                border: none;
             }
         """)
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QtGui.QColor(15, 23, 42, 90))
+        logo_container.setGraphicsEffect(shadow)
         logo_container.setFixedSize(48, 48)
         logo_layout = QtWidgets.QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
@@ -1321,11 +1326,14 @@ class MainWindow(QtWidgets.QMainWindow):
         title = QtWidgets.QLabel("EIDAT")
         font = title.font(); font.setPointSize(22); font.setBold(True); font.setLetterSpacing(QtGui.QFont.SpacingType.AbsoluteSpacing, 0.5); title.setFont(font)
         title.setStyleSheet("color: #0f172a; padding: 0px;")
-        subtitle = QtWidgets.QLabel("End Item Data Analysis Tool");
-        subtitle.setStyleSheet("color:#64748b; font-size: 12px; font-weight: 500; letter-spacing: 0.3px;")
+        subtitle = QtWidgets.QLabel("End Item Data Analysis Tool (Prototype)")
+        subtitle.setStyleSheet("color:#64748b; font-size: 12px; font-weight: 500; letter-spacing: 0.3px; border:none; background:transparent;")
+        proto_badge = QtWidgets.QLabel("Prototype build - demonstration only")
+        proto_badge.setStyleSheet("color:#991b1b; background:#fee2e2; border:1px solid #fecaca; border-radius:6px; font-size:11px; font-weight:600; padding:2px 8px; letter-spacing:0.5px;")
+        proto_badge.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         tbox = QtWidgets.QVBoxLayout();
         tbox.setSpacing(4)
-        tbox.addWidget(title); tbox.addWidget(subtitle)
+        tbox.addWidget(title); tbox.addWidget(subtitle); tbox.addWidget(proto_badge)
         hbox.addLayout(tbox)
 
         hbox.addStretch(1)
@@ -3849,30 +3857,50 @@ class MainWindow(QtWidgets.QMainWindow):
                         return scaled
             except Exception:
                 pass
-        # Fallback: draw a simple, clean logo
+        # Fallback: draw an inline polished monogram
         pix = QtGui.QPixmap(size, size)
         pix.fill(QtCore.Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(pix)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
-        # Create gradient background
-        gradient = QtGui.QLinearGradient(0, 0, 0, size)
-        gradient.setColorAt(0, QtGui.QColor("#3b82f6"))
-        gradient.setColorAt(1, QtGui.QColor("#1e40af"))
+        rect = QtCore.QRectF(0.5, 0.5, size - 1, size - 1)
+        radius = size * 0.24
+
+        # Base gradient block with subtle border
+        gradient = QtGui.QLinearGradient(0, 0, size, size)
+        gradient.setColorAt(0, QtGui.QColor("#60a5fa"))
+        gradient.setColorAt(1, QtGui.QColor("#1d4ed8"))
         painter.setBrush(QtGui.QBrush(gradient))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#0f172a"), max(2, size // 18)))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        # Inner glow
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(0, 0, size, size, size * 0.2, size * 0.2)
+        painter.setBrush(QtGui.QColor(255, 255, 255, 35))
+        painter.drawRoundedRect(rect.adjusted(size * 0.08, size * 0.08, -size * 0.08, -size * 0.25), radius * 0.8, radius * 0.8)
 
-        # Draw simple "E" letter
-        font = painter.font()
-        font.setBold(True)
-        font.setPointSize(int(size * 0.5))
-        font.setFamily("Arial")
-        painter.setFont(font)
+        # Accent ring
+        inner = QtCore.QRectF(size * 0.22, size * 0.22, size * 0.56, size * 0.56)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 120), max(2, size // 25)))
+        painter.drawEllipse(inner)
 
-        # Draw clean text without shadow
-        painter.setPen(QtGui.QColor("#ffffff"))
-        painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "E")
+        # Stylized "E" glyph
+        glyph_pen = QtGui.QPen(QtGui.QColor("#f8fafc"))
+        glyph_pen.setWidth(max(3, size // 16))
+        glyph_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.setPen(glyph_pen)
+        mid_y = size * 0.5
+        left_x = size * 0.28
+        right_x = size * 0.72
+        painter.drawLine(QtCore.QPointF(left_x, size * 0.26), QtCore.QPointF(left_x, size * 0.74))
+        painter.drawLine(QtCore.QPointF(left_x, size * 0.3), QtCore.QPointF(right_x, size * 0.3))
+        painter.drawLine(QtCore.QPointF(left_x, mid_y), QtCore.QPointF(size * 0.65, mid_y))
+        painter.drawLine(QtCore.QPointF(left_x, size * 0.7), QtCore.QPointF(right_x, size * 0.7))
+
+        # Small spark in corner
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180), max(2, size // 28)))
+        painter.drawPoint(QtCore.QPointF(size * 0.78, size * 0.28))
 
         painter.end()
         try:

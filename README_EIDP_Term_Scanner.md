@@ -2,6 +2,9 @@
 
 Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest numeric value near each term within specified page ranges, and export a matrix (rows=terms, columns=Serial Numbers) plus detailed metadata. PDFs remain in their source location; reruns simply re-read the same repository.
 
+> **Prototype Notice**  
+> This repository represents a personal demonstration prototype. It is shared for evaluation/functional preview only, remains the author's IP, and should not be treated as a finalized production release.
+
 ---
 
 ## Install (Windows)

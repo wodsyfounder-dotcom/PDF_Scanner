@@ -8,10 +8,17 @@ set "ROOT=%~dp0..\"
 set "OUT=%ROOT%full_snapshot.txt"
 if not "%~1"=="" set "OUT=%~1"
 if exist "%OUT%" del /q "%OUT%" 2>nul
+rem Keep the dependency manifest in one place for release audits.
+set "CORE_PY_PACKAGES=pymupdf pandas openpyxl matplotlib opencv-python-headless PySide6"
+set "OCR_PY_PACKAGES=torch torchvision easyocr"
 
 >> "%OUT%" echo ===== PDF_Scanner Full Snapshot =====
 >> "%OUT%" echo Generated: %DATE% %TIME%
 >> "%OUT%" echo Root: %ROOT%
+>> "%OUT%" echo.
+>> "%OUT%" echo Required Python packages (ship list):
+call :PRINT_PACKAGE_SECTION "Core runtime" "%CORE_PY_PACKAGES%"
+call :PRINT_PACKAGE_SECTION "OCR fallback" "%OCR_PY_PACKAGES%"
 >> "%OUT%" echo.
 
 call :PRINT_FILE "README_EIDP_Term_Scanner.md"
@@ -36,6 +43,16 @@ for %%F in ("scripts\*.py") do (
 >> "%OUT%" echo ===== END OF SNAPSHOT =====
 echo Wrote snapshot: "%OUT%"
 goto :EOF
+
+:PRINT_PACKAGE_SECTION
+set "_PKG_LABEL=%~1"
+set "_PKG_ITEMS=%~2"
+if not defined _PKG_ITEMS exit /b 0
+>> "%OUT%" echo   %_PKG_LABEL%:
+for %%P in (%_PKG_ITEMS%) do (
+  >> "%OUT%" echo     - %%P
+)
+exit /b 0
 
 :PRINT_FILE
 set "_FILE=%~1"
