@@ -13,8 +13,18 @@ import sys
 HEADERS = [
     "Data Group",
     "Term Label",
+    "Smart Snap Type",
     "Term",
     "Pages",
+    "GroupAfter",
+    "GroupBefore",
+    "Units",
+    "Range (min)",
+    "Range (max)",
+    "Format",
+    "Secondary Term",
+    "Smart Position",
+    # Hidden legacy columns (preserved for backward compatibility)
     "Mode",
     "Line",
     "Column",
@@ -22,18 +32,12 @@ HEADERS = [
     "FieldIndex",
     "FieldSplit",
     "Return",
-    "Units",
-    "Range (min)",
-    "Range (max)",
-    "Format",
-    "GroupAfter",
-    "GroupBefore",
-    "Smart Snap Type",
-    "Secondary Term",
-    "Smart Position",
 ]
 
-MODE_OPTIONS = ["smart", "nearest", "line", "table(xy)", "full table"]
+# Columns to hide in Excel (legacy full-table mode columns)
+HIDDEN_COLUMNS = ["Mode", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit", "Return"]
+
+MODE_OPTIONS = ["smart", "full table"]
 RETURN_OPTIONS = ["number", "string"]
 SPLIT_OPTIONS = ["auto", "groups", "tokens"]
 SMART_TYPES = ["", "auto", "number", "date", "time", "title"]
@@ -64,16 +68,31 @@ def main() -> None:
         ws = wb.create_sheet()
     ws.title = "Template"
 
+    from openpyxl.utils import get_column_letter
+
     header_font = Font(bold=True)
     ws.append(HEADERS)
     for idx, header in enumerate(HEADERS, start=1):
         cell = ws.cell(row=1, column=idx)
         cell.font = header_font
-        ws.column_dimensions[cell.column_letter].width = max(14, len(header) + 2)
+        col_letter = get_column_letter(idx)
+
+        # Hide legacy columns
+        if header in HIDDEN_COLUMNS:
+            ws.column_dimensions[col_letter].hidden = True
+            ws.column_dimensions[col_letter].width = 14
+        else:
+            ws.column_dimensions[col_letter].width = max(14, len(header) + 2)
 
     # Data validations
     def _dv(values: list[str]) -> DataValidation:
         return DataValidation(type="list", formula1=f'"{",".join(values)}"', allow_blank=True)
+
+    # Find column indices for validation
+    smart_type_col = HEADERS.index("Smart Snap Type") + 1
+    mode_col = HEADERS.index("Mode") + 1
+    return_col = HEADERS.index("Return") + 1
+    split_col = HEADERS.index("FieldSplit") + 1
 
     dv_mode = _dv(MODE_OPTIONS)
     dv_return = _dv(RETURN_OPTIONS)
@@ -82,23 +101,21 @@ def main() -> None:
 
     for dv in (dv_mode, dv_return, dv_split, dv_smart):
         ws.add_data_validation(dv)
-    dv_mode.add("E2:E2000")
-    dv_return.add("K2:K2000")
-    dv_split.add("J2:J2000")
-    dv_smart.add("R2:R2000")
+    dv_smart.add(f"{get_column_letter(smart_type_col)}2:{get_column_letter(smart_type_col)}2000")
+    dv_mode.add(f"{get_column_letter(mode_col)}2:{get_column_letter(mode_col)}2000")
+    dv_return.add(f"{get_column_letter(return_col)}2:{get_column_letter(return_col)}2000")
+    dv_split.add(f"{get_column_letter(split_col)}2:{get_column_letter(split_col)}2000")
 
-    # Conditional formatting greys-out irrelevant fields
-    grey = PatternFill(start_color="00E6E6E6", end_color="00E6E6E6", fill_type="solid")
-    ws.conditional_formatting.add("F2:G2000", FormulaRule(formula=['$E2<>"table(xy)"'], fill=grey))
-    ws.conditional_formatting.add("H2:J2000", FormulaRule(formula=['$E2<>"line"'], fill=grey))
-    ws.conditional_formatting.add("K2:M2000", FormulaRule(formula=['$K2<>"number"'], fill=grey))
-    ws.conditional_formatting.add("N2:N2000", FormulaRule(formula=['$E2="table(xy)"'], fill=grey))
+    # No conditional formatting - no grey cells
 
-    # Example rows
+    # Example rows (Smart Snap mode)
+    # Column order: Data Group, Term Label, Smart Snap Type, Term, Pages, GroupAfter, GroupBefore,
+    #               Units, Range (min), Range (max), Format, Secondary Term, Smart Position,
+    #               Mode, Line, Column, Anchor, FieldIndex, FieldSplit, Return
     examples = [
-        ["Performance", "Pre-Test ISP", "isp", "1", "smart", "", "", "isp", "", "", "number", "sec", "40", "44", "", "Pre Test", "Post Test", "number", "", ""],
-        ["Metadata", "Title", "title", "1", "line", "", "", "Title:", "2", "groups", "string", "", "", "", "", "", "", "title", "", ""],
-        ["Tables", "Proof Load", "proof load", "2", "table(xy)", "Proof Load", "Value", "", "", "", "number", "psi", "", "", "", "Acceptance", "", "number", "", ""],
+        ["Metadata", "Title", "title", "title", "1", "", "", "", "", "", "", "", "", "smart", "", "", "", "", "", "string"],
+        ["Performance", "Pre-Test ISP", "number", "isp", "1", "Pre Test", "Post Test", "sec", "40", "44", "", "", "", "smart", "", "", "", "", "", "number"],
+        ["Tables", "Proof Load", "number", "proof load", "2", "", "", "psi", "", "", "", "", "", "smart", "", "", "", "", "", "number"],
     ]
     for row in examples:
         ws.append(row)
@@ -109,26 +126,33 @@ def main() -> None:
     inst["A1"] = "Smart-Snap Terms Schema"
     inst["A1"].font = Font(bold=True, size=13)
     instructions = [
-        "Fill rows in the Template sheet. Rows are processed in order.",
+        "Fill rows in the Template sheet. Rows are processed in order using Smart-Snap extraction.",
         "",
-        "Required:",
-        " - Term: Friendly name for outputs.",
-        " - Pages: One or more ranges (1-indexed). e.g., 5-7; 10; 12-13",
+        "Required columns:",
+        " - Term: The search term to find in the PDF (e.g., 'title', 'proof load', 'isp').",
+        " - Pages: One or more ranges (1-indexed). Examples: '1', '1-3', '5-7; 10; 12-13'.",
         "",
-        "Key columns:",
-        " - Mode: smart, nearest, line, table(xy), full table.",
-        " - Line/Column: Row/column labels when Mode=table(xy).",
-        " - Anchor/FieldIndex/FieldSplit: Used for Mode=line. FieldIndex is 1-based.",
-        " - Return: number or string.",
-        " - Range min/max & Units apply when Return=number.",
-        " - Format: Optional mask or /regex/ for string validation.",
-        " - GroupAfter / GroupBefore: Limit search window between these anchors.",
-        " - Smart Snap Type/Secondary Term/Smart Position: Controls Smart-Snap resolution.",
+        "Data Organization:",
+        " - Data Group: Organize extracted data into categories (e.g., 'Metadata', 'Performance', 'Tables').",
+        " - Term Label: Friendly label for the extracted value in reports.",
+        "",
+        "Search Configuration:",
+        " - Smart Snap Type: Hint for extraction type - 'number', 'date', 'time', 'title', or blank for auto-detect.",
+        " - GroupAfter / GroupBefore: Limit search to text appearing after/before these anchor terms.",
+        "",
+        "Validation & Scoring:",
+        " - Units: Expected units (e.g., 'psi', 'sec', 'kg').",
+        " - Range (min) / Range (max): Valid range for numeric values.",
+        " - Format: Optional pattern or /regex/ for validation.",
+        "",
+        "Advanced Extraction:",
+        " - Secondary Term: Disambiguate values when multiple matches exist in a row.",
+        " - Smart Position: Position hint for value extraction.",
         "",
         "Tips:",
-        " - Leave columns blank when not applicable; conditional shading shows which ones are ignored.",
-        " - Use consistent Term Labels/Data Groups to segment dashboards.",
-        " - Save the file as .xlsx; the scanner also accepts .csv with the same headers.",
+        " - Leave columns blank when not needed.",
+        " - Use consistent Data Groups and Term Labels to organize your dashboards.",
+        " - Save as .xlsx; the scanner also accepts .csv with the same column headers.",
     ]
     for idx, line in enumerate(instructions, start=3):
         cell = inst[f"A{idx}"]

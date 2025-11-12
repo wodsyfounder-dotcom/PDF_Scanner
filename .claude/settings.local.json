@@ -6,7 +6,8 @@
       "Bash(mkdir:*)",
       "Bash(where:*)",
       "Bash(python:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(del \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\scripts\\reorder_terms_columns.py\")"
     ],
     "deny": [],
     "ask": []

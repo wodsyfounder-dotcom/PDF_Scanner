@@ -315,7 +315,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
     VISIBLE_COLUMN_ORDER = [
         "Data Group",
         "Term Label",
-        "Mode",
         "Smart Snap Type",
         "Term",
         "Pages",
@@ -329,11 +328,10 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Smart Position",
     ]
     COLUMN_DISPLAY_NAMES = {
-        "Term": "Search Term",
         "Data Group": "Data Grouping",
         "Term Label": "Term Label",
-        "Mode": "Mode",
         "Smart Snap Type": "Smart Snap Type",
+        "Term": "Search Term",
         "Pages": "Pages",
         "GroupAfter": "Group After",
         "GroupBefore": "Group Before",
@@ -344,16 +342,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Secondary Term": "Secondary Term",
         "Smart Position": "Smart Position",
     }
-    GROUP_LAYOUT = [
-        ("Data Information", ["Data Group", "Term Label"]),
-        ("Mode / Type", ["Mode", "Smart Snap Type"]),
-        ("Search Index", ["Term", "Pages", "GroupAfter", "GroupBefore"]),
-        (
-            "Data Definition for Extraction",
-            ["Units", "Range (min)", "Range (max)", "Format", "Secondary Term", "Smart Position"],
-        ),
-    ]
-    DEFAULT_HIDDEN = {"Return"}
+    DEFAULT_HIDDEN = {"Return", "Mode", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
 
     def __init__(self, terms_path: Path, parent=None):
         super().__init__(parent)
@@ -371,37 +360,42 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self.setObjectName("termsEditorDialog")
         self.setStyleSheet("""
             #termsEditorDialog {
-                background-color: #0f172a;
-                color: #e2e8f0;
+                background-color: #f8fafc;
+                color: #0f172a;
             }
             #termsEditorDialog QLabel {
-                color: #e2e8f0;
+                color: #0f172a;
             }
             #termsEditorDialog QLabel#termsPathLabel {
-                color: #94a3b8;
+                color: #475569;
             }
             #termsEditorDialog QTableWidget {
-                background-color: #0b1220;
-                border: 1px solid #1f2a44;
-                gridline-color: #1f2a44;
-                selection-background-color: #1d4ed8;
-                selection-color: #f8fafc;
+                background-color: #ffffff;
+                border: 1px solid #d4d4d8;
+                gridline-color: #e4e4e7;
+                selection-background-color: #d1d5db;
+                selection-color: #0f172a;
+            }
+            #termsEditorDialog QTableWidget::item:selected {
+                background-color: #d1d5db;
+                color: #0f172a;
             }
             #termsEditorDialog QHeaderView::section {
-                background-color: #162238;
-                color: #cbd5f5;
-                padding: 6px;
-                border: none;
+                background-color: #eef2ff;
+                color: #0f172a;
+                padding: 8px;
+                border: 1px solid #cbd5f5;
+                font-weight: 600;
             }
             #termsEditorDialog QPushButton {
-                background-color: #1f2937;
-                color: #e2e8f0;
-                border: 1px solid #2d3b52;
+                background-color: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5f5;
                 border-radius: 6px;
                 padding: 8px 14px;
             }
             #termsEditorDialog QPushButton:hover {
-                background-color: #2a3852;
+                background-color: #f1f5f9;
             }
             #termsEditorDialog QPushButton[variant="primary"] {
                 background-color: #2563eb;
@@ -414,10 +408,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
         """)
 
         self._combo_defs = {
-            "Mode": {
-                "options": [(opt, opt) for opt in be.TERMS_MODE_CHOICES] or [("smart", "smart")],
-                "default": (be.TERMS_MODE_CHOICES[0] if be.TERMS_MODE_CHOICES else "smart"),
-            },
             "Smart Snap Type": {
                 "options": self._smart_type_options(),
                 "default": "",
@@ -426,7 +416,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         title = QtWidgets.QLabel("Edit the Smart-Snap input spreadsheet directly in the app.")
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #0f172a;")
         layout.addWidget(title)
         hint = QtWidgets.QLabel(f"File: {self._terms_path}")
         hint.setObjectName("termsPathLabel")
@@ -434,39 +424,43 @@ class TermsEditorDialog(QtWidgets.QDialog):
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
-        self.group_header = QtWidgets.QTableWidget(1, 0)
-        self._configure_group_header_widget()
-        layout.addWidget(self.group_header)
-
         self.table = QtWidgets.QTableWidget()
         self.table.setAlternatingRowColors(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(36)  # Increase row height for better edit bubble visibility
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.verticalHeader().setVisible(True)
+        self.table.verticalHeader().setDefaultAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.table.verticalHeader().setDefaultSectionSize(42)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #0b1220;
-                border: 1px solid #1f2a44;
-                gridline-color: #1f2a44;
+                background-color: #ffffff;
+                border: 1px solid #d4d4d8;
+                gridline-color: #e4e4e7;
+                selection-background-color: #d1d5db;
+                selection-color: #0f172a;
             }
             QTableWidget::item {
-                padding: 8px;
+                padding: 10px;
+                color: #0f172a;
+            }
+            QTableWidget::item:selected {
+                background-color: #d1d5db;
+                color: #0f172a;
             }
             QTableWidget QLineEdit {
-                background-color: #111b2f;
-                border: 1px solid #334155;
+                background-color: #ffffff;
+                border: 1px solid #94a3b8;
                 border-radius: 4px;
                 padding: 6px 8px;
-                color: #f8fafc;
-                selection-background-color: #1d4ed8;
-                min-height: 24px;
+                color: #0f172a;
+                selection-background-color: #bfdbfe;
+                min-height: 26px;
             }
         """)
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.sectionResized.connect(self._sync_group_header_section)
-        self.table.horizontalScrollBar().valueChanged.connect(self.group_header.horizontalScrollBar().setValue)
+        # Clicking the row number highlights the full row
+        self.table.verticalHeader().sectionClicked.connect(self._on_vertical_header_clicked)
         layout.addWidget(self.table, 1)
 
         row_btns = QtWidgets.QHBoxLayout()
@@ -491,7 +485,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         bottom = QtWidgets.QHBoxLayout()
         self._status_label = QtWidgets.QLabel("Loading...")
         self._status_label.setObjectName("termsStatusLabel")
-        self._status_label.setStyleSheet("color: #38bdf8; font-weight: 600;")
+        self._status_label.setStyleSheet("color: #0f172a; font-weight: 600;")
         bottom.addWidget(self._status_label)
         bottom.addStretch(1)
         self.btn_open_excel = QtWidgets.QPushButton("Open in Excel")
@@ -507,44 +501,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
         self.table.itemChanged.connect(self._on_table_item_changed)
 
         self._load_rows()
-
-    def _configure_group_header_widget(self) -> None:
-        self.group_header.setEditTriggers(QtWidgets.QAbstractItemView.EditTriggers.NoEditTriggers)
-        self.group_header.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self.group_header.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
-        self.group_header.setFixedHeight(46)
-        self.group_header.setShowGrid(False)
-        self.group_header.horizontalHeader().setVisible(False)
-        self.group_header.verticalHeader().setVisible(False)
-        self.group_header.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.group_header.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
-        self.group_header.setStyleSheet(
-            """
-            QTableWidget {
-                background: #050505;
-                border: none;
-                border-bottom: 4px solid #121212;
-            }
-            QTableWidget::item {
-                border-right: 1px solid #1f1f1f;
-                padding-top: 6px;
-                padding-bottom: 6px;
-            }
-            """
-        )
-        self.group_header.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.group_header.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-    def _make_group_cell(self, text: str = "") -> QtWidgets.QTableWidgetItem:
-        item = QtWidgets.QTableWidgetItem(text)
-        item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
-        font = item.font()
-        font.setBold(bool(text))
-        item.setFont(font)
-        item.setForeground(QtGui.QBrush(QtGui.QColor("#f4f4f4")))
-        item.setBackground(QtGui.QBrush(QtGui.QColor("#050505")))
-        return item
 
     def _smart_type_options(self) -> list[tuple[str, str]]:
         opts: list[tuple[str, str]] = []
@@ -602,7 +558,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
             self._loading = False
         self._dirty = False
         self._status_label.setText("All changes saved")
-        self._rebuild_group_header()
 
         # Set custom column widths - double width for Data Group and Term Label
         self.table.resizeColumnsToContents()
@@ -610,36 +565,9 @@ class TermsEditorDialog(QtWidgets.QDialog):
             if header in ("Data Group", "Term Label"):
                 current_width = self.table.columnWidth(col_idx)
                 self.table.setColumnWidth(col_idx, current_width * 2)
-                self.group_header.setColumnWidth(col_idx, current_width * 2)
 
     def _column_display_name(self, header: str) -> str:
         return self.COLUMN_DISPLAY_NAMES.get(header, header)
-
-    def _rebuild_group_header(self) -> None:
-        self.group_header.blockSignals(True)
-        self.group_header.clear()
-        cols = len(self._visible_headers)
-        self.group_header.setColumnCount(cols)
-        self.group_header.setRowCount(1)
-        self.group_header.clearSpans()
-        for idx in range(cols):
-            self.group_header.setColumnWidth(idx, self.table.columnWidth(idx))
-            self.group_header.setItem(0, idx, self._make_group_cell(""))
-        for group_name, members in self.GROUP_LAYOUT:
-            indices = [self._visible_headers.index(m) for m in members if m in self._visible_headers]
-            if not indices:
-                continue
-            start = min(indices)
-            span = len(indices)
-            self.group_header.setSpan(0, start, 1, span)
-            self.group_header.setItem(0, start, self._make_group_cell(group_name))
-        self.group_header.blockSignals(False)
-
-    def _sync_group_header_section(self, logical_index: int, _old_size: int, new_size: int) -> None:
-        try:
-            self.group_header.setColumnWidth(logical_index, new_size)
-        except Exception:
-            pass
 
     def _populate_row(self, row_idx: int, row_data: dict[str, str]) -> None:
         for col_idx, header in enumerate(self._visible_headers):
@@ -657,20 +585,20 @@ class TermsEditorDialog(QtWidgets.QDialog):
         combo.setEditable(False)
         combo.setStyleSheet("""
             QComboBox {
-                background-color: #111b2f;
-                border: 1px solid #334155;
+                background-color: #ffffff;
+                border: 1px solid #94a3b8;
                 border-radius: 4px;
                 padding: 4px;
-                color: #f8fafc;
+                color: #0f172a;
             }
             QComboBox::drop-down {
                 border: none;
             }
             QComboBox QAbstractItemView {
-                background-color: #0b1220;
-                color: #f8fafc;
-                selection-background-color: #1d4ed8;
-                selection-color: #f8fafc;
+                background-color: #ffffff;
+                color: #0f172a;
+                selection-background-color: #bfdbfe;
+                selection-color: #0f172a;
             }
         """)
         seen_values = set()
@@ -706,6 +634,12 @@ class TermsEditorDialog(QtWidgets.QDialog):
     def _selected_rows(self) -> list[int]:
         rows = {idx.row() for idx in self.table.selectionModel().selectedRows()}
         return sorted(rows)
+
+    def _on_vertical_header_clicked(self, logical_index: int) -> None:
+        try:
+            self.table.selectRow(logical_index)
+        except Exception:
+            pass
 
     def _add_blank_row(self) -> None:
         payload = {h: "" for h in self._all_headers}
@@ -796,7 +730,6 @@ class TermsEditorDialog(QtWidgets.QDialog):
                 self._populate_row(idx, payload)
         finally:
             self._loading = False
-        self._rebuild_group_header()
 
     def _row_data_from_table(self, row_idx: int) -> dict[str, str]:
         data: dict[str, str] = {}
@@ -1092,6 +1025,31 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Manage Proposed Plots")
         self.resize(1100, 560)
+        self.setObjectName("proposedPlotsDialog")
+        self.setStyleSheet("""
+            #proposedPlotsDialog {
+                background-color: #f8fafc;
+                color: #0f172a;
+            }
+            #proposedPlotsDialog QLabel {
+                color: #0f172a;
+            }
+            #proposedPlotsDialog QListWidget {
+                background-color: #ffffff;
+                border: 1px solid #d4d4d8;
+                color: #0f172a;
+            }
+            #proposedPlotsDialog QPushButton {
+                background-color: #ffffff;
+                color: #0f172a;
+                border: 1px solid #cbd5f5;
+                border-radius: 6px;
+                padding: 8px 14px;
+            }
+            #proposedPlotsDialog QPushButton:hover {
+                background-color: #f1f5f9;
+            }
+        """)
         self._series_options = series_options or []
         self._plots: list[dict] = [dict(p) for p in plots] if plots else []
 
@@ -3021,11 +2979,53 @@ class MainWindow(QtWidgets.QMainWindow):
             dlg = QtWidgets.QDialog(self)
             dlg.setWindowTitle("Run Registry")
             dlg.resize(900, 500)
+            dlg.setObjectName("runRegistryDialog")
+            dlg.setStyleSheet("""
+                #runRegistryDialog {
+                    background-color: #f8fafc;
+                    color: #0f172a;
+                }
+                #runRegistryDialog QLabel {
+                    color: #0f172a;
+                }
+                #runRegistryDialog QTableWidget {
+                    background-color: #ffffff;
+                    border: 1px solid #d4d4d8;
+                    gridline-color: #e4e4e7;
+                    selection-background-color: #d1d5db;
+                    selection-color: #0f172a;
+                    color: #0f172a;
+                }
+                #runRegistryDialog QTableWidget::item {
+                    color: #0f172a;
+                }
+                #runRegistryDialog QTableWidget::item:selected {
+                    background-color: #d1d5db;
+                    color: #0f172a;
+                }
+                #runRegistryDialog QHeaderView::section {
+                    background-color: #eef2ff;
+                    color: #0f172a;
+                    padding: 8px;
+                    border: 1px solid #cbd5f5;
+                    font-weight: 600;
+                }
+                #runRegistryDialog QPushButton {
+                    background-color: #ffffff;
+                    color: #0f172a;
+                    border: 1px solid #cbd5f5;
+                    border-radius: 6px;
+                    padding: 8px 14px;
+                }
+                #runRegistryDialog QPushButton:hover {
+                    background-color: #f1f5f9;
+                }
+            """)
             v = QtWidgets.QVBoxLayout(dlg)
             tbl = QtWidgets.QTableWidget(0, len(headers))
             tbl.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.AllEditTriggers)
             tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-            tbl.setAlternatingRowColors(True)
+            tbl.setAlternatingRowColors(False)
             if headers:
                 tbl.setHorizontalHeaderLabels(headers)
             for r, row in enumerate(rows):

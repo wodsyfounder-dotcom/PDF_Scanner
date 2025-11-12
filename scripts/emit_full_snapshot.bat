@@ -17,6 +17,7 @@ if exist "%OUT%" del /q "%OUT%" 2>nul
 call :PRINT_FILE "README_EIDP_Term_Scanner.md"
 call :PRINT_FILE "install.bat"
 call :PRINT_FILE "run.bat"
+call :PRINT_FILE "run_gui.bat"
 rem New Qt-based UI
 call :PRINT_FILE "ui_next\qt_main.py"
 call :PRINT_FILE "ui_next\backend.py"

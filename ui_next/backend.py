@@ -27,6 +27,11 @@ TERMS_SCHEMA_COLUMNS = [
     "Term",
     "Pages",
     "Mode",
+    "Line",
+    "Column",
+    "Anchor",
+    "FieldIndex",
+    "FieldSplit",
     "Return",
     "Units",
     "Range (min)",
@@ -262,6 +267,10 @@ def read_terms_rows(path: Optional[Path] = None) -> tuple[list[str], list[dict[s
     tgt = Path(path) if path else DEFAULT_TERMS_XLSX
     if not tgt.exists():
         raise FileNotFoundError(f"Terms spreadsheet not found: {tgt}")
+
+    # Ensure all required columns exist before reading
+    ensure_terms_columns(tgt)
+
     load_wb = _ensure_openpyxl_loader()
     wb = load_wb(tgt)
     try:
@@ -295,6 +304,44 @@ def read_terms_rows(path: Optional[Path] = None) -> tuple[list[str], list[dict[s
         wb.close()
 
 
+def ensure_terms_columns(path: Optional[Path] = None) -> bool:
+    """Ensure the terms spreadsheet has all required columns from TERMS_SCHEMA_COLUMNS.
+    Returns True if columns were added, False if no changes needed."""
+    tgt = Path(path) if path else DEFAULT_TERMS_XLSX
+    if not tgt.exists():
+        return False
+    load_wb = _ensure_openpyxl_loader()
+    wb = load_wb(tgt)
+    try:
+        if TERMS_TEMPLATE_SHEET not in wb.sheetnames:
+            return False
+        ws = wb[TERMS_TEMPLATE_SHEET]
+
+        # Read existing headers
+        existing_headers = []
+        for idx in range(1, len(TERMS_SCHEMA_COLUMNS) + 1):
+            raw = ws.cell(row=1, column=idx).value
+            if raw is not None and str(raw).strip():
+                existing_headers.append(str(raw).strip())
+            else:
+                break
+
+        # Check if we need to add any columns
+        missing_columns = [col for col in TERMS_SCHEMA_COLUMNS if col not in existing_headers]
+        if not missing_columns:
+            return False
+
+        # Add missing column headers to row 1
+        start_col = len(existing_headers) + 1
+        for idx, col_name in enumerate(missing_columns, start=start_col):
+            ws.cell(row=1, column=idx, value=col_name)
+
+        wb.save(tgt)
+        return True
+    finally:
+        wb.close()
+
+
 def write_terms_rows(
     rows: list[dict[str, str]],
     path: Optional[Path] = None,
@@ -304,6 +351,10 @@ def write_terms_rows(
     tgt = Path(path) if path else DEFAULT_TERMS_XLSX
     if not tgt.exists():
         raise FileNotFoundError(f"Terms spreadsheet not found: {tgt}")
+
+    # Ensure all required columns exist before writing
+    ensure_terms_columns(tgt)
+
     load_wb = _ensure_openpyxl_loader()
     wb = load_wb(tgt)
     try:
