@@ -1452,6 +1452,40 @@ def _match_anchor_on_line(anchor: str, line_tokens: List[str], line_token_norms:
             return i, i + span - 1
     return None
 
+def _anchor_tokens_present(anchor: str, text: str) -> bool:
+    """
+    Ensure every normalized token from the anchor exists in the target text.
+    Helps prevent partial matches (single-word hits) from masquerading as full row matches.
+    """
+    if not anchor:
+        return True
+    anchor_tokens = [_normalize_anchor_token(tok) for tok in re.split(r"\s+", anchor) if _normalize_anchor_token(tok)]
+    if not anchor_tokens:
+        return True
+    text_tokens = {_normalize_anchor_token(tok) for tok in re.split(r"\s+", text) if _normalize_anchor_token(tok)}
+    return all(tok in text_tokens for tok in anchor_tokens)
+
+
+def _strip_units_from_numeric_text(value: Optional[str]) -> Optional[str]:
+    """
+    When Smart Snap expects a numeric value, return only the numeric portion,
+    preserving any '(range violation)' suffix if present.
+    """
+    if not value:
+        return value
+    txt = value.strip()
+    suffix = ""
+    rv = " (range violation)"
+    if txt.endswith(rv):
+        txt = txt[: -len(rv)].rstrip()
+        suffix = rv
+    num = numeric_only(txt)
+    if num is None:
+        return (txt + suffix).strip()
+    if isinstance(num, str) and num != txt:
+        return f"{num}{suffix}"
+    return (txt + suffix).strip()
+
 
 def _detect_smart_type(preferred: Optional[str], text: str) -> str:
     v = (preferred or 'auto').strip().lower()
@@ -1481,9 +1515,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     page_hit: Optional[int] = None
 
     # Helper to extract for one line
-    fmt_pat = _compile_value_regex(spec.value_format or '') if getattr(spec, 'value_format', None) else None
+    value_format_text, double_height_mode = _value_format_info(getattr(spec, 'value_format', None))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
     units_hints = [str(u).strip().lower() for u in (spec.units_hint or []) if str(u).strip()]
     sec_term = (getattr(spec, 'secondary_term', None) or '').strip()
+    debug_mode = bool(os.environ.get('SMART_DEBUG') or os.environ.get('SMART_SNAP_DEBUG'))
 
     def extract_from_line(line_text: str, right_text: str, smart_kind: str) -> Optional[str]:
         nonlocal units_value
@@ -1555,6 +1591,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 best_score = 0.0
                 best_info = None  # (p, line_text, right_text, val, smart_kind)
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
+                group_before_seen = spec.group_before is None
+                group_before_page: Optional[int] = None
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -1593,6 +1631,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     # Detect optional group bounds (y coordinates) from anchors
                     ga_y = None
                     gb_y = None
+                    page_group_before_y = None
                     header_tokens: Dict[str, List[Tuple[float, float, float]]] = {'min': [], 'value': [], 'max': []}
                     for e in lines_map.values():
                         for tok in e['tokens']:
@@ -1623,29 +1662,54 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best = (sc, y)
                         if best:
                             gb_y = best[1]
+                            page_group_before_y = best[1]
+                            if not group_before_seen:
+                                group_before_seen = True
+                                group_before_page = p
+                    if spec.group_before and not group_before_seen:
+                        continue
 
                     # Build line texts and evaluate
                     for _, entry in sorted(lines_map.items(), key=lambda kv: (kv[1]['y0'], kv[1]['x0'])):
+                        right_text_segment = ''
                         tokens = sorted(entry['tokens'], key=lambda t: (t[1], t[0]))
                         texts = [t[4] for t in tokens]
                         line_text = ' '.join(texts).strip()
                         if not line_text:
                             continue
+                        if debug_mode:
+                            try:
+                                row_y = float(entry.get('y0', 0.0))
+                            except Exception:
+                                row_y = 0.0
+                            print(f"[SMART DEBUG][PDF] row candidate page={p} y={row_y:.1f} tokens={len(tokens)} text={line_text!r}", file=sys.stderr)
                         # Apply group vertical constraints if any
                         if ga_y is not None and float(entry['y0']) <= ga_y + 0.5:
                             continue
-                        if gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
+                        if spec.group_before:
+                            if group_before_page is not None:
+                                if p < group_before_page:
+                                    continue
+                                if p == group_before_page and page_group_before_y is not None and float(entry['y1']) >= page_group_before_y - 0.5:
+                                    continue
+                            elif gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
+                                continue
+                        elif gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
                             continue
                         raw = line_text if case_sensitive else line_text.lower()
                         needle = row_name if case_sensitive else row_name.lower()
                         score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                        anchor_tokens_ok = _anchor_tokens_present(row_name, line_text) if row_name else True
                         # containment boost
-                        if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                        if anchor_tokens_ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
                             score = max(score, 0.99)
-                        if row_name and score > 0.6:
+                        if row_name and score > 0.6 and anchor_tokens_ok:
                             if not pdf_best_line_only or score > pdf_best_line_only[2]:
                                 pdf_best_line_only = (p, line_text, score)
-                        if row_name and score < 0.6:
+                        if row_name and (score < 0.6 or not anchor_tokens_ok):
+                            if debug_mode:
+                                reason = "missing anchor tokens" if not anchor_tokens_ok else "score<0.6"
+                                print(f"[SMART DEBUG][PDF] skip row {reason} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
                             continue
                         # compute right segment and numeric candidates with coordinates
                         tok_norms = [_normalize_anchor_token(t) for t in texts]
@@ -1656,8 +1720,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             label_right_x = tokens[j][2]
                         # right-side tokens
                         right_tokens = [t for t in tokens if t[0] >= label_right_x - 1.0]
-                        right_text = ' '.join([t[4] for t in right_tokens]).strip() if right_tokens else ""
-                        smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
+                        right_text_segment = ' '.join([t[4] for t in right_tokens]).strip() if right_tokens else ""
+                        ordered_right_tokens = [t for t in sorted(right_tokens, key=lambda tok: (tok[0], tok[1])) if str(t[4]).strip()]
+                        smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
+                        if debug_mode:
+                            print(f"[SMART DEBUG][PDF] cand page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text_segment!r}", file=sys.stderr)
 
                         # Identify nearest header positions above this row
                         header_map: Dict[str, float] = {}
@@ -1711,29 +1778,36 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         chosen = None
                         chosen_sec_score = 0.0
                         conflict_reason = None
-                        if smart_kind == 'number' and numeric_cands:
-                            # Positional override: if smart_position/field_index is set, pick Nth by left-to-right
-                            pos_n = spec.smart_position or spec.field_index
-                            if pos_n and pos_n >= 1:
-                                numeric_cands_sorted = sorted(numeric_cands, key=lambda c: (c['x0'], c['y0']))
-                                if pos_n <= len(numeric_cands_sorted):
-                                    chosen = numeric_cands_sorted[pos_n - 1]
-                                    units_value = chosen.get('units') or units_value
-                                    cand = chosen['text']
-                                    if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
+                        pos_n = spec.smart_position or spec.field_index
+                        if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_tokens:
+                            if pos_n <= len(ordered_right_tokens):
+                                tok = ordered_right_tokens[pos_n - 1]
+                                raw_field = str(tok[4]).strip()
+                                cand_match = NUMBER_REGEX.search(raw_field)
+                                cand_text = cand_match.group(0) if cand_match else raw_field
+                                nval = None
+                                if cand_match:
+                                    try:
+                                        nval = float(numeric_only(cand_text)) if numeric_only(cand_text) is not None else None
+                                    except Exception:
+                                        nval = None
+                                    units_value = extract_units(cand_text) or units_value
+                                    if nval is not None and (spec.range_min is not None or spec.range_max is not None):
                                         bad = False
-                                        if spec.range_min is not None and chosen['nval'] < spec.range_min:
+                                        if spec.range_min is not None and nval < spec.range_min:
                                             bad = True
-                                        if spec.range_max is not None and chosen['nval'] > spec.range_max:
+                                        if spec.range_max is not None and nval > spec.range_max:
                                             bad = True
-                                        if bad and not cand.rstrip().endswith('(range violation)'):
-                                            cand = f"{cand} (range violation)"
-                                    val = cand
-                                    if score > best_score:
-                                        best_score = score
-                                        best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
-                                    # Skip scoring if positional used
-                                    continue
+                                        if bad and not cand_text.rstrip().endswith('(range violation)'):
+                                            cand_text = f"{cand_text} (range violation)"
+                                    val = _strip_units_from_numeric_text(cand_text) or cand_text
+                                else:
+                                    val = raw_field
+                                if score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                continue
+                        if smart_kind == 'number' and numeric_cands:
                             # Score candidates using middle-of-line (between min/max), units hints, range, and optional secondary term sweep
                             # Secondary: vertical sweep above candidate within tight x window, including neighbor bands
                             def sec_score(c):
@@ -1828,48 +1902,56 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if bad and not cand.rstrip().endswith('(range violation)'):
                                         cand = f"{cand} (range violation)"
                                 val = cand
+                                if smart_kind == 'number':
+                                    val = _strip_units_from_numeric_text(val) or val
                                 if score > best_score:
                                     best_score = score
-                                    best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                    if debug_mode:
+                                        print(f"[SMART DEBUG][PDF] best_update page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                         else:
                             # string/date/time handling via original helper
-                            val = extract_from_line(line_text, right_text, smart_kind)
+                            val = extract_from_line(line_text, right_text_segment, smart_kind)
+                            if val and smart_kind == 'number':
+                                val = _strip_units_from_numeric_text(val) or val
                             if val:
                                 if score > best_score:
                                     best_score = score
-                                    best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
-                if best_info:
-                    page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-                    row_text_selected = context_line_text
-                    confidence = best_score
-                    method_used = 'smart:pdf'
-                    text_source = 'pdf'
-                    return MatchResult(
-                        pdf_file=pdf_path.name,
-                        serial_number=serial_number,
-                        term=spec.term,
-                        page=page_hit,
-                        number=value_text,
-                        units=units_value,
-                        context=right_text,
-                        method=method_used,
-                        found=True,
-                        confidence=confidence,
-                        row_label=row_text_selected,
-                        column_label=None,
-                        text_source=text_source,
-                        smart_snap_context=context_line_text,
-                        smart_snap_type=smart_kind,
-                        smart_line_min=line_min_txt,
-                        smart_line_max=line_max_txt,
-                        smart_conflict=conflict_reason,
-                        smart_secondary_found=sec_found,
-                    )
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                    if debug_mode:
+                                        print(f"[SMART DEBUG][PDF] best_update(direct) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
             finally:
                 try:
                     doc.close()
                 except Exception:
                     pass
+            if best_info:
+                page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
+                row_text_selected = context_line_text
+                confidence = best_score
+                method_used = 'smart:pdf'
+                text_source = 'pdf'
+                return MatchResult(
+                    pdf_file=pdf_path.name,
+                    serial_number=serial_number,
+                    term=spec.term,
+                    page=page_hit,
+                    number=value_text,
+                    units=units_value,
+                    context=right_text,
+                    method=method_used,
+                    found=True,
+                    confidence=confidence,
+                    row_label=row_text_selected,
+                    column_label=None,
+                    text_source=text_source,
+                    smart_snap_context=context_line_text,
+                    smart_snap_type=smart_kind,
+                    smart_line_min=line_min_txt,
+                    smart_line_max=line_max_txt,
+                    smart_conflict=conflict_reason,
+                    smart_secondary_found=sec_found,
+                )
             if best_info is None and pdf_best_line_only is not None:
                 p, context_line_text, sc = pdf_best_line_only
                 return MatchResult(
@@ -1894,7 +1976,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     # OCR fallback with EasyOCR boxes -> lines
     if _HAVE_EASYOCR and _HAVE_PYMUPDF:
         try:
-            debug_mode = bool(os.environ.get('SMART_DEBUG') or os.environ.get('SMART_SNAP_DEBUG'))
             dpi_candidates: List[int] = []
 
             def _push_dpi(val: Optional[str]) -> None:
@@ -1932,6 +2013,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pages = list(range(1, doc.page_count + 1))
             best_score = 0.0
             best_info = None
+            group_before_seen = spec.group_before is None
+            group_before_page: Optional[int] = None
             for dpi in dpi_candidates:
                 for p in pages or []:
                     items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
@@ -1947,6 +2030,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     # detect optional group bounds using anchors
                     group_anchor_y = None
                     group_upper_y = None
+                    page_group_before_y = None
                     if spec.group_after:
                         matches = []
                         for it in items:
@@ -1972,8 +2056,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if matches:
                             upper_best = max(m[1] for m in matches)
                             top = [m for m in matches if m[1] >= upper_best - 0.1]
-                            group_upper_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                            found_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                            group_upper_y = found_y
+                            page_group_before_y = found_y
+                            if not group_before_seen and found_y is not None:
+                                group_before_seen = True
+                                group_before_page = p
+                    if spec.group_before and not group_before_seen:
+                        continue
                     for cy, row_items in sorted(rows.items(), key=lambda kv: kv[0]):
+                        right_text_segment = ''
                         if debug_mode:
                             print(f"[SMART DEBUG] row candidate dpi={dpi} page={p} cy={cy} tokens={len(row_items)} text={' '.join(str(it.get('text') or '') for it in row_items)!r}", file=sys.stderr)
                         row_items.sort(key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))
@@ -1985,12 +2077,21 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         mean_y = sum(float(it.get('cy',0.0)) for it in row_items) / max(1,len(row_items))
                         if group_anchor_y is not None and mean_y <= float(group_anchor_y) + 0.5:
                             continue
-                        if group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
+                        if spec.group_before:
+                            if group_before_page is not None:
+                                if p < group_before_page:
+                                    continue
+                                if p == group_before_page and page_group_before_y is not None and mean_y >= float(page_group_before_y) - 0.5:
+                                    continue
+                            elif group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
+                                continue
+                        elif group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
                             continue
                         score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
-                        if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                        anchor_tokens_ok = _anchor_tokens_present(row_name, line_text) if row_name else True
+                        if anchor_tokens_ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
                             score = max(score, 0.99)
-                        if row_name and score < 0.6:
+                        if row_name and (score < 0.6 or not anchor_tokens_ok):
                             if debug_mode:
                                 print(f"[SMART DEBUG] skip row score<0.6 dpi={dpi} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
                             continue
@@ -2005,25 +2106,39 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             except Exception:
                                 pass
                         right_items = [it for it in row_items if float(it.get('x0',0.0)) >= label_right_x - 1.0]
-                        # Fallback: include nearby tokens just below/above the row when OCR splits numbers into separate rows
-                        if (not right_items) or not any(NUMBER_REGEX.search(str(it.get('text') or '')) for it in right_items):
-                            vertical_tol = max(8.0, (max(float(it.get('y1',0.0)) for it in row_items) - min(float(it.get('y0',0.0)) for it in row_items)) * 1.2 if row_items else 8.0)
+                        need_augment = double_height_mode or not any(NUMBER_REGEX.search(str(it.get('text') or '')) for it in right_items)
+                        if need_augment:
+                            row_min_y = min((float(it.get('y0',0.0)) for it in row_items), default=0.0)
+                            row_max_y = max((float(it.get('y1',0.0)) for it in row_items), default=0.0)
+                            row_height = max(1.0, row_max_y - row_min_y)
+                            if double_height_mode:
+                                top_pad = max(4.0, row_height * 0.8)
+                                bottom_pad = max(8.0, row_height * 1.6)
+                            else:
+                                top_pad = max(1.5, min(5.0, row_height * 0.6))
+                                bottom_pad = max(3.0, min(8.0, row_height * 0.9))
                             augmented: List[Dict[str, float]] = []
+                            seen_ids = {id(it) for it in right_items}
                             for it in items:
-                                if it in row_items:
+                                if id(it) in seen_ids:
                                     continue
                                 if float(it.get('x0',0.0)) < label_right_x - 1.5:
                                     continue
-                                if abs(float(it.get('cy',0.0)) - mean_y) <= vertical_tol:
-                                    augmented.append(it)
+                                y0 = float(it.get('y0',0.0))
+                                y1 = float(it.get('y1',0.0))
+                                if y1 < row_min_y - top_pad or y0 > row_max_y + bottom_pad:
+                                    continue
+                                augmented.append(it)
+                                seen_ids.add(id(it))
                             if augmented:
                                 right_items = sorted(right_items + augmented, key=lambda t: (float(t.get('y0',0.0)), float(t.get('x0',0.0))))
                                 if debug_mode:
-                                    print(f"[SMART DEBUG] expanded right_items via vertical tolerance ({len(augmented)} extra)", file=sys.stderr)
-                        right_text = ' '.join([str(it.get('text') or '') for it in right_items]).strip() if right_items else ""
-                        smart_kind = _detect_smart_type(spec.smart_snap_type, right_text)
+                                    print(f"[SMART DEBUG] expanded right_items via band tolerance ({len(augmented)} extra)", file=sys.stderr)
+                        ordered_right_items = [it for it in sorted(right_items, key=lambda t: (float(t.get('x0',0.0)), float(t.get('y0',0.0)))) if str(it.get('text') or '').strip()]
+                        right_text_segment = ' '.join([str(it.get('text') or '') for it in right_items]).strip() if right_items else ""
+                        smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
                         if debug_mode:
-                            print(f"[SMART DEBUG] cand dpi={dpi} page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text!r}", file=sys.stderr)
+                            print(f"[SMART DEBUG] cand dpi={dpi} page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text_segment!r}", file=sys.stderr)
 
                         # Identify nearby column headers for scoring (prefer 'value' column)
                         header_map: Dict[str, Dict[str, float]] = {}
@@ -2077,54 +2192,61 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
                         conflict_reason = None
                         chosen_sec_score = 0.0
+                        pos_n = spec.smart_position or spec.field_index
+                        if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_items:
+                            if pos_n <= len(ordered_right_items):
+                                tok = ordered_right_items[pos_n - 1]
+                                raw_field = str(tok.get('text') or '').strip()
+                                cand_match = NUMBER_REGEX.search(raw_field)
+                                cand_text = cand_match.group(0) if cand_match else raw_field
+                                nval = None
+                                if cand_match:
+                                    try:
+                                        nval = float(numeric_only(cand_text)) if numeric_only(cand_text) is not None else None
+                                    except Exception:
+                                        nval = None
+                                    units_value = extract_units(cand_text) or units_value
+                                    if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                        bad = False
+                                        if spec.range_min is not None and nval < spec.range_min:
+                                            bad = True
+                                        if spec.range_max is not None and nval > spec.range_max:
+                                            bad = True
+                                        if bad and not cand_text.rstrip().endswith('(range violation)'):
+                                            cand_text = f"{cand_text} (range violation)"
+                                    val = _strip_units_from_numeric_text(cand_text) or cand_text
+                                else:
+                                    val = raw_field
+                                if score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                continue
                         if smart_kind == 'number' and numeric_cands:
-                            # Positional override for OCR path
-                            pos_n = spec.smart_position or spec.field_index
-                            if pos_n and pos_n >= 1:
-                                numeric_cands_sorted = sorted(numeric_cands, key=lambda c: (c['x0'], c['y0']))
-                                if pos_n <= len(numeric_cands_sorted):
-                                    chosen = numeric_cands_sorted[pos_n - 1]
-                                    units_value = chosen.get('units') or units_value
-                                    cand = chosen['text']
-                                    bad = False
-                                    if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
-                                        if spec.range_min is not None and chosen['nval'] < spec.range_min:
-                                            bad = True
-                                        if spec.range_max is not None and chosen['nval'] > spec.range_max:
-                                            bad = True
-                                    if bad and not cand.rstrip().endswith('(range violation)'):
-                                        cand = f"{cand} (range violation)"
-                                    val = cand
-                                    if score > best_score:
-                                        best_score = score
-                                        best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
-                                    # Skip scoring if positional used
-                                    continue
-                        def sec_score(c):
-                            if not sec_term:
-                                return 0.0
-                            # Expand search up to page top within a horizontal stripe around the candidate
-                            try:
-                                xpad_mul = float(os.environ.get('SMART_SEC_XPAD', '0.6'))
-                            except Exception:
-                                xpad_mul = 0.6
-                            xpad = max(5.0, (float(c['x1']) - float(c['x0'])) * xpad_mul)
-                            cx0, cx1 = float(c['x0']) - xpad, float(c['x1']) + xpad
-                            best = 0.0
-                            # Use all OCR tokens available on this page (items)
-                            try:
-                                for it in items:
-                                    # consider tokens above or on candidate's top, and within stripe
-                                    if float(it.get('y1',0.0)) <= float(c['y0']) + 0.5 and float(it.get('x0',0.0)) >= cx0 and float(it.get('x1',0.0)) <= cx1:
-                                        txt = str(it.get('text') or '')
-                                        sc = _fuzzy_ratio(txt, sec_term)
-                                        if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(txt):
-                                            sc = max(sc, 0.99)
-                                        if sc > best:
-                                            best = sc
-                            except Exception:
-                                pass
-                            return best
+                            def sec_score(c):
+                                if not sec_term:
+                                    return 0.0
+                                # Expand search up to page top within a horizontal stripe around the candidate
+                                try:
+                                    xpad_mul = float(os.environ.get('SMART_SEC_XPAD', '0.6'))
+                                except Exception:
+                                    xpad_mul = 0.6
+                                xpad = max(5.0, (float(c['x1']) - float(c['x0'])) * xpad_mul)
+                                cx0, cx1 = float(c['x0']) - xpad, float(c['x1']) + xpad
+                                best = 0.0
+                                # Use all OCR tokens available on this page (items)
+                                try:
+                                    for it in items:
+                                        # consider tokens above or on candidate's top, and within stripe
+                                        if float(it.get('y1',0.0)) <= float(c['y0']) + 0.5 and float(it.get('x0',0.0)) >= cx0 and float(it.get('x1',0.0)) <= cx1:
+                                            txt = str(it.get('text') or '')
+                                            sc = _fuzzy_ratio(txt, sec_term)
+                                            if _normalize_anchor_token(sec_term) and _normalize_anchor_token(sec_term) in _normalize_anchor_token(txt):
+                                                sc = max(sc, 0.99)
+                                            if sc > best:
+                                                best = sc
+                                except Exception:
+                                    pass
+                                return best
 
                         scored = []
                         for c in numeric_cands:
@@ -2193,47 +2315,51 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 if bad and not cand.rstrip().endswith('(range violation)'):
                                     cand = f"{cand} (range violation)"
                             val = cand
+                            if smart_kind == 'number':
+                                val = _strip_units_from_numeric_text(val) or val
                             if score > best_score:
                                 best_score = score
-                                best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
                                 if debug_mode:
                                     print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                     else:
-                        val = extract_from_line(line_text, right_text, smart_kind)
+                        val = extract_from_line(line_text, right_text_segment, smart_kind)
+                        if val and smart_kind == 'number':
+                            val = _strip_units_from_numeric_text(val) or val
                         if val and score > best_score:
                             best_score = score
-                            best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason)
+                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason)
                             if debug_mode:
                                 print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
-            if best_info:
-                page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-                return MatchResult(
-                    pdf_file=pdf_path.name,
-                    serial_number=serial_number,
-                    term=spec.term,
-                    page=page_hit,
-                    number=value_text,
-                    units=units_value,
-                    context=right_text,
-                    method='smart:ocr',
-                    found=True,
-                    confidence=best_score,
-                    row_label=context_line_text,
-                    column_label=None,
-                    text_source='ocr',
-                    smart_snap_context=context_line_text,
-                    smart_snap_type=smart_kind,
-                    smart_line_min=line_min_txt,
-                    smart_line_max=line_max_txt,
-                    smart_conflict=conflict_reason,
-                    smart_secondary_found=sec_found,
-                )
         finally:
             try:
                 if doc is not None:
                     doc.close()
             except Exception:
                 pass
+        if best_info:
+            page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=page_hit,
+                number=value_text,
+                units=units_value,
+                context=right_text,
+                method='smart:ocr',
+                found=True,
+                confidence=best_score,
+                row_label=context_line_text,
+                column_label=None,
+                text_source='ocr',
+                smart_snap_context=context_line_text,
+                smart_snap_type=smart_kind,
+                smart_line_min=line_min_txt,
+                smart_line_max=line_max_txt,
+                smart_conflict=conflict_reason,
+                smart_secondary_found=sec_found,
+            )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
     debug_context = None
@@ -2391,7 +2517,8 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
     col_raw = (spec.column or '').strip()
     col_alts = [s.strip() for s in re.split(r'[|/]', col_raw) if s.strip()] or [(spec.column or '').strip()]
     ret_type = (spec.return_type or 'number').strip().lower()
-    fmt_pat = _compile_value_regex(spec.value_format or '') if spec.value_format else None
+    value_format_text, _ = _value_format_info(getattr(spec, 'value_format', None))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
 
     try:
         dpi_base = int(os.environ.get('OCR_DPI', '700'))
@@ -3049,6 +3176,25 @@ def find_closest_number_in_text(text: str, term: str, window_chars: int = 160, c
         return best_num, best_ctx, None
     return None, None, failure_reason
 
+_DOUBLE_HEIGHT_FLAG_RE = re.compile(r"\(\s*double\s+height\s*\)", re.IGNORECASE)
+
+
+def _value_format_info(raw: Optional[str]) -> Tuple[Optional[str], bool]:
+    """
+    Returns a cleaned value_format string (suitable for regex compilation)
+    and whether the original format requested double-height behavior.
+    """
+    if not raw:
+        return None, False
+    s = str(raw).strip()
+    if not s:
+        return None, False
+    double_height = bool(_DOUBLE_HEIGHT_FLAG_RE.search(s))
+    if double_height:
+        s = _DOUBLE_HEIGHT_FLAG_RE.sub('', s).strip()
+    return (s or None), double_height
+
+
 def _compile_value_regex(fmt: str) -> Optional[re.Pattern]:
     if not fmt:
         return None
@@ -3082,7 +3228,8 @@ def _compile_value_regex(fmt: str) -> Optional[re.Pattern]:
 def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> MatchResult:
     anchor_text = (spec.anchor or spec.term or '').strip()
     ret_kind = (spec.return_type or 'number').strip().lower()
-    fmt_pat = _compile_value_regex(spec.value_format or '') if spec.value_format else None
+    value_format_text, _ = _value_format_info(getattr(spec, 'value_format', None))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
     anchor_tokens = [tok for tok in re.split(r"\s+", anchor_text) if tok]
     anchor_tokens_lower = [tok.lower() for tok in anchor_tokens]
     anchor_tokens_norm = [_normalize_anchor_token(tok) for tok in anchor_tokens]

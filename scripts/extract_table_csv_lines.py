@@ -23,6 +23,7 @@ Options:
   --min-rows INT      Minimum consecutive rows with same field count (default: 3)
   --out PATH          Output Excel path (default: Data Packages/<pdf-stem>_table.xlsx)
   --delimiter STR     Field delimiter (default: auto-detect from whitespace/tabs)
+  --no-auto-rotate    Disable automatic rotation retry for landscape pages
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ import csv as csv_module
 # Check available PDF processing libraries
 _HAVE_PYMUPDF = False
 _HAVE_EASYOCR = False
+_EASYOCR_READER = None
 
 try:
     import fitz  # PyMuPDF
@@ -48,6 +50,17 @@ try:
     _HAVE_EASYOCR = True
 except ImportError:
     pass
+
+
+def _get_easyocr_reader(langs: Optional[List[str]] = None):
+    """Lazily instantiate a shared EasyOCR reader to avoid repeated heavy init."""
+    global _EASYOCR_READER
+    if not _HAVE_EASYOCR:
+        return None
+    if _EASYOCR_READER is None:
+        langs = langs or ['en']
+        _EASYOCR_READER = easyocr.Reader(langs, gpu=False, verbose=False)
+    return _EASYOCR_READER
 
 
 def parse_page_ranges(s: str) -> List[int]:
@@ -77,8 +90,8 @@ def parse_page_ranges(s: str) -> List[int]:
     return sorted(pages)
 
 
-def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
-    """Extract text from a single page using PyMuPDF, preserving row structure by Y-coordinate."""
+def extract_text_pymupdf(pdf_path: Path, page_num: int, rotation: int = 0) -> Optional[str]:
+    """Extract text from a single page using PyMuPDF, optionally rotating to compensate for landscape scans."""
     if not _HAVE_PYMUPDF:
         return None
 
@@ -90,8 +103,14 @@ def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
 
         page = doc.load_page(page_num - 1)  # 0-indexed
 
-        # Get words with their positions
-        words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+        # Apply rotation via text page matrix if requested
+        if rotation:
+            matrix = fitz.Matrix(1, 1).preRotate(rotation)
+            text_page = page.get_textpage(matrix=matrix)
+            words = text_page.extractWORDS()
+        else:
+            text_page = None
+            words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
 
         if not words:
             return ""
@@ -166,8 +185,8 @@ def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
             pass
 
 
-def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optional[str]:
-    """Extract text from a single page using EasyOCR. Returns None if dependencies not available."""
+def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300, rotation: int = 0) -> Optional[str]:
+    """Extract text from a single page using EasyOCR. Supports rotation to better handle landscape layouts."""
     if not _HAVE_EASYOCR:
         return None
 
@@ -178,7 +197,6 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         return None
 
     try:
-        import easyocr
         from PIL import Image
         import numpy as np
     except ImportError:
@@ -192,9 +210,13 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         page = doc.load_page(page_num - 1)
         pix = page.get_pixmap(dpi=max(200, min(800, dpi)))
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        if rotation:
+            img = img.rotate(rotation, expand=True)
         img_np = np.array(img)
 
-        reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+        reader = _get_easyocr_reader(['en'])
+        if reader is None:
+            return None
         results = reader.readtext(img_np)
 
         # Sort by Y coordinate (top to bottom), then X (left to right)
@@ -202,41 +224,65 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         for bbox, text, conf in results:
             if conf < 0.3:  # Skip low confidence
                 continue
+            text = text.strip()
+            if not text:
+                continue
             ys = [pt[1] for pt in bbox]
             xs = [pt[0] for pt in bbox]
-            y_avg = sum(ys) / len(ys)
-            x_avg = sum(xs) / len(xs)
-            boxes.append((y_avg, x_avg, text))
+            y0, y1 = min(ys), max(ys)
+            x0, x1 = min(xs), max(xs)
+            y_mid = (y0 + y1) / 2.0
+            boxes.append((y_mid, x0, x1, text))
 
         boxes.sort(key=lambda item: (item[0], item[1]))
 
         # Group by similar Y coordinates (same line)
-        lines: List[List[str]] = []
-        current_line: List[Tuple[float, str]] = []
+        lines: List[List[Tuple[float, float, str]]] = []
+        current_line: List[Tuple[float, float, str]] = []
         last_y = None
         y_threshold = 10  # pixels
 
-        for y, x, text in boxes:
-            if last_y is None or abs(y - last_y) <= y_threshold:
-                current_line.append((x, text))
+        for y_mid, x0, x1, text in boxes:
+            if last_y is None or abs(y_mid - last_y) <= y_threshold:
+                current_line.append((x0, x1, text))
                 if last_y is None:
-                    last_y = y
+                    last_y = y_mid
                 else:
-                    last_y = (last_y + y) / 2  # Average
+                    last_y = (last_y + y_mid) / 2  # Average
             else:
                 # New line
                 if current_line:
                     current_line.sort(key=lambda item: item[0])  # Sort by X
-                    lines.append([txt for _, txt in current_line])
-                current_line = [(x, text)]
-                last_y = y
+                    lines.append(current_line)
+                current_line = [(x0, x1, text)]
+                last_y = y_mid
 
         if current_line:
             current_line.sort(key=lambda item: item[0])
-            lines.append([txt for _, txt in current_line])
+            lines.append(current_line)
 
-        # Join each line with spaces
-        return "\n".join(" ".join(words) for words in lines)
+        rendered_lines = []
+        for line_boxes in lines:
+            parts: List[str] = []
+            prev_end = None
+            for x0, x1, word in line_boxes:
+                if prev_end is None:
+                    parts.append(word)
+                else:
+                    gap = x0 - prev_end
+                    if gap > 80:
+                        spacer = "    "
+                    elif gap > 35:
+                        spacer = "  "
+                    elif gap > 12:
+                        spacer = " "
+                    else:
+                        spacer = " "
+                    parts.append(spacer + word)
+                prev_end = x1
+            rendered_lines.append("".join(parts))
+
+        return "\n".join(rendered_lines)
 
     finally:
         try:
@@ -654,7 +700,8 @@ def extract_tables_from_pages(pdf_path: Path, pages: List[int],
                               min_cols: int = 2, min_rows: int = 3,
                               delimiter: Optional[str] = None, debug: bool = False,
                               fixed_cols: Optional[int] = None,
-                              match_threshold: float = 0.5) -> Dict[int, List[Dict]]:
+                              match_threshold: float = 0.5,
+                              auto_rotate: bool = True) -> Dict[int, List[Dict]]:
     """
     Extract tables from specified pages.
 
@@ -674,34 +721,53 @@ def extract_tables_from_pages(pdf_path: Path, pages: List[int],
             print("  Or install EasyOCR: pip install easyocr")
             sys.exit(1)
 
+    rotation_candidates = [0]
+    if auto_rotate:
+        rotation_candidates = [0, 90, 270]
+
     for page_num in pages:
         print(f"[INFO] Processing page {page_num}...")
 
-        if actual_use_ocr:
-            text = extract_text_easyocr(pdf_path, page_num, dpi)
-        else:
-            text = extract_text_pymupdf(pdf_path, page_num)
+        page_tables: List[Dict] = []
+        used_rotation: Optional[int] = None
+        extracted_any_text = False
 
-        if text is None:
-            print(f"[ERROR] Failed to extract text from page {page_num}")
-            results[page_num] = []
-            continue
+        for rotation in rotation_candidates:
+            if actual_use_ocr:
+                text = extract_text_easyocr(pdf_path, page_num, dpi, rotation=rotation)
+            else:
+                text = extract_text_pymupdf(pdf_path, page_num, rotation=rotation)
 
-        if not text.strip():
-            print(f"[WARN] No text found on page {page_num}")
-            results[page_num] = []
-            continue
+            if text is None:
+                continue
+            if not text.strip():
+                continue
+            extracted_any_text = True
 
-        tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug,
-                                       fixed_cols, match_threshold)
-        results[page_num] = tables
+            tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug,
+                                           fixed_cols, match_threshold)
+            if tables:
+                page_tables = tables
+                used_rotation = rotation
+                break
 
-        if tables:
-            print(f"[INFO] Found {len(tables)} table(s) on page {page_num}")
-            for idx, table in enumerate(tables, 1):
+        results[page_num] = page_tables
+
+        if used_rotation and used_rotation != 0:
+            print(f"[INFO] Page {page_num}: detected tables after rotating {used_rotation}°")
+
+        if page_tables:
+            print(f"[INFO] Found {len(page_tables)} table(s) on page {page_num}")
+            for idx, table in enumerate(page_tables, 1):
                 print(f"  Table {idx}: {table['num_cols']} columns, {len(table['rows'])} rows")
         else:
-            print(f"[INFO] No tables detected on page {page_num}")
+            if auto_rotate:
+                print(f"[INFO] No tables detected on page {page_num} (after trying rotations {rotation_candidates})")
+            else:
+                print(f"[INFO] No tables detected on page {page_num}")
+            if not extracted_any_text:
+                mode_label = "OCR" if actual_use_ocr else "PyMuPDF"
+                print(f"[WARN] Unable to extract readable text from page {page_num} using {mode_label}.")
 
     return results
 
@@ -812,6 +878,7 @@ def main() -> None:
     parser.add_argument('--delimiter', default=None, help='Field delimiter (default: auto-detect)')
     parser.add_argument('--out', default='', help='Output Excel path (default: Data Packages/<pdf-stem>_table.xlsx)')
     parser.add_argument('--debug', action='store_true', help='Print debug information (extracted text and field parsing)')
+    parser.add_argument('--no-auto-rotate', action='store_true', help='Disable automatic landscape rotation retries')
 
     args = parser.parse_args()
 
@@ -850,7 +917,8 @@ def main() -> None:
         delimiter=args.delimiter,
         debug=args.debug,
         fixed_cols=args.num_cols,
-        match_threshold=args.match_threshold
+        match_threshold=args.match_threshold,
+        auto_rotate=(not args.no_auto_rotate)
     )
 
     # Write to Excel

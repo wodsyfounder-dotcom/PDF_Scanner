@@ -1,5 +1,5 @@
 ===== PDF_Scanner Full Snapshot =====
-Generated: Wed 11/12/2025 12:10:45.94
+Generated: Wed 11/12/2025 19:21:26.85
 Root: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\scripts\..\
 
 Required Python packages (ship list):
@@ -873,6 +873,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Data Group",
         "Term Label",
         "Smart Snap Type",
+        "Mode",
         "Term",
         "Pages",
         "GroupAfter",
@@ -888,6 +889,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Data Group": "Data Grouping",
         "Term Label": "Term Label",
         "Smart Snap Type": "Smart Snap Type",
+        "Mode": "Mode",
         "Term": "Search Term",
         "Pages": "Pages",
         "GroupAfter": "Group After",
@@ -899,7 +901,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Secondary Term": "Secondary Term",
         "Smart Position": "Smart Position",
     }
-    DEFAULT_HIDDEN = {"Return", "Mode", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
+    DEFAULT_HIDDEN = {"Return", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
 
     def __init__(self, terms_path: Path, parent=None):
         super().__init__(parent)
@@ -968,6 +970,10 @@ class TermsEditorDialog(QtWidgets.QDialog):
             "Smart Snap Type": {
                 "options": self._smart_type_options(),
                 "default": "",
+            },
+            "Mode": {
+                "options": self._mode_options(),
+                "default": "smart",
             },
         }
 
@@ -1080,6 +1086,56 @@ class TermsEditorDialog(QtWidgets.QDialog):
             opts.append(("Auto-detect (blank)", ""))
         return opts
 
+    def _mode_options(self) -> list[tuple[str, str]]:
+        opts: list[tuple[str, str]] = []
+        values = be.TERMS_MODE_CHOICES or ["smart"]
+        seen: set[str] = set()
+        for opt in values:
+            val = (opt or "").strip()
+            if not val or val in seen:
+                continue
+            seen.add(val)
+            label = "Smart Snap" if val == "smart" else val.title()
+            opts.append((label, val))
+        if not opts:
+            opts.append(("Smart Snap", "smart"))
+        return opts
+
+    @staticmethod
+    def _smart_type_is_text(value: str | None) -> bool:
+        if value is None:
+            return False
+        return value.strip().lower() in {"title", "text", "string"}
+
+    def _cell_indices_for_widget(self, widget: QtWidgets.QWidget) -> tuple[int | None, int | None]:
+        for row in range(self.table.rowCount()):
+            for col in range(self.table.columnCount()):
+                if self.table.cellWidget(row, col) is widget:
+                    return row, col
+        return None, None
+
+    def _apply_text_defaults(self, row_idx: int, force: bool = False) -> None:
+        targets = ("Units", "Range (min)", "Range (max)")
+        for header in targets:
+            handled = False
+            if header in self._visible_headers:
+                col = self._visible_headers.index(header)
+                widget = self.table.cellWidget(row_idx, col)
+                if isinstance(widget, QtWidgets.QComboBox):
+                    continue
+                item = self.table.item(row_idx, col)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem("")
+                    self.table.setItem(row_idx, col, item)
+                current = (item.text() or "").strip()
+                if force or not current:
+                    item.setText("N/A")
+                handled = True
+            if not handled and row_idx < len(self._hidden_rows):
+                current = (self._hidden_rows[row_idx].get(header, "") or "").strip()
+                if force or not current:
+                    self._hidden_rows[row_idx][header] = "N/A"
+
     def _determine_visible_headers(self, headers: list[str]) -> None:
         order: list[str] = []
         present = set(headers)
@@ -1127,14 +1183,19 @@ class TermsEditorDialog(QtWidgets.QDialog):
         return self.COLUMN_DISPLAY_NAMES.get(header, header)
 
     def _populate_row(self, row_idx: int, row_data: dict[str, str]) -> None:
+        smart_type_value = None
         for col_idx, header in enumerate(self._visible_headers):
             value = row_data.get(header, "")
+            if header == "Smart Snap Type":
+                smart_type_value = value
             if header in self._combo_defs:
                 combo = self._build_combo(header, value)
                 self.table.setCellWidget(row_idx, col_idx, combo)
             else:
                 item = QtWidgets.QTableWidgetItem(value)
                 self.table.setItem(row_idx, col_idx, item)
+        if smart_type_value and self._smart_type_is_text(smart_type_value):
+            self._apply_text_defaults(row_idx, force=False)
 
     def _build_combo(self, header: str, value: str) -> QtWidgets.QComboBox:
         config = self._combo_defs[header]
@@ -1169,13 +1230,28 @@ class TermsEditorDialog(QtWidgets.QDialog):
         idx = combo.findData(target)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         combo.blockSignals(False)
+        combo.setProperty("header", header)
         combo.currentIndexChanged.connect(self._on_combo_changed)
         return combo
 
     def _on_combo_changed(self, *args) -> None:
         if self._loading:
             return
+        combo = self.sender()
+        if isinstance(combo, QtWidgets.QComboBox):
+            header = combo.property("header")
+            if header == "Smart Snap Type":
+                self._handle_smart_type_change(combo)
         self._mark_dirty()
+
+    def _handle_smart_type_change(self, combo: QtWidgets.QComboBox) -> None:
+        row, _ = self._cell_indices_for_widget(combo)
+        if row is None:
+            return
+        value = combo.currentData()
+        text_value = value if isinstance(value, str) and value else combo.currentText()
+        if self._smart_type_is_text(text_value):
+            self._apply_text_defaults(row, force=True)
 
     def _on_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._loading:
@@ -1200,7 +1276,11 @@ class TermsEditorDialog(QtWidgets.QDialog):
 
     def _add_blank_row(self) -> None:
         payload = {h: "" for h in self._all_headers}
-        payload.setdefault("Mode", (be.TERMS_MODE_CHOICES[0] if be.TERMS_MODE_CHOICES else "smart"))
+        default_mode = "smart"
+        if be.TERMS_MODE_CHOICES:
+            if default_mode not in be.TERMS_MODE_CHOICES:
+                default_mode = be.TERMS_MODE_CHOICES[0]
+        payload.setdefault("Mode", default_mode)
         self._insert_row(payload)
         self.table.scrollToBottom()
         self._mark_dirty()
@@ -7547,6 +7627,40 @@ def _match_anchor_on_line(anchor: str, line_tokens: List[str], line_token_norms:
             return i, i + span - 1
     return None
 
+def _anchor_tokens_present(anchor: str, text: str) -> bool:
+    """
+    Ensure every normalized token from the anchor exists in the target text.
+    Helps prevent partial matches (single-word hits) from masquerading as full row matches.
+    """
+    if not anchor:
+        return True
+    anchor_tokens = [_normalize_anchor_token(tok) for tok in re.split(r"\s+", anchor) if _normalize_anchor_token(tok)]
+    if not anchor_tokens:
+        return True
+    text_tokens = {_normalize_anchor_token(tok) for tok in re.split(r"\s+", text) if _normalize_anchor_token(tok)}
+    return all(tok in text_tokens for tok in anchor_tokens)
+
+
+def _strip_units_from_numeric_text(value: Optional[str]) -> Optional[str]:
+    """
+    When Smart Snap expects a numeric value, return only the numeric portion,
+    preserving any '(range violation)' suffix if present.
+    """
+    if not value:
+        return value
+    txt = value.strip()
+    suffix = ""
+    rv = " (range violation)"
+    if txt.endswith(rv):
+        txt = txt[: -len(rv)].rstrip()
+        suffix = rv
+    num = numeric_only(txt)
+    if num is None:
+        return (txt + suffix).strip()
+    if isinstance(num, str) and num != txt:
+        return f"{num}{suffix}"
+    return (txt + suffix).strip()
+
 
 def _detect_smart_type(preferred: Optional[str], text: str) -> str:
     v = (preferred or 'auto').strip().lower()
@@ -7650,6 +7764,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 best_score = 0.0
                 best_info = None  # (p, line_text, right_text, val, smart_kind)
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
+                group_before_seen = spec.group_before is None
+                group_before_page: Optional[int] = None
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -7688,6 +7804,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     # Detect optional group bounds (y coordinates) from anchors
                     ga_y = None
                     gb_y = None
+                    page_group_before_y = None
                     header_tokens: Dict[str, List[Tuple[float, float, float]]] = {'min': [], 'value': [], 'max': []}
                     for e in lines_map.values():
                         for tok in e['tokens']:
@@ -7718,6 +7835,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best = (sc, y)
                         if best:
                             gb_y = best[1]
+                            page_group_before_y = best[1]
+                            if not group_before_seen:
+                                group_before_seen = True
+                                group_before_page = p
+                    if spec.group_before and not group_before_seen:
+                        continue
 
                     # Build line texts and evaluate
                     for _, entry in sorted(lines_map.items(), key=lambda kv: (kv[1]['y0'], kv[1]['x0'])):
@@ -7729,18 +7852,27 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # Apply group vertical constraints if any
                         if ga_y is not None and float(entry['y0']) <= ga_y + 0.5:
                             continue
-                        if gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
+                        if spec.group_before:
+                            if group_before_page is not None:
+                                if p < group_before_page:
+                                    continue
+                                if p == group_before_page and page_group_before_y is not None and float(entry['y1']) <= page_group_before_y + 0.5:
+                                    continue
+                            elif gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
+                                continue
+                        elif gb_y is not None and float(entry['y1']) >= gb_y - 0.5:
                             continue
                         raw = line_text if case_sensitive else line_text.lower()
                         needle = row_name if case_sensitive else row_name.lower()
                         score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                        anchor_tokens_ok = _anchor_tokens_present(row_name, line_text) if row_name else True
                         # containment boost
-                        if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                        if anchor_tokens_ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
                             score = max(score, 0.99)
-                        if row_name and score > 0.6:
+                        if row_name and score > 0.6 and anchor_tokens_ok:
                             if not pdf_best_line_only or score > pdf_best_line_only[2]:
                                 pdf_best_line_only = (p, line_text, score)
-                        if row_name and score < 0.6:
+                        if row_name and (score < 0.6 or not anchor_tokens_ok):
                             continue
                         # compute right segment and numeric candidates with coordinates
                         tok_norms = [_normalize_anchor_token(t) for t in texts]
@@ -7824,6 +7956,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         if bad and not cand.rstrip().endswith('(range violation)'):
                                             cand = f"{cand} (range violation)"
                                     val = cand
+                                    if smart_kind == 'number':
+                                        val = _strip_units_from_numeric_text(val) or val
                                     if score > best_score:
                                         best_score = score
                                         best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
@@ -7923,48 +8057,52 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if bad and not cand.rstrip().endswith('(range violation)'):
                                         cand = f"{cand} (range violation)"
                                 val = cand
+                                if smart_kind == 'number':
+                                    val = _strip_units_from_numeric_text(val) or val
                                 if score > best_score:
                                     best_score = score
                                     best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
                         else:
                             # string/date/time handling via original helper
                             val = extract_from_line(line_text, right_text, smart_kind)
+                            if val and smart_kind == 'number':
+                                val = _strip_units_from_numeric_text(val) or val
                             if val:
                                 if score > best_score:
                                     best_score = score
                                     best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
-                if best_info:
-                    page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-                    row_text_selected = context_line_text
-                    confidence = best_score
-                    method_used = 'smart:pdf'
-                    text_source = 'pdf'
-                    return MatchResult(
-                        pdf_file=pdf_path.name,
-                        serial_number=serial_number,
-                        term=spec.term,
-                        page=page_hit,
-                        number=value_text,
-                        units=units_value,
-                        context=right_text,
-                        method=method_used,
-                        found=True,
-                        confidence=confidence,
-                        row_label=row_text_selected,
-                        column_label=None,
-                        text_source=text_source,
-                        smart_snap_context=context_line_text,
-                        smart_snap_type=smart_kind,
-                        smart_line_min=line_min_txt,
-                        smart_line_max=line_max_txt,
-                        smart_conflict=conflict_reason,
-                        smart_secondary_found=sec_found,
-                    )
             finally:
                 try:
                     doc.close()
                 except Exception:
                     pass
+            if best_info:
+                page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
+                row_text_selected = context_line_text
+                confidence = best_score
+                method_used = 'smart:pdf'
+                text_source = 'pdf'
+                return MatchResult(
+                    pdf_file=pdf_path.name,
+                    serial_number=serial_number,
+                    term=spec.term,
+                    page=page_hit,
+                    number=value_text,
+                    units=units_value,
+                    context=right_text,
+                    method=method_used,
+                    found=True,
+                    confidence=confidence,
+                    row_label=row_text_selected,
+                    column_label=None,
+                    text_source=text_source,
+                    smart_snap_context=context_line_text,
+                    smart_snap_type=smart_kind,
+                    smart_line_min=line_min_txt,
+                    smart_line_max=line_max_txt,
+                    smart_conflict=conflict_reason,
+                    smart_secondary_found=sec_found,
+                )
             if best_info is None and pdf_best_line_only is not None:
                 p, context_line_text, sc = pdf_best_line_only
                 return MatchResult(
@@ -8027,6 +8165,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pages = list(range(1, doc.page_count + 1))
             best_score = 0.0
             best_info = None
+            group_before_seen = spec.group_before is None
+            group_before_page: Optional[int] = None
             for dpi in dpi_candidates:
                 for p in pages or []:
                     items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
@@ -8042,6 +8182,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     # detect optional group bounds using anchors
                     group_anchor_y = None
                     group_upper_y = None
+                    page_group_before_y = None
                     if spec.group_after:
                         matches = []
                         for it in items:
@@ -8067,7 +8208,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if matches:
                             upper_best = max(m[1] for m in matches)
                             top = [m for m in matches if m[1] >= upper_best - 0.1]
-                            group_upper_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                            found_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                            group_upper_y = found_y
+                            page_group_before_y = found_y
+                            if not group_before_seen and found_y is not None:
+                                group_before_seen = True
+                                group_before_page = p
+                    if spec.group_before and not group_before_seen:
+                        continue
                     for cy, row_items in sorted(rows.items(), key=lambda kv: kv[0]):
                         if debug_mode:
                             print(f"[SMART DEBUG] row candidate dpi={dpi} page={p} cy={cy} tokens={len(row_items)} text={' '.join(str(it.get('text') or '') for it in row_items)!r}", file=sys.stderr)
@@ -8080,12 +8228,21 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         mean_y = sum(float(it.get('cy',0.0)) for it in row_items) / max(1,len(row_items))
                         if group_anchor_y is not None and mean_y <= float(group_anchor_y) + 0.5:
                             continue
-                        if group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
+                        if spec.group_before:
+                            if group_before_page is not None:
+                                if p < group_before_page:
+                                    continue
+                                if p == group_before_page and page_group_before_y is not None and mean_y <= float(page_group_before_y) + 0.5:
+                                    continue
+                            elif group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
+                                continue
+                        elif group_upper_y is not None and mean_y >= float(group_upper_y) - 0.5:
                             continue
                         score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
-                        if _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                        anchor_tokens_ok = _anchor_tokens_present(row_name, line_text) if row_name else True
+                        if anchor_tokens_ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
                             score = max(score, 0.99)
-                        if row_name and score < 0.6:
+                        if row_name and (score < 0.6 or not anchor_tokens_ok):
                             if debug_mode:
                                 print(f"[SMART DEBUG] skip row score<0.6 dpi={dpi} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
                             continue
@@ -8190,6 +8347,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if bad and not cand.rstrip().endswith('(range violation)'):
                                         cand = f"{cand} (range violation)"
                                     val = cand
+                                    if smart_kind == 'number':
+                                        val = _strip_units_from_numeric_text(val) or val
                                     if score > best_score:
                                         best_score = score
                                         best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, None, None)
@@ -8288,6 +8447,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 if bad and not cand.rstrip().endswith('(range violation)'):
                                     cand = f"{cand} (range violation)"
                             val = cand
+                            if smart_kind == 'number':
+                                val = _strip_units_from_numeric_text(val) or val
                             if score > best_score:
                                 best_score = score
                                 best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
@@ -8295,40 +8456,42 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                     else:
                         val = extract_from_line(line_text, right_text, smart_kind)
+                        if val and smart_kind == 'number':
+                            val = _strip_units_from_numeric_text(val) or val
                         if val and score > best_score:
                             best_score = score
                             best_info = (p, line_text, right_text, val, smart_kind, line_min_txt, line_max_txt, conflict_reason)
                             if debug_mode:
                                 print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
-            if best_info:
-                page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-                return MatchResult(
-                    pdf_file=pdf_path.name,
-                    serial_number=serial_number,
-                    term=spec.term,
-                    page=page_hit,
-                    number=value_text,
-                    units=units_value,
-                    context=right_text,
-                    method='smart:ocr',
-                    found=True,
-                    confidence=best_score,
-                    row_label=context_line_text,
-                    column_label=None,
-                    text_source='ocr',
-                    smart_snap_context=context_line_text,
-                    smart_snap_type=smart_kind,
-                    smart_line_min=line_min_txt,
-                    smart_line_max=line_max_txt,
-                    smart_conflict=conflict_reason,
-                    smart_secondary_found=sec_found,
-                )
         finally:
             try:
                 if doc is not None:
                     doc.close()
             except Exception:
                 pass
+        if best_info:
+            page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=page_hit,
+                number=value_text,
+                units=units_value,
+                context=right_text,
+                method='smart:ocr',
+                found=True,
+                confidence=best_score,
+                row_label=context_line_text,
+                column_label=None,
+                text_source='ocr',
+                smart_snap_context=context_line_text,
+                smart_snap_type=smart_kind,
+                smart_line_min=line_min_txt,
+                smart_line_max=line_max_txt,
+                smart_conflict=conflict_reason,
+                smart_secondary_found=sec_found,
+            )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
     debug_context = None
@@ -12164,6 +12327,7 @@ Options:
   --min-rows INT      Minimum consecutive rows with same field count (default: 3)
   --out PATH          Output Excel path (default: Data Packages/<pdf-stem>_table.xlsx)
   --delimiter STR     Field delimiter (default: auto-detect from whitespace/tabs)
+  --no-auto-rotate    Disable automatic rotation retry for landscape pages
 """
 
 from __future__ import annotations
@@ -12177,6 +12341,7 @@ import csv as csv_module
 # Check available PDF processing libraries
 _HAVE_PYMUPDF = False
 _HAVE_EASYOCR = False
+_EASYOCR_READER = None
 
 try:
     import fitz  # PyMuPDF
@@ -12189,6 +12354,17 @@ try:
     _HAVE_EASYOCR = True
 except ImportError:
     pass
+
+
+def _get_easyocr_reader(langs: Optional[List[str]] = None):
+    """Lazily instantiate a shared EasyOCR reader to avoid repeated heavy init."""
+    global _EASYOCR_READER
+    if not _HAVE_EASYOCR:
+        return None
+    if _EASYOCR_READER is None:
+        langs = langs or ['en']
+        _EASYOCR_READER = easyocr.Reader(langs, gpu=False, verbose=False)
+    return _EASYOCR_READER
 
 
 def parse_page_ranges(s: str) -> List[int]:
@@ -12218,8 +12394,8 @@ def parse_page_ranges(s: str) -> List[int]:
     return sorted(pages)
 
 
-def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
-    """Extract text from a single page using PyMuPDF, preserving row structure by Y-coordinate."""
+def extract_text_pymupdf(pdf_path: Path, page_num: int, rotation: int = 0) -> Optional[str]:
+    """Extract text from a single page using PyMuPDF, optionally rotating to compensate for landscape scans."""
     if not _HAVE_PYMUPDF:
         return None
 
@@ -12231,8 +12407,14 @@ def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
 
         page = doc.load_page(page_num - 1)  # 0-indexed
 
-        # Get words with their positions
-        words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+        # Apply rotation via text page matrix if requested
+        if rotation:
+            matrix = fitz.Matrix(1, 1).preRotate(rotation)
+            text_page = page.get_textpage(matrix=matrix)
+            words = text_page.extractWORDS()
+        else:
+            text_page = None
+            words = page.get_text("words")  # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
 
         if not words:
             return ""
@@ -12307,8 +12489,8 @@ def extract_text_pymupdf(pdf_path: Path, page_num: int) -> Optional[str]:
             pass
 
 
-def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optional[str]:
-    """Extract text from a single page using EasyOCR. Returns None if dependencies not available."""
+def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300, rotation: int = 0) -> Optional[str]:
+    """Extract text from a single page using EasyOCR. Supports rotation to better handle landscape layouts."""
     if not _HAVE_EASYOCR:
         return None
 
@@ -12319,7 +12501,6 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         return None
 
     try:
-        import easyocr
         from PIL import Image
         import numpy as np
     except ImportError:
@@ -12333,9 +12514,13 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         page = doc.load_page(page_num - 1)
         pix = page.get_pixmap(dpi=max(200, min(800, dpi)))
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        if rotation:
+            img = img.rotate(rotation, expand=True)
         img_np = np.array(img)
 
-        reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+        reader = _get_easyocr_reader(['en'])
+        if reader is None:
+            return None
         results = reader.readtext(img_np)
 
         # Sort by Y coordinate (top to bottom), then X (left to right)
@@ -12343,41 +12528,65 @@ def extract_text_easyocr(pdf_path: Path, page_num: int, dpi: int = 300) -> Optio
         for bbox, text, conf in results:
             if conf < 0.3:  # Skip low confidence
                 continue
+            text = text.strip()
+            if not text:
+                continue
             ys = [pt[1] for pt in bbox]
             xs = [pt[0] for pt in bbox]
-            y_avg = sum(ys) / len(ys)
-            x_avg = sum(xs) / len(xs)
-            boxes.append((y_avg, x_avg, text))
+            y0, y1 = min(ys), max(ys)
+            x0, x1 = min(xs), max(xs)
+            y_mid = (y0 + y1) / 2.0
+            boxes.append((y_mid, x0, x1, text))
 
         boxes.sort(key=lambda item: (item[0], item[1]))
 
         # Group by similar Y coordinates (same line)
-        lines: List[List[str]] = []
-        current_line: List[Tuple[float, str]] = []
+        lines: List[List[Tuple[float, float, str]]] = []
+        current_line: List[Tuple[float, float, str]] = []
         last_y = None
         y_threshold = 10  # pixels
 
-        for y, x, text in boxes:
-            if last_y is None or abs(y - last_y) <= y_threshold:
-                current_line.append((x, text))
+        for y_mid, x0, x1, text in boxes:
+            if last_y is None or abs(y_mid - last_y) <= y_threshold:
+                current_line.append((x0, x1, text))
                 if last_y is None:
-                    last_y = y
+                    last_y = y_mid
                 else:
-                    last_y = (last_y + y) / 2  # Average
+                    last_y = (last_y + y_mid) / 2  # Average
             else:
                 # New line
                 if current_line:
                     current_line.sort(key=lambda item: item[0])  # Sort by X
-                    lines.append([txt for _, txt in current_line])
-                current_line = [(x, text)]
-                last_y = y
+                    lines.append(current_line)
+                current_line = [(x0, x1, text)]
+                last_y = y_mid
 
         if current_line:
             current_line.sort(key=lambda item: item[0])
-            lines.append([txt for _, txt in current_line])
+            lines.append(current_line)
 
-        # Join each line with spaces
-        return "\n".join(" ".join(words) for words in lines)
+        rendered_lines = []
+        for line_boxes in lines:
+            parts: List[str] = []
+            prev_end = None
+            for x0, x1, word in line_boxes:
+                if prev_end is None:
+                    parts.append(word)
+                else:
+                    gap = x0 - prev_end
+                    if gap > 80:
+                        spacer = "    "
+                    elif gap > 35:
+                        spacer = "  "
+                    elif gap > 12:
+                        spacer = " "
+                    else:
+                        spacer = " "
+                    parts.append(spacer + word)
+                prev_end = x1
+            rendered_lines.append("".join(parts))
+
+        return "\n".join(rendered_lines)
 
     finally:
         try:
@@ -12795,7 +13004,8 @@ def extract_tables_from_pages(pdf_path: Path, pages: List[int],
                               min_cols: int = 2, min_rows: int = 3,
                               delimiter: Optional[str] = None, debug: bool = False,
                               fixed_cols: Optional[int] = None,
-                              match_threshold: float = 0.5) -> Dict[int, List[Dict]]:
+                              match_threshold: float = 0.5,
+                              auto_rotate: bool = True) -> Dict[int, List[Dict]]:
     """
     Extract tables from specified pages.
 
@@ -12815,34 +13025,53 @@ def extract_tables_from_pages(pdf_path: Path, pages: List[int],
             print("  Or install EasyOCR: pip install easyocr")
             sys.exit(1)
 
+    rotation_candidates = [0]
+    if auto_rotate:
+        rotation_candidates = [0, 90, 270]
+
     for page_num in pages:
         print(f"[INFO] Processing page {page_num}...")
 
-        if actual_use_ocr:
-            text = extract_text_easyocr(pdf_path, page_num, dpi)
-        else:
-            text = extract_text_pymupdf(pdf_path, page_num)
+        page_tables: List[Dict] = []
+        used_rotation: Optional[int] = None
+        extracted_any_text = False
 
-        if text is None:
-            print(f"[ERROR] Failed to extract text from page {page_num}")
-            results[page_num] = []
-            continue
+        for rotation in rotation_candidates:
+            if actual_use_ocr:
+                text = extract_text_easyocr(pdf_path, page_num, dpi, rotation=rotation)
+            else:
+                text = extract_text_pymupdf(pdf_path, page_num, rotation=rotation)
 
-        if not text.strip():
-            print(f"[WARN] No text found on page {page_num}")
-            results[page_num] = []
-            continue
+            if text is None:
+                continue
+            if not text.strip():
+                continue
+            extracted_any_text = True
 
-        tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug,
-                                       fixed_cols, match_threshold)
-        results[page_num] = tables
+            tables = detect_tables_in_text(text, min_cols, min_rows, delimiter, debug,
+                                           fixed_cols, match_threshold)
+            if tables:
+                page_tables = tables
+                used_rotation = rotation
+                break
 
-        if tables:
-            print(f"[INFO] Found {len(tables)} table(s) on page {page_num}")
-            for idx, table in enumerate(tables, 1):
+        results[page_num] = page_tables
+
+        if used_rotation and used_rotation != 0:
+            print(f"[INFO] Page {page_num}: detected tables after rotating {used_rotation}°")
+
+        if page_tables:
+            print(f"[INFO] Found {len(page_tables)} table(s) on page {page_num}")
+            for idx, table in enumerate(page_tables, 1):
                 print(f"  Table {idx}: {table['num_cols']} columns, {len(table['rows'])} rows")
         else:
-            print(f"[INFO] No tables detected on page {page_num}")
+            if auto_rotate:
+                print(f"[INFO] No tables detected on page {page_num} (after trying rotations {rotation_candidates})")
+            else:
+                print(f"[INFO] No tables detected on page {page_num}")
+            if not extracted_any_text:
+                mode_label = "OCR" if actual_use_ocr else "PyMuPDF"
+                print(f"[WARN] Unable to extract readable text from page {page_num} using {mode_label}.")
 
     return results
 
@@ -12953,6 +13182,7 @@ def main() -> None:
     parser.add_argument('--delimiter', default=None, help='Field delimiter (default: auto-detect)')
     parser.add_argument('--out', default='', help='Output Excel path (default: Data Packages/<pdf-stem>_table.xlsx)')
     parser.add_argument('--debug', action='store_true', help='Print debug information (extracted text and field parsing)')
+    parser.add_argument('--no-auto-rotate', action='store_true', help='Disable automatic landscape rotation retries')
 
     args = parser.parse_args()
 
@@ -12991,7 +13221,8 @@ def main() -> None:
         delimiter=args.delimiter,
         debug=args.debug,
         fixed_cols=args.num_cols,
-        match_threshold=args.match_threshold
+        match_threshold=args.match_threshold,
+        auto_rotate=(not args.no_auto_rotate)
     )
 
     # Write to Excel

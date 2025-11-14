@@ -316,6 +316,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Data Group",
         "Term Label",
         "Smart Snap Type",
+        "Mode",
         "Term",
         "Pages",
         "GroupAfter",
@@ -331,6 +332,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Data Group": "Data Grouping",
         "Term Label": "Term Label",
         "Smart Snap Type": "Smart Snap Type",
+        "Mode": "Mode",
         "Term": "Search Term",
         "Pages": "Pages",
         "GroupAfter": "Group After",
@@ -342,7 +344,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Secondary Term": "Secondary Term",
         "Smart Position": "Smart Position",
     }
-    DEFAULT_HIDDEN = {"Return", "Mode", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
+    DEFAULT_HIDDEN = {"Return", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
 
     def __init__(self, terms_path: Path, parent=None):
         super().__init__(parent)
@@ -411,6 +413,10 @@ class TermsEditorDialog(QtWidgets.QDialog):
             "Smart Snap Type": {
                 "options": self._smart_type_options(),
                 "default": "",
+            },
+            "Mode": {
+                "options": self._mode_options(),
+                "default": "smart",
             },
         }
 
@@ -523,6 +529,56 @@ class TermsEditorDialog(QtWidgets.QDialog):
             opts.append(("Auto-detect (blank)", ""))
         return opts
 
+    def _mode_options(self) -> list[tuple[str, str]]:
+        opts: list[tuple[str, str]] = []
+        values = be.TERMS_MODE_CHOICES or ["smart"]
+        seen: set[str] = set()
+        for opt in values:
+            val = (opt or "").strip()
+            if not val or val in seen:
+                continue
+            seen.add(val)
+            label = "Smart Snap" if val == "smart" else val.title()
+            opts.append((label, val))
+        if not opts:
+            opts.append(("Smart Snap", "smart"))
+        return opts
+
+    @staticmethod
+    def _smart_type_is_text(value: str | None) -> bool:
+        if value is None:
+            return False
+        return value.strip().lower() in {"title", "text", "string"}
+
+    def _cell_indices_for_widget(self, widget: QtWidgets.QWidget) -> tuple[int | None, int | None]:
+        for row in range(self.table.rowCount()):
+            for col in range(self.table.columnCount()):
+                if self.table.cellWidget(row, col) is widget:
+                    return row, col
+        return None, None
+
+    def _apply_text_defaults(self, row_idx: int, force: bool = False) -> None:
+        targets = ("Units", "Range (min)", "Range (max)")
+        for header in targets:
+            handled = False
+            if header in self._visible_headers:
+                col = self._visible_headers.index(header)
+                widget = self.table.cellWidget(row_idx, col)
+                if isinstance(widget, QtWidgets.QComboBox):
+                    continue
+                item = self.table.item(row_idx, col)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem("")
+                    self.table.setItem(row_idx, col, item)
+                current = (item.text() or "").strip()
+                if force or not current:
+                    item.setText("N/A")
+                handled = True
+            if not handled and row_idx < len(self._hidden_rows):
+                current = (self._hidden_rows[row_idx].get(header, "") or "").strip()
+                if force or not current:
+                    self._hidden_rows[row_idx][header] = "N/A"
+
     def _determine_visible_headers(self, headers: list[str]) -> None:
         order: list[str] = []
         present = set(headers)
@@ -570,14 +626,19 @@ class TermsEditorDialog(QtWidgets.QDialog):
         return self.COLUMN_DISPLAY_NAMES.get(header, header)
 
     def _populate_row(self, row_idx: int, row_data: dict[str, str]) -> None:
+        smart_type_value = None
         for col_idx, header in enumerate(self._visible_headers):
             value = row_data.get(header, "")
+            if header == "Smart Snap Type":
+                smart_type_value = value
             if header in self._combo_defs:
                 combo = self._build_combo(header, value)
                 self.table.setCellWidget(row_idx, col_idx, combo)
             else:
                 item = QtWidgets.QTableWidgetItem(value)
                 self.table.setItem(row_idx, col_idx, item)
+        if smart_type_value and self._smart_type_is_text(smart_type_value):
+            self._apply_text_defaults(row_idx, force=False)
 
     def _build_combo(self, header: str, value: str) -> QtWidgets.QComboBox:
         config = self._combo_defs[header]
@@ -612,13 +673,28 @@ class TermsEditorDialog(QtWidgets.QDialog):
         idx = combo.findData(target)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         combo.blockSignals(False)
+        combo.setProperty("header", header)
         combo.currentIndexChanged.connect(self._on_combo_changed)
         return combo
 
     def _on_combo_changed(self, *args) -> None:
         if self._loading:
             return
+        combo = self.sender()
+        if isinstance(combo, QtWidgets.QComboBox):
+            header = combo.property("header")
+            if header == "Smart Snap Type":
+                self._handle_smart_type_change(combo)
         self._mark_dirty()
+
+    def _handle_smart_type_change(self, combo: QtWidgets.QComboBox) -> None:
+        row, _ = self._cell_indices_for_widget(combo)
+        if row is None:
+            return
+        value = combo.currentData()
+        text_value = value if isinstance(value, str) and value else combo.currentText()
+        if self._smart_type_is_text(text_value):
+            self._apply_text_defaults(row, force=True)
 
     def _on_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._loading:
@@ -643,7 +719,11 @@ class TermsEditorDialog(QtWidgets.QDialog):
 
     def _add_blank_row(self) -> None:
         payload = {h: "" for h in self._all_headers}
-        payload.setdefault("Mode", (be.TERMS_MODE_CHOICES[0] if be.TERMS_MODE_CHOICES else "smart"))
+        default_mode = "smart"
+        if be.TERMS_MODE_CHOICES:
+            if default_mode not in be.TERMS_MODE_CHOICES:
+                default_mode = be.TERMS_MODE_CHOICES[0]
+        payload.setdefault("Mode", default_mode)
         self._insert_row(payload)
         self.table.scrollToBottom()
         self._mark_dirty()
