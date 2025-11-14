@@ -309,7 +309,17 @@ def read_terms_rows(path: Optional[Path] = None) -> tuple[list[str], list[dict[s
             name = str(raw).strip() if raw not in (None, "") else fallback
             headers.append(name or fallback)
         rows: list[dict[str, str]] = []
-        for values in ws.iter_rows(min_row=3, max_col=len(headers), values_only=True):
+        def _is_template_metadata(row_vals: tuple) -> bool:
+            hay = " ".join([str(v or "").strip().lower() for v in row_vals])
+            return (
+                "data group" in hay
+                and "term label" in hay
+                and "smart snap type" in hay
+            )
+
+        for values in ws.iter_rows(min_row=2, max_col=len(headers), values_only=True):
+            if _is_template_metadata(values):
+                continue
             normalized: dict[str, str] = {}
             has_value = False
             for col_idx, header in enumerate(headers):
@@ -393,9 +403,9 @@ def write_terms_rows(
                 raw = ws.cell(row=1, column=idx).value
                 name = str(raw).strip() if raw not in (None, "") else fallback
                 headers.append(name or fallback)
-        existing_rows = max(ws.max_row - 2, 0)
+        existing_rows = max(ws.max_row - 1, 0)
         if existing_rows > 0:
-            ws.delete_rows(3, existing_rows)
+            ws.delete_rows(2, existing_rows)
         records = rows or [{h: "" for h in headers}]
         for record in records:
             ws.append([record.get(h, "") for h in headers])
@@ -989,4 +999,3 @@ def write_proposed_plots(plots: list[dict]) -> None:
             "x_axis": x_axis,
         })
     DEFAULT_PROPOSED_PLOTS_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-

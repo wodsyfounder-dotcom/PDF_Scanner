@@ -26,7 +26,7 @@ import tempfile
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # --- Output verbosity control (quiet mode) ---
 # Honor QUIET=1|true|yes from environment, and optionally --quiet CLI flag (set later).
@@ -763,6 +763,17 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         sys.exit(2)
 
     # Walk rows and collect terms
+    def _is_template_metadata(row_cells: Sequence[Any]) -> bool:
+        try:
+            hay = " ".join(str(cell.value or "").strip().lower() for cell in row_cells)
+        except Exception:
+            return False
+        return (
+            "data group" in hay
+            and "term label" in hay
+            and "smart snap type" in hay
+        )
+
     for row in ws.iter_rows(min_row=2):
         try:
             row_idx = row[0].row if row and row[0] is not None else None
@@ -770,7 +781,11 @@ def load_terms(input_path: Path) -> List[TermSpec]:
             row_idx = None
         # Skip the explanatory second header in Smart‑Snap schema templates
         try:
-            if row_idx == 2 and input_path.name.lower().endswith('terms.schema.smartsnap.xlsx'):
+            if (
+                row_idx == 2
+                and input_path.name.lower().endswith('terms.schema.smartsnap.xlsx')
+                and _is_template_metadata(row)
+            ):
                 continue
         except Exception:
             pass
@@ -2248,89 +2263,90 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     pass
                                 return best
 
-                        scored = []
-                        for c in numeric_cands:
-                            s = 0.0
-                            # Prefer middle value between line min and max
-                            if line_min_txt is not None and line_max_txt is not None and c['nval'] is not None:
-                                try:
-                                    line_min_val = float(numeric_only(line_min_txt)) if line_min_txt is not None else None
-                                    line_max_val = float(numeric_only(line_max_txt)) if line_max_txt is not None else None
-                                except Exception:
-                                    line_min_val = line_max_val = None
-                                if line_min_val is not None and line_max_val is not None and line_min_val < c['nval'] < line_max_val:
-                                    s += 2.0
-                                elif line_min_val is not None and c['nval'] == line_min_val:
-                                    s -= 0.2
-                                elif line_max_val is not None and c['nval'] == line_max_val:
-                                    s -= 0.2
-                            if units_hints and c['units'] in units_hints:
-                                s += 0.3
-                            if c['nval'] is not None and (spec.range_min is not None and spec.range_max is not None):
-                                if spec.range_min <= c['nval'] <= spec.range_max:
-                                    s += 0.4
-                            elif c['nval'] is not None:
-                                if spec.range_min is not None and c['nval'] >= spec.range_min:
-                                    s += 0.1
-                                if spec.range_max is not None and c['nval'] <= spec.range_max:
-                                    s += 0.1
-                            sec_s = sec_score(c)
-                            s += 0.6 * sec_s
-                            cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
-                            if 'value' in header_map:
-                                hdr = header_map['value']
-                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
-                                dist = abs(cand_cx - hx)
-                                s += 0.8 * (1.0 / (1.0 + dist / 18.0))
-                            if 'min' in header_map:
-                                hdr = header_map['min']
-                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
-                                dist = abs(cand_cx - hx)
-                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
-                            if 'max' in header_map:
-                                hdr = header_map['max']
-                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
-                                dist = abs(cand_cx - hx)
-                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
-                            # slight preference for smaller horizontal distance from label
-                            dx = max(0.0, float(c['x0']) - label_right_x)
-                            s += 0.05 * (1.0 / (1.0 + dx/10.0))
-                            scored.append((s, c, sec_s))
-                        scored.sort(key=lambda t: t[0], reverse=True)
-                        if scored:
-                            top_score = scored[0][0]
-                            top = [t for t in scored if t[0] >= top_score - 0.1]
-                            if len(top) > 1:
-                                conflict_reason = 'multiple candidates with similar scores'
-                            chosen = top[0][1]
-                            chosen_sec_score = top[0][2]
-                            units_value = chosen.get('units') or units_value
-                            cand = chosen['text']
-                            if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
-                                bad = False
-                                if spec.range_min is not None and chosen['nval'] < spec.range_min:
-                                    bad = True
-                                if spec.range_max is not None and chosen['nval'] > spec.range_max:
-                                    bad = True
-                                if bad and not cand.rstrip().endswith('(range violation)'):
-                                    cand = f"{cand} (range violation)"
-                            val = cand
-                            if smart_kind == 'number':
+                            scored = []
+                            for c in numeric_cands:
+                                s = 0.0
+                                # Prefer middle value between line min and max
+                                if line_min_txt is not None and line_max_txt is not None and c['nval'] is not None:
+                                    try:
+                                        line_min_val = float(numeric_only(line_min_txt)) if line_min_txt is not None else None
+                                        line_max_val = float(numeric_only(line_max_txt)) if line_max_txt is not None else None
+                                    except Exception:
+                                        line_min_val = line_max_val = None
+                                    if line_min_val is not None and line_max_val is not None and line_min_val < c['nval'] < line_max_val:
+                                        s += 2.0
+                                    elif line_min_val is not None and c['nval'] == line_min_val:
+                                        s -= 0.2
+                                    elif line_max_val is not None and c['nval'] == line_max_val:
+                                        s -= 0.2
+                                if units_hints and c['units'] in units_hints:
+                                    s += 0.3
+                                if c['nval'] is not None and (spec.range_min is not None and spec.range_max is not None):
+                                    if spec.range_min <= c['nval'] <= spec.range_max:
+                                        s += 0.4
+                                elif c['nval'] is not None:
+                                    if spec.range_min is not None and c['nval'] >= spec.range_min:
+                                        s += 0.1
+                                    if spec.range_max is not None and c['nval'] <= spec.range_max:
+                                        s += 0.1
+                                sec_s = sec_score(c)
+                                s += 0.6 * sec_s
+                                cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
+                                if 'value' in header_map:
+                                    hdr = header_map['value']
+                                    hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                    dist = abs(cand_cx - hx)
+                                    s += 0.8 * (1.0 / (1.0 + dist / 18.0))
+                                if 'min' in header_map:
+                                    hdr = header_map['min']
+                                    hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                    dist = abs(cand_cx - hx)
+                                    s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                                if 'max' in header_map:
+                                    hdr = header_map['max']
+                                    hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                    dist = abs(cand_cx - hx)
+                                    s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                                # slight preference for smaller horizontal distance from label
+                                dx = max(0.0, float(c['x0']) - label_right_x)
+                                s += 0.05 * (1.0 / (1.0 + dx/10.0))
+                                scored.append((s, c, sec_s))
+                            scored.sort(key=lambda t: t[0], reverse=True)
+                            if scored:
+                                top_score = scored[0][0]
+                                top = [t for t in scored if t[0] >= top_score - 0.1]
+                                if len(top) > 1:
+                                    conflict_reason = 'multiple candidates with similar scores'
+                                chosen = top[0][1]
+                                chosen_sec_score = top[0][2]
+                                units_value = chosen.get('units') or units_value
+                                cand = chosen['text']
+                                if chosen['nval'] is not None and (spec.range_min is not None or spec.range_max is not None):
+                                    bad = False
+                                    if spec.range_min is not None and chosen['nval'] < spec.range_min:
+                                        bad = True
+                                    if spec.range_max is not None and chosen['nval'] > spec.range_max:
+                                        bad = True
+                                    if bad and not cand.rstrip().endswith('(range violation)'):
+                                        cand = f"{cand} (range violation)"
+                                val = cand
+                                if smart_kind == 'number':
+                                    val = _strip_units_from_numeric_text(val) or val
+                                if score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                    if debug_mode:
+                                        print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                continue
+                        else:
+                            val = extract_from_line(line_text, right_text_segment, smart_kind)
+                            if val and smart_kind == 'number':
                                 val = _strip_units_from_numeric_text(val) or val
-                            if score > best_score:
+                            if val and score > best_score:
                                 best_score = score
-                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, (chosen_sec_score >= 0.7 if sec_term else None))
+                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
                                 if debug_mode:
-                                    print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
-                    else:
-                        val = extract_from_line(line_text, right_text_segment, smart_kind)
-                        if val and smart_kind == 'number':
-                            val = _strip_units_from_numeric_text(val) or val
-                        if val and score > best_score:
-                            best_score = score
-                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason)
-                            if debug_mode:
-                                print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                    print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
         finally:
             try:
                 if doc is not None:
