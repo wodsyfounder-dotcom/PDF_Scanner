@@ -1533,7 +1533,10 @@ def _column_text_for_position(
         return None
     ordered: List[Tuple[str, float]] = []
     for raw_name in header_tokens:
-        name = raw_name.strip()
+        raw = str(raw_name).strip()
+        if not raw:
+            continue
+        name = _normalize_anchor_token(raw)
         if not name:
             continue
         cx = column_positions.get(name)
@@ -1682,6 +1685,50 @@ def _strip_units_from_numeric_text(value: Optional[str]) -> Optional[str]:
     if isinstance(num, str) and num != txt:
         return f"{num}{suffix}"
     return (txt + suffix).strip()
+
+
+def _extract_status_from_title(value: Optional[str]) -> Optional[str]:
+    """
+    For status-like title fields (YES/NO/PASS/FAIL/etc.), return the most
+    plausible status token from the text, e.g. 'NO' from 'NO +88*C'.
+    If no status token is found, return the original value.
+    """
+    if not value:
+        return value
+    text = str(value).strip()
+    if not text:
+        return value
+    import re as _re
+    words = [w for w in _re.findall(r"[A-Za-z][A-Za-z0-9_-]*", text)]
+    if not words:
+        return value
+    up_words = [w.upper() for w in words]
+    # Multi-word statuses first (e.g., 'Not Recorded')
+    bigram_statuses = {
+        "NOT RECORDED",
+        "NOT RUN",
+    }
+    for i in range(len(words) - 1):
+        phrase_up = f"{up_words[i]} {up_words[i+1]}"
+        if phrase_up in bigram_statuses:
+            return f"{words[i]} {words[i+1]}"
+    # Single-word statuses
+    single_statuses = {
+        "YES",
+        "NO",
+        "PASS",
+        "FAIL",
+        "MISSING",
+        "INCOMPLETE",
+        "CONDITIONAL",
+        "OPEN",
+        "CLOSED",
+        "APPROVED",
+    }
+    for w, wu in zip(words, up_words):
+        if wu in single_statuses:
+            return w
+    return value
 
 
 def _detect_smart_type(preferred: Optional[str], text: str) -> str:
@@ -2042,11 +2089,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # interpret that selected box; it should not change
                         # which box is chosen.
                         has_smart_pos = getattr(spec, "smart_position", None) is not None
+                        # When the secondary term maps cleanly onto a detected
+                        # header token (via group_after), prefer header-based
+                        # column targeting so Smart Position refers to the
+                        # visual table column, not raw token order. This keeps
+                        # OCR behavior aligned with PDF text even when some
+                        # cells (e.g., Min='-') are missing tokens.
+                        sec_norm = _normalize_anchor_token(sec_term) if sec_term else ""
+                        use_header_pos = bool(column_positions)
                         column_text_for_pos = None
-                        # For Smart Position, build visual \"boxes\" from the
-                        # right-of-label token stream.
-                        fields_for_pos: List[str] = _fields_from_items(ordered_right_tokens) if has_smart_pos else []
-                        if not has_smart_pos:
+                        fields_for_pos: List[str] = []
+                        if use_header_pos:
                             column_text_for_pos = _column_text_for_position(
                                 ordered_right_tokens,
                                 column_positions,
@@ -2055,6 +2108,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 pos_n,
                                 sec_term,
                             )
+                        elif has_smart_pos:
+                            # Fallback: build visual \"boxes\" from the
+                            # right-of-label token stream.
+                            fields_for_pos = _fields_from_items(ordered_right_tokens)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -2078,11 +2135,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                 continue
                         elif column_text_for_pos and smart_kind != 'number':
+                            # Header-aligned textual field (e.g., KPI status).
                             val = column_text_for_pos
                             if score > best_score:
                                 best_score = score
                                 best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                             continue
+                        elif smart_kind != 'number' and has_smart_pos and pos_n and pos_n >= 1 and fields_for_pos:
+                            # Smart Position for non-numeric snaps (e.g., pick the Nth
+                            # status/text field to the right of the label).
+                            if pos_n <= len(fields_for_pos):
+                                field_text = fields_for_pos[pos_n - 1]
+                                val = field_text.strip()
+                                if val and score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                continue
                         if smart_kind == 'number' and pos_n and pos_n >= 1:
                             # Smart Position: select the Nth \"box\" (field) to the
                             # right of the term, then interpret it according to
@@ -2221,24 +2289,24 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         s += 0.1
                                 if spec.range_max is not None and c['nval'] <= spec.range_max:
                                     s += 0.1
-                            sec_s = sec_score(c)
-                            s += 0.4 * sec_s
-                            cx_cand = (c['x0'] + c['x1']) / 2.0
-                            if 'value' in header_map:
-                                dist = abs(cx_cand - header_map['value'])
-                                s += 0.8 * (1.0 / (1.0 + dist / 18.0))
-                            if 'min' in header_map:
-                                dist = abs(cx_cand - header_map['min'])
-                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
-                            if 'max' in header_map:
-                                dist = abs(cx_cand - header_map['max'])
-                                s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
-                            # slight preference for smaller horizontal distance from label
-                            dx = max(0.0, c['x0'] - label_right_x)
-                            s += 0.05 * (1.0 / (1.0 + dx/10.0))
-                            if debug_mode:
-                                print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} units={c.get('units')} s={s:.3f}", file=sys.stderr)
-                            scored.append((s, c, sec_s))
+                                sec_s = sec_score(c)
+                                s += 0.4 * sec_s
+                                cx_cand = (c['x0'] + c['x1']) / 2.0
+                                if 'value' in header_map:
+                                    dist = abs(cx_cand - header_map['value'])
+                                    s += 0.8 * (1.0 / (1.0 + dist / 18.0))
+                                if 'min' in header_map:
+                                    dist = abs(cx_cand - header_map['min'])
+                                    s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                                if 'max' in header_map:
+                                    dist = abs(cx_cand - header_map['max'])
+                                    s -= 0.4 * (1.0 / (1.0 + dist / 18.0))
+                                # slight preference for smaller horizontal distance from label
+                                dx = max(0.0, c['x0'] - label_right_x)
+                                s += 0.05 * (1.0 / (1.0 + dx/10.0))
+                                if debug_mode:
+                                    print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} units={c.get('units')} s={s:.3f}", file=sys.stderr)
+                                scored.append((s, c, sec_s))
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
                                 candidate_pool = scored
@@ -2289,10 +2357,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     pass
             if best_info:
                 page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-                # For title/text smart snaps, strip any leading/trailing label tokens
-                # so we return just the field value.
+                # For title/text smart snaps, strip label tokens and normalize
+                # common status values so we return just the field contents
+                # (e.g., 'NO' instead of 'NO +88*C').
                 if smart_kind == 'title':
                     value_text = _strip_label_tokens(value_text, row_name)
+                    value_text = _extract_status_from_title(value_text)
                 row_text_selected = context_line_text
                 confidence = best_score
                 method_used = 'smart:pdf'
@@ -2577,15 +2647,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         chosen_sec_score = 0.0
                         pos_n = spec.smart_position or spec.field_index
                         has_smart_pos = getattr(spec, "smart_position", None) is not None
+                        # Prefer header-based column targeting when the
+                        # secondary term maps cleanly onto a detected header
+                        # token so that Smart Position aligns with the visual
+                        # table column even if some cells (e.g., Min='-') are
+                        # missing OCR tokens.
+                        sec_norm = _normalize_anchor_token(sec_term) if sec_term else ""
+                        use_header_pos = bool(column_positions)
                         column_text_for_pos = None
-                        # Smart Position: treat as Nth \"box\" to the right of
-                        # the term. For OCR, boxes are EasyOCR tokens.
-                        fields_for_pos: List[str] = _fields_from_items(ordered_right_items) if has_smart_pos else []
-                        # Header-based column targeting is used only when Smart
-                        # Position is omitted so that group_after/group_before
-                        # remain purely vertical guides when an explicit
-                        # position is provided.
-                        if not has_smart_pos:
+                        fields_for_pos: List[str] = []
+                        if use_header_pos:
                             column_text_for_pos = _column_text_for_position(
                                 ordered_right_items,
                                 column_positions,
@@ -2594,6 +2665,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 pos_n,
                                 sec_term,
                             )
+                        elif has_smart_pos:
+                            # Smart Position: treat as Nth \"box\" to the right
+                            # of the term. For OCR, boxes are EasyOCR tokens.
+                            fields_for_pos = _fields_from_items(ordered_right_items)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -2622,6 +2697,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 best_score = score
                                 best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                             continue
+                        elif smart_kind != 'number' and has_smart_pos and pos_n and pos_n >= 1 and fields_for_pos:
+                            if pos_n <= len(fields_for_pos):
+                                field_text = fields_for_pos[pos_n - 1]
+                                val = field_text.strip()
+                                if val and score > best_score:
+                                    best_score = score
+                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                continue
                         if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_items:
                             if has_smart_pos and fields_for_pos:
                                 if pos_n <= len(fields_for_pos):
@@ -2808,6 +2891,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
             if smart_kind == 'title':
                 value_text = _strip_label_tokens(value_text, row_name)
+                value_text = _extract_status_from_title(value_text)
             return MatchResult(
                 pdf_file=pdf_path.name,
                 serial_number=serial_number,
@@ -5171,6 +5255,9 @@ def run_scan(
     term_order = [t.term for t in scan_terms]
     term_pages_raw = {t.term: t.pages_raw for t in scan_terms}
     results_matrix = {t.term: {} for t in scan_terms}
+    results_priority: Dict[str, Dict[str, Tuple[int, int, float, int]]] = {
+        t.term: {} for t in scan_terms
+    }
     serial_meta: Dict[str, Dict[str, str]] = {}
     tables_rows_agg: List[Dict] = []  # aggregated full-table rows across all PDFs
 
@@ -5346,14 +5433,46 @@ def run_scan(
             # Fill the matrix cell for this (term, serial_component)
             if res.found:
                 found_count += 1
-                if ret_kind == 'string':
-                    cell_value = res.number
+                cell_value = res.number
+                # Compute a selection priority so that primary Smart-Snap
+                # rows (with Smart Position configured) win over auxiliary
+                # rows for the same Search Term / serial component.
+                has_smart_pos = getattr(t, 'smart_position', None) is not None
+                raw_sec = getattr(res, 'smart_secondary_found', None)
+                # Rank secondary-term hits: True > unknown > explicit False
+                if isinstance(raw_sec, (int, float)):
+                    if raw_sec >= 0.9:
+                        sec_rank = 2
+                    elif raw_sec <= 0.0:
+                        sec_rank = 0
+                    else:
+                        sec_rank = 1
                 else:
-                    cell_value = res.number
-                results_matrix.setdefault(t.term, {})[data_id] = cell_value
+                    if raw_sec is True:
+                        sec_rank = 2
+                    elif raw_sec is None:
+                        sec_rank = 1
+                    else:
+                        sec_rank = 0
+                try:
+                    conf = float(getattr(res, "confidence", 0.0) or 0.0)
+                except Exception:
+                    conf = 0.0
+                src = (getattr(res, "text_source", None) or "").strip().lower()
+                src_rank = 1 if src == "pdf" else 0
+                new_priority = (1 if has_smart_pos else 0, sec_rank, conf, src_rank)
+                prev_priority = results_priority.get(getattr(t, "term", ""), {}).get(data_id)
+                # Only update the matrix if this result is strictly better
+                # than any previous candidate for the same (term, serial).
+                if (prev_priority is None) or (new_priority > prev_priority):
+                    results_priority.setdefault(t.term, {})[data_id] = new_priority
+                    results_matrix.setdefault(t.term, {})[data_id] = cell_value
             else:
                 err_msg = res.error_reason or "No match found"
-                results_matrix.setdefault(t.term, {})[data_id] = f"ERROR: {err_msg}"
+                # Only record an error if no successful value exists yet
+                cell_map = results_matrix.setdefault(t.term, {})
+                if data_id not in cell_map:
+                    cell_map[data_id] = f"ERROR: {err_msg}"
                 pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
                 parts = [p for p in pdf_stem.split("_") if p]
                 err_program = err_vehicle = err_serial_component = None
