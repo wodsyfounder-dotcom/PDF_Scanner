@@ -1786,6 +1786,46 @@ class MainWindow(QtWidgets.QMainWindow):
         xy_layout.addWidget(self.sld_xy_fuzz)
         ls.addWidget(xy_container)
 
+        # OCR line Y tolerance (row grouping)
+        ytol_container = QtWidgets.QWidget()
+        ytol_layout = QtWidgets.QVBoxLayout(ytol_container)
+        ytol_layout.setContentsMargins(0, 0, 0, 0)
+        ytol_layout.setSpacing(6)
+        ytol_header = QtWidgets.QHBoxLayout()
+        ytol_label = QtWidgets.QLabel("OCR Line Y Tolerance")
+        ytol_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        ytol_header.addWidget(ytol_label)
+        ytol_info = QtWidgets.QLabel("\u24D8")
+        ytol_info.setStyleSheet("color: #9ca3af; font-size: 14px;")
+        ytol_info.setToolTip("Vertical tolerance (pixels) for grouping OCR boxes into a single text line (higher = more lenient)")
+        ytol_header.addWidget(ytol_info)
+        ytol_header.addStretch()
+        self.lbl_ocr_row_tol = QtWidgets.QLabel("8")
+        self.lbl_ocr_row_tol.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
+        ytol_header.addWidget(self.lbl_ocr_row_tol)
+        ytol_layout.addLayout(ytol_header)
+        self.sld_ocr_row_tol = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.sld_ocr_row_tol.setRange(2, 40)
+        self.sld_ocr_row_tol.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #e5e7eb;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+                background: #2563eb;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #1d4ed8;
+            }
+        """)
+        ytol_layout.addWidget(self.sld_ocr_row_tol)
+        ls.addWidget(ytol_container)
+
         # OCR DPI
         dpi_container = QtWidgets.QWidget()
         dpi_layout = QtWidgets.QVBoxLayout(dpi_container)
@@ -1912,6 +1952,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Persist on change
         self.cmb_ocr_mode.currentTextChanged.connect(self._persist_settings_from_panel)
         self.sld_xy_fuzz.valueChanged.connect(self._on_xy_slider)
+        self.sld_ocr_row_tol.valueChanged.connect(self._on_ocr_row_tol_slider)
         self.sld_ocr_dpi.valueChanged.connect(self._on_dpi_slider)
         self.chk_logging.stateChanged.connect(self._persist_settings_from_panel)
         self.cmb_lang.currentTextChanged.connect(self._persist_settings_from_panel)
@@ -3657,6 +3698,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.lbl_xy_val.setText(f"{val:0.2f}")
             except Exception:
                 pass
+            # OCR row Y tolerance (pixels)
+            row_eps = env.get("OCR_ROW_EPS", "8")
+            try:
+                eps_val = float(row_eps)
+                eps_int = int(max(2, min(40, round(eps_val))))
+                self.sld_ocr_row_tol.blockSignals(True)
+                self.sld_ocr_row_tol.setValue(eps_int)
+                self.sld_ocr_row_tol.blockSignals(False)
+                self.lbl_ocr_row_tol.setText(str(eps_int))
+            except Exception:
+                pass
             # OCR DPI (500-1000)
             try:
                 dpi = int(env.get("OCR_DPI", "500"))
@@ -3997,6 +4049,13 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
         self._persist_settings_from_panel()
 
+    def _on_ocr_row_tol_slider(self, value: int):
+        try:
+            self.lbl_ocr_row_tol.setText(str(value))
+        except Exception:
+            pass
+        self._persist_settings_from_panel()
+
     def _on_dpi_slider(self, value: int):
         try:
             self.lbl_dpi_val.setText(str(value))
@@ -4010,6 +4069,7 @@ class MainWindow(QtWidgets.QMainWindow):
             disp = self.cmb_ocr_mode.currentText()
             env["OCR_MODE"] = self._ocr_display_to_value.get(disp, "fallback") if hasattr(self, "_ocr_display_to_value") else disp.strip().lower()
             env["XY_FUZZ"] = f"{self.sld_xy_fuzz.value()/100.0:0.2f}"
+            env["OCR_ROW_EPS"] = str(int(self.sld_ocr_row_tol.value()))
             env["OCR_DPI"] = str(int(self.sld_ocr_dpi.value()))
             # QUIET is inverse of logging toggle
             env["QUIET"] = "0" if self.chk_logging.isChecked() else "1"

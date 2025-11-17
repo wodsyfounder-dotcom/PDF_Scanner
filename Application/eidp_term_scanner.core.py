@@ -2127,7 +2127,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # OCR behavior aligned with PDF text even when some
                         # cells (e.g., Min='-') are missing tokens.
                         sec_norm = sec_norm_global
-                        use_header_pos = bool(column_positions)
+                        # Only use header-based column targeting when Smart Position
+                        # is NOT configured. When smart_position is set, Smart
+                        # Position is authoritative and should not be overridden
+                        # by header alignment.
+                        use_header_pos = bool(column_positions) and not has_smart_pos
                         column_text_for_pos = None
                         fields_for_pos: List[str] = []
                         if use_header_pos:
@@ -2557,6 +2561,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             group_after_page: Optional[int] = None
             group_before_seen = spec.group_before is None
             group_before_page: Optional[int] = None
+            # Vertical tolerance (in OCR pixel coordinates) for grouping
+            # EasyOCR boxes into logical text rows. Exposed via OCR_ROW_EPS
+            # so the UI can provide a slider; default tuned for 10–14pt text.
+            try:
+                row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+            except Exception:
+                row_eps = 8.0
+            row_eps = max(0.5, min(50.0, row_eps))
             for dpi in dpi_candidates:
                 for p in pages or []:
                     items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
@@ -2564,11 +2576,21 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if debug_mode:
                             print(f"[SMART DEBUG] no OCR items dpi={dpi} page={p}", file=sys.stderr)
                         continue
-                    # group lines by cy buckets
-                    rows: Dict[int, List[Dict[str,float]]] = {}
-                    for it in items:
-                        cy = int(round(float(it.get('cy', 0.0))))
-                        rows.setdefault(cy, []).append(it)
+                    # Group OCR boxes into line rows using configurable
+                    # vertical tolerance so that all tokens from a visual
+                    # line share the same row bucket.
+                    rows: Dict[int, List[Dict[str, float]]] = {}
+                    prev_cy: Optional[float] = None
+                    current_key: Optional[int] = None
+                    for it in sorted(items, key=lambda d: float(d.get("cy", 0.0))):
+                        cy_val = float(it.get("cy", 0.0))
+                        if prev_cy is None or abs(cy_val - prev_cy) > row_eps or current_key is None:
+                            key = int(round(cy_val))
+                            rows[key] = [it]
+                            current_key = key
+                        else:
+                            rows[current_key].append(it)  # type: ignore[index]
+                        prev_cy = cy_val
                     group_after_tokens: List[str] = []
                     if getattr(spec, 'group_after', None):
                         raw_tokens = str(spec.group_after or "").split()
@@ -2775,7 +2797,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # table column even if some cells (e.g., Min='-') are
                         # missing OCR tokens.
                         sec_norm = sec_norm_global
-                        use_header_pos = bool(column_positions)
+                        # Only use header-based column targeting when Smart Position
+                        # is NOT configured. When smart_position is set, Smart
+                        # Position is authoritative and should not be overridden
+                        # by header alignment.
+                        use_header_pos = bool(column_positions) and not has_smart_pos
                         column_text_for_pos = None
                         fields_for_pos: List[str] = []
                         if use_header_pos:
@@ -4317,17 +4343,23 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
         return None, anchor_seen, failure_local
 
     def _group_easyocr_rows(items: List[Dict[str, float]]) -> List[Dict[str, object]]:
+        """Group EasyOCR boxes into text lines using a configurable Y tolerance."""
         rows: List[Dict[str, object]] = []
-        for it in sorted(items, key=lambda d: (float(d.get('cy', 0.0)), float(d.get('cx', 0.0)))):
-            cy = float(it.get('cy', 0.0))
-            if not rows or abs(cy - float(rows[-1]['cy'])) > 8.0:
-                rows.append({'cy': cy, 'items': [it]})
+        try:
+            row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+        except Exception:
+            row_eps = 8.0
+        row_eps = max(0.5, min(50.0, row_eps))
+        for it in sorted(items, key=lambda d: (float(d.get("cy", 0.0)), float(d.get("cx", 0.0)))):
+            cy = float(it.get("cy", 0.0))
+            if not rows or abs(cy - float(rows[-1]["cy"])) > row_eps:
+                rows.append({"cy": cy, "items": [it]})
             else:
-                rows[-1]['items'].append(it)
+                rows[-1]["items"].append(it)
         for row in rows:
-            row_items = row['items']  # type: ignore[assignment]
-            row_items.sort(key=lambda d: float(d.get('cx', 0.0)))
-            row['text'] = " ".join(str(d.get('text', '') or '') for d in row_items).strip()
+            row_items = row["items"]  # type: ignore[assignment]
+            row_items.sort(key=lambda d: float(d.get("cx", 0.0)))
+            row["text"] = " ".join(str(d.get("text", "") or "") for d in row_items).strip()
         return rows
 
     def _search_with_easyocr() -> Tuple[Optional[MatchResult], bool, Optional[str]]:
@@ -5159,7 +5191,8 @@ def write_outputs_excel_or_csv(
             "term_label": "Term Label",
             "data_group": "Data Group",
             "units_hint": "Units Hint",
-            "term": "Search Term",
+            "term": "Term",
+            "search_term": "Search Term",
             "program_name": "Program Name",
             "vehicle_number": "Vehicle Number",
             "serial_component": "Serial Component",
@@ -5432,15 +5465,28 @@ def run_scan(
     metadata_rows: List[Dict] = []  # detailed records per (pdf, term)
     summary: List[Dict] = []        # JSON audit entries
     errors_rows: List[Dict] = []    # rows for the errors report
+    def _result_row_key(t: TermSpec) -> str:
+        return (t.term_label or t.term or "").strip()
+
     # Override term lists to exclude 'full table' rows from the wide matrix
-    term_order = [t.term for t in scan_terms]
-    term_pages_raw = {t.term: t.pages_raw for t in scan_terms}
-    results_matrix = {t.term: {} for t in scan_terms}
+    term_order = [_result_row_key(t) for t in scan_terms]
+    term_pages_raw = {_result_row_key(t): t.pages_raw for t in scan_terms}
+    results_matrix = {_result_row_key(t): {} for t in scan_terms}
     results_priority: Dict[str, Dict[str, Tuple[int, int, float, int]]] = {
-        t.term: {} for t in scan_terms
+        _result_row_key(t): {} for t in scan_terms
     }
     serial_meta: Dict[str, Dict[str, str]] = {}
     tables_rows_agg: List[Dict] = []  # aggregated full-table rows across all PDFs
+
+    # Capture global extraction tunables for debug visibility in JSON
+    try:
+        _xy_fuzz_debug = float(os.environ.get("XY_FUZZ", "0.75"))
+    except Exception:
+        _xy_fuzz_debug = None
+    try:
+        _ocr_row_eps_debug = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+    except Exception:
+        _ocr_row_eps_debug = None
 
     # Step 3: For each PDF, scan for each term
     for pdf_path in sorted(pdfs):
@@ -5525,13 +5571,14 @@ def run_scan(
                 pass
             # Add a concise metadata record for audit/JSON
             rows_count = len(ft_rows) if ft_rows is not None else 0
+            term_label_ft = getattr(t, 'term_label', None) or getattr(t, 'term', '') or 'Full Table'
             meta_ft = {
                 "pdf_file": pdf_path.name,
                 "program_name": serial_meta[data_id].get("program_name"),
                 "vehicle_number": serial_meta[data_id].get("vehicle_number"),
                 "serial_component": serial_meta[data_id].get("serial_component") or data_id,
-                "term": getattr(t, 'term', '') or 'Full Table',
-                "term_label": getattr(t, 'term_label', None) or 'Full Table',
+                "term": term_label_ft,
+                "term_label": term_label_ft,
                 "data_group": getattr(t, 'data_group', None) or '',
                 "found": bool(rows_count > 0),
                 "page": None,
@@ -5557,6 +5604,9 @@ def run_scan(
                 "smart_secondary_found": None,
                 "smart_position": None,
                 "secondary_term": getattr(t, 'secondary_term', None),
+                "search_term": getattr(t, 'term', '') or 'Full Table',
+                "xy_fuzz": _xy_fuzz_debug,
+                "ocr_row_eps": _ocr_row_eps_debug,
             }
             metadata_rows.append(meta_ft)
             summary.append(meta_ft)
@@ -5615,12 +5665,13 @@ def run_scan(
             if res.found:
                 found_count += 1
                 cell_value = res.number
-                # Compute a selection priority so that primary Smart-Snap
-                # rows (with Smart Position configured) win over auxiliary
-                # rows for the same Search Term / serial component.
-                has_smart_pos = getattr(t, 'smart_position', None) is not None
-                raw_sec = getattr(res, 'smart_secondary_found', None)
-                # Rank secondary-term hits: True > unknown > explicit False
+                # Compute a selection priority so that Smart Position
+                # rows win over auxiliary rows for the same Search
+                # Term / serial component, with secondary-term hits,
+                # confidence, and text source as tie-breakers.
+                has_smart_pos = getattr(t, "smart_position", None) is not None
+                raw_sec = getattr(res, "smart_secondary_found", None)
+                # Rank secondary-term hits: True/high score > unknown > explicit False/zero
                 if isinstance(raw_sec, (int, float)):
                     if raw_sec >= 0.9:
                         sec_rank = 2
@@ -5641,17 +5692,24 @@ def run_scan(
                     conf = 0.0
                 src = (getattr(res, "text_source", None) or "").strip().lower()
                 src_rank = 1 if src == "pdf" else 0
-                new_priority = (1 if has_smart_pos else 0, sec_rank, conf, src_rank)
-                prev_priority = results_priority.get(getattr(t, "term", ""), {}).get(data_id)
+                new_priority = (
+                    1 if has_smart_pos else 0,
+                    sec_rank,
+                    conf,
+                    src_rank,
+                )
+                row_key = _result_row_key(t)
+                prev_priority = results_priority.get(row_key, {}).get(data_id)
                 # Only update the matrix if this result is strictly better
                 # than any previous candidate for the same (term, serial).
                 if (prev_priority is None) or (new_priority > prev_priority):
-                    results_priority.setdefault(t.term, {})[data_id] = new_priority
-                    results_matrix.setdefault(t.term, {})[data_id] = cell_value
+                    results_priority.setdefault(row_key, {})[data_id] = new_priority
+                    results_matrix.setdefault(row_key, {})[data_id] = cell_value
             else:
                 err_msg = res.error_reason or "No match found"
                 # Only record an error if no successful value exists yet
-                cell_map = results_matrix.setdefault(t.term, {})
+                row_key = _result_row_key(t)
+                cell_map = results_matrix.setdefault(row_key, {})
                 if data_id not in cell_map:
                     cell_map[data_id] = f"ERROR: {err_msg}"
                 pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
@@ -5729,7 +5787,9 @@ def run_scan(
                 "program_name": info_entry.get("program_name") or program_name,
                 "vehicle_number": info_entry.get("vehicle_number") or vehicle_number,
                 "serial_component": component_value,
-                "term": res.term,
+                # Expose the user-facing label as the primary Term field
+                # and keep the raw search term separately for debugging.
+                "term": term_label_out or res.term,
                 "term_label": term_label_out,
                 "data_group": data_group_out,
                 "found": res.found,
@@ -5758,6 +5818,9 @@ def run_scan(
                 "smart_selection_method": getattr(res, 'smart_selection_method', None),
                 "smart_position": getattr(t, 'smart_position', None),
                 "secondary_term": getattr(t, 'secondary_term', None),
+                "search_term": res.term,
+                "xy_fuzz": _xy_fuzz_debug,
+                "ocr_row_eps": _ocr_row_eps_debug,
             }
             metadata_rows.append(meta)
             summary.append(meta)
@@ -5808,6 +5871,8 @@ def run_scan(
                 "secondary_vertical_weight": 0.0,
                 "units_hint_weight": 0.4,
                 "range_weight_full": 0.4,
+                "xy_fuzz": _xy_fuzz_debug,
+                "ocr_row_eps": _ocr_row_eps_debug,
             }
             with per_json.open("w", encoding="utf-8") as jf:
                 json.dump(summary_pdf + [match_summary_row], jf, ensure_ascii=False, indent=2)
@@ -5885,7 +5950,8 @@ def run_scan(
                 "term_label": "Term Label",
                 "data_group": "Data Group",
                 "units_hint": "Units Hint",
-                "term": "Search Term",
+                "term": "Term",
+                "search_term": "Search Term",
                 "program_name": "Program Name",
                 "vehicle_number": "Vehicle Number",
                 "serial_component": "Serial Component",

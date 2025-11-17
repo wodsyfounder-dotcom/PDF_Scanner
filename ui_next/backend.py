@@ -89,6 +89,7 @@ def save_scanner_env(env_map: Dict[str, str], path: Path = SCANNER_ENV) -> None:
         "FORCE_OCR",
         "USE_EASYOCR_XY",
         "XY_LOG",
+        "OCR_ROW_EPS",
         "XY_FUZZ",
         "VENV_DIR",
     ]
