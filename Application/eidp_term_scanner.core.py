@@ -336,7 +336,7 @@ class MatchResult:
     smart_conflict: Optional[str] = None
     smart_secondary_found: Optional[bool] = None
     # Optional breakdown of numeric candidate scoring components (smart mode)
-    smart_score_breakdown: Optional[Dict[str, float]] = None
+    smart_score_breakdown: Optional[Dict[str, Optional[float]]] = None
     # How the value was selected in smart mode: 'smart_position' or 'smart_score'
     smart_selection_method: Optional[str] = None
 
@@ -1732,6 +1732,42 @@ def _extract_status_from_title(value: Optional[str]) -> Optional[str]:
     for w, wu in zip(words, up_words):
         if wu in single_statuses:
             return w
+    # If no explicit status token is found, try to condense the title/text
+    # to the most relevant textual fragment (e.g., 'Table 4' from
+    # '140 155 131 Table 4 0.85').
+    tokens = text.split()
+    segments = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if any(c.isalpha() for c in tok):
+            j = i + 1
+            while j < len(tokens):
+                next_tok = tokens[j]
+                # Stop if next token has alphabetic characters
+                if any(c.isalpha() for c in next_tok):
+                    break
+                # Stop if next token is not a number pattern
+                if not _re.match(r"^[0-9.+-]+$", next_tok):
+                    break
+                # Stop if next token looks like a confidence score (0.0-1.0 decimal)
+                # This prevents 'Table 4 0.85' from becoming a single segment
+                try:
+                    num_val = float(next_tok)
+                    if 0.0 <= num_val <= 1.0 and '.' in next_tok:
+                        # Likely a confidence score, don't include it
+                        break
+                except Exception:
+                    pass
+                j += 1
+            segments.append(" ".join(tokens[i:j]))
+            i = j
+        else:
+            i += 1
+    if segments:
+        # Prefer the last textual segment; in rows like
+        # '140 155 131 Table 4 0.85' this yields 'Table 4'.
+        return segments[-1]
     return value
 
 
@@ -1845,7 +1881,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     pages = list(range(1, doc.page_count + 1))
                 best_score = 0.0
                 best_info = None  # (p, line_text, right_text, val, smart_kind)
-                best_components: Optional[Dict[str, float]] = None  # numeric candidate scoring breakdown
+                best_components: Optional[Dict[str, Optional[float]]] = None  # numeric candidate scoring breakdown
                 best_selection_method: Optional[str] = None  # 'smart_position' vs 'smart_score'
                 best_selection_method: Optional[str] = None  # 'smart_position' vs 'smart_score'
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
@@ -2320,87 +2356,112 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         header_alignment[id(c)] = h
 
                             scored = []
-                            score_components: Dict[int, Dict[str, float]] = {}
+                            score_components: Dict[int, Dict[str, Optional[float]]] = {}
+                            # Calculate distance span for adaptive scoring
+                            if header_alignment:
+                                align_values = list(header_alignment.values())
+                                # Use actual pixel distance from header
+                                header_span = None
+                                if sec_header_x0 is not None and numeric_cands:
+                                    dists_px = [abs(float(c.get('x0', 0)) - float(sec_header_x0)) for c in numeric_cands]
+                                    if dists_px:
+                                        header_span = max(dists_px) - min(dists_px)
+
                             for c in numeric_cands:
                                 s = 0.0
-                                comp: Dict[str, float] = {
+                                comp: Dict[str, Optional[float]] = {
                                     "between_min_max": 0.0,
                                     "units_hint": 0.0,
-                                    "range": 0.0,
+                                    "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
-                                    "value_header_align": 0.0,
-                                    "min_header_penalty": 0.0,
-                                    "max_header_penalty": 0.0,
-                                    "label_dx": 0.0,
+                                    "value_header": 0.0,
+                                    "label_proximity": 0.0,
                                 }
-                                # Prefer middle value between line min and max
-                                in_middle = False
-                                if line_min_txt is not None and line_max_txt is not None and c['nval'] is not None:
-                                    try:
-                                        line_min_val = float(numeric_only(line_min_txt)) if line_min_txt is not None else None
-                                        line_max_val = float(numeric_only(line_max_txt)) if line_max_txt is not None else None
-                                    except Exception:
-                                        line_min_val = line_max_val = None
-                                    if line_min_val is not None and line_max_val is not None and line_min_val < c['nval'] < line_max_val:
-                                        in_middle = True
-                                        s += 2.0
-                                        comp["between_min_max"] += 2.0
-                                    elif line_min_val is not None and c['nval'] == line_min_val:
-                                        s -= 0.2
-                                        comp["between_min_max"] -= 0.2
-                                    elif line_max_val is not None and c['nval'] == line_max_val:
-                                        s -= 0.2
-                                        comp["between_min_max"] -= 0.2
-                                if units_hint_set:
-                                    if c.get('units') in units_hint_set:
-                                        s += 0.4
-                                        comp["units_hint"] += 0.4
-                                    elif has_units_match:
-                                        s -= 0.1
-                                        comp["units_hint"] -= 0.1
-                                if c['nval'] is not None and (spec.range_min is not None and spec.range_max is not None):
-                                    if spec.range_min <= c['nval'] <= spec.range_max:
-                                        s += 0.4
-                                        comp["range"] += 0.4
-                                elif c['nval'] is not None:
-                                    # soft preference toward range proximity if only one bound given
-                                    if spec.range_min is not None and c['nval'] >= spec.range_min:
-                                        s += 0.1
-                                        comp["range"] += 0.1
-                                    if spec.range_max is not None and c['nval'] <= spec.range_max:
-                                        s += 0.1
-                                        comp["range"] += 0.1
-                                sec_s = sec_score(c)
-                                # vertical secondary term score ignored; header alignment only
-                                # Header-based secondary term alignment (best candidate gets strongest boost)
+
+                                # 1. SECONDARY HEADER SCORING (max 2.0 points)
                                 hdr_align = header_alignment.get(id(c))
-                                if hdr_align is not None:
-                                    s += _SEC_HEADER_WEIGHT * hdr_align
-                                    comp["secondary_header"] += _SEC_HEADER_WEIGHT * hdr_align
-                                cx_cand = (c['x0'] + c['x1']) / 2.0
-                                if 'value' in header_map:
-                                    dist = abs(cx_cand - header_map['value'])
-                                    delta = 0.8 * (1.0 / (1.0 + dist / 18.0))
+                                if hdr_align is not None and sec_term:
+                                    # Adaptive scoring based on header spacing
+                                    is_tight = header_span is not None and header_span < 80
+
+                                    if is_tight:
+                                        # Gentle falloff for tight headers
+                                        if hdr_align >= 0.7:
+                                            delta = 1.6 + (hdr_align - 0.7) * (0.4 / 0.3)  # 1.6-2.0
+                                        elif hdr_align >= 0.4:
+                                            delta = 1.0 + (hdr_align - 0.4) * (0.6 / 0.3)  # 1.0-1.6
+                                        else:
+                                            delta = hdr_align * (1.0 / 0.4)  # 0.0-1.0
+                                    else:
+                                        # Linear falloff for loose headers
+                                        delta = 2.0 * hdr_align
+
                                     s += delta
-                                    comp["value_header_align"] += delta
-                                if 'min' in header_map:
-                                    dist = abs(cx_cand - header_map['min'])
-                                    delta = 0.4 * (1.0 / (1.0 + dist / 18.0))
-                                    s -= delta
-                                    comp["min_header_penalty"] -= delta
-                                if 'max' in header_map:
-                                    dist = abs(cx_cand - header_map['max'])
-                                    delta = 0.4 * (1.0 / (1.0 + dist / 18.0))
-                                    s -= delta
-                                    comp["max_header_penalty"] -= delta
-                                # slight preference for smaller horizontal distance from label
+                                    comp["secondary_header"] += delta
+
+                                # 2. VALUE HEADER FALLBACK (max 2.0 points) - only if NO secondary term
+                                elif not sec_term and 'value' in header_map:
+                                    cx_cand = (c['x0'] + c['x1']) / 2.0
+                                    dist = abs(cx_cand - header_map['value'])
+                                    # Similar adaptive logic could go here, for now use exponential decay
+                                    delta = 2.0 * (1.0 / (1.0 + dist / 30.0))
+                                    s += delta
+                                    comp["value_header"] += delta
+
+                                # 3. RANGE VALIDATION (max 1.5 points, min -0.5)
+                                if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
+                                    # Exactly equals boundary - PENALTY (might be grabbing range header)
+                                    if c['nval'] == spec.range_min or c['nval'] == spec.range_max:
+                                        delta = -0.5
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Strictly within range
+                                    elif spec.range_min < c['nval'] < spec.range_max:
+                                        delta = 1.5
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Slightly outside range (within 20%)
+                                    else:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance = 0.2 * range_span
+                                        if (spec.range_min - tolerance) <= c['nval'] <= (spec.range_max + tolerance):
+                                            delta = 0.4
+                                            s += delta
+                                            comp["range_validation"] += delta
+
+                                # 4. BETWEEN_MIN_MAX - detected line min/max (0.3 points)
+                                # Only award points if schema has range_min/max configured (not N/A)
+                                if (c['nval'] is not None
+                                    and line_min_txt is not None
+                                    and line_max_txt is not None
+                                    and spec.range_min is not None
+                                    and spec.range_max is not None):
+                                    try:
+                                        line_min_val = float(numeric_only(line_min_txt))
+                                        line_max_val = float(numeric_only(line_max_txt))
+                                        if line_min_val < c['nval'] < line_max_val:
+                                            delta = 0.3
+                                            s += delta
+                                            comp["between_min_max"] += delta
+                                    except Exception:
+                                        pass
+
+                                # 5. UNITS HINT (0.4 points)
+                                if units_hint_set and c.get('units') in units_hint_set:
+                                    delta = 0.4
+                                    s += delta
+                                    comp["units_hint"] += delta
+
+                                # 6. LABEL PROXIMITY (0.1 points)
                                 dx = max(0.0, c['x0'] - label_right_x)
-                                delta_dx = 0.05 * (1.0 / (1.0 + dx/10.0))
-                                s += delta_dx
-                                comp["label_dx"] += delta_dx
+                                delta = 0.1 * (1.0 / (1.0 + dx/10.0))
+                                s += delta
+                                comp["label_proximity"] += delta
+
                                 if debug_mode:
-                                    print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} units={c.get('units')} s={s:.3f}", file=sys.stderr)
+                                    print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+
                                 comp["total"] = s
                                 combined_sec = header_alignment.get(id(c), 0.0)
                                 scored.append((s, c, combined_sec))
@@ -2688,7 +2749,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 label_right_x = float(row_items[j].get('x1', row_items[j].get('cx', 0.0)))
                             except Exception:
                                 pass
+                        if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
+                            print(f"[DEBUG THERMAL SOAK] row_name={row_name!r} span={span} label_right_x={label_right_x:.1f}", file=sys.stderr)
+                            print(f"[DEBUG THERMAL SOAK] row_items: {[(it.get('text'), it.get('x0'), it.get('x1')) for it in row_items]}", file=sys.stderr)
                         right_items = [it for it in row_items if float(it.get('x0',0.0)) >= label_right_x - 1.0]
+                        if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
+                            print(f"[DEBUG THERMAL SOAK] right_items ({len(right_items)}): {[it.get('text') for it in right_items]}", file=sys.stderr)
                         row_min_y = min((float(it.get('y0',0.0)) for it in row_items), default=0.0)
                         row_max_y = max((float(it.get('y1',0.0)) for it in row_items), default=0.0)
                         row_height = max(1.0, row_max_y - row_min_y)
@@ -2817,6 +2883,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # Smart Position: treat as Nth \"box\" to the right
                             # of the term. For OCR, boxes are EasyOCR tokens.
                             fields_for_pos = _fields_from_items(ordered_right_items)
+                            if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
+                                print(f"[DEBUG THERMAL SOAK] ordered_right_items: {[it.get('text') for it in ordered_right_items]}", file=sys.stderr)
+                                print(f"[DEBUG THERMAL SOAK] fields_for_pos: {fields_for_pos}", file=sys.stderr)
+                                print(f"[DEBUG THERMAL SOAK] smart_position={pos_n} smart_kind={smart_kind}", file=sys.stderr)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -2961,83 +3031,110 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         header_alignment[id(c)] = h
 
                             scored = []
-                            score_components: Dict[int, Dict[str, float]] = {}
+                            score_components: Dict[int, Dict[str, Optional[float]]] = {}
+                            # Calculate distance span for adaptive scoring
+                            header_span = None
+                            if header_alignment and sec_header_x0 is not None and numeric_cands:
+                                dists_px = [abs(float(c.get('x0', 0)) - float(sec_header_x0)) for c in numeric_cands]
+                                if dists_px:
+                                    header_span = max(dists_px) - min(dists_px)
+
                             for c in numeric_cands:
                                 s = 0.0
-                                comp: Dict[str, float] = {
+                                comp: Dict[str, Optional[float]] = {
                                     "between_min_max": 0.0,
                                     "units_hint": 0.0,
-                                    "range": 0.0,
+                                    "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
-                                    "value_header_align": 0.0,
-                                    "min_header_penalty": 0.0,
-                                    "max_header_penalty": 0.0,
-                                    "label_dx": 0.0,
+                                    "value_header": 0.0,
+                                    "label_proximity": 0.0,
                                 }
-                                # Prefer middle value between line min and max
-                                if line_min_txt is not None and line_max_txt is not None and c['nval'] is not None:
-                                    try:
-                                        line_min_val = float(numeric_only(line_min_txt)) if line_min_txt is not None else None
-                                        line_max_val = float(numeric_only(line_max_txt)) if line_max_txt is not None else None
-                                    except Exception:
-                                        line_min_val = line_max_val = None
-                                    if line_min_val is not None and line_max_val is not None and line_min_val < c['nval'] < line_max_val:
-                                        s += 2.0
-                                        comp["between_min_max"] += 2.0
-                                    elif line_min_val is not None and c['nval'] == line_min_val:
-                                        s -= 0.2
-                                        comp["between_min_max"] -= 0.2
-                                    elif line_max_val is not None and c['nval'] == line_max_val:
-                                        s -= 0.2
-                                        comp["between_min_max"] -= 0.2
-                                if units_hints and c['units'] in units_hints:
-                                    s += 0.4
-                                    comp["units_hint"] += 0.4
-                                if c['nval'] is not None and (spec.range_min is not None and spec.range_max is not None):
-                                    if spec.range_min <= c['nval'] <= spec.range_max:
-                                        s += 0.4
-                                        comp["range"] += 0.4
-                                elif c['nval'] is not None:
-                                    if spec.range_min is not None and c['nval'] >= spec.range_min:
-                                        s += 0.1
-                                        comp["range"] += 0.1
-                                    if spec.range_max is not None and c['nval'] <= spec.range_max:
-                                        s += 0.1
-                                        comp["range"] += 0.1
-                                sec_s = sec_score(c)
-                                # vertical secondary term score ignored; header alignment only
+
+                                # 1. SECONDARY HEADER SCORING (max 2.0 points)
                                 hdr_align = header_alignment.get(id(c))
-                                if hdr_align is not None:
-                                    s += _SEC_HEADER_WEIGHT * hdr_align
-                                    comp["secondary_header"] += _SEC_HEADER_WEIGHT * hdr_align
-                                cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
-                                if 'value' in header_map:
+                                if hdr_align is not None and sec_term:
+                                    # Adaptive scoring based on header spacing
+                                    is_tight = header_span is not None and header_span < 80
+
+                                    if is_tight:
+                                        # Gentle falloff for tight headers
+                                        if hdr_align >= 0.7:
+                                            delta = 1.6 + (hdr_align - 0.7) * (0.4 / 0.3)  # 1.6-2.0
+                                        elif hdr_align >= 0.4:
+                                            delta = 1.0 + (hdr_align - 0.4) * (0.6 / 0.3)  # 1.0-1.6
+                                        else:
+                                            delta = hdr_align * (1.0 / 0.4)  # 0.0-1.0
+                                    else:
+                                        # Linear falloff for loose headers
+                                        delta = 2.0 * hdr_align
+
+                                    s += delta
+                                    comp["secondary_header"] += delta
+
+                                # 2. VALUE HEADER FALLBACK (max 2.0 points) - only if NO secondary term
+                                elif not sec_term and 'value' in header_map:
+                                    cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
                                     hdr = header_map['value']
                                     hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
                                     dist = abs(cand_cx - hx)
-                                    delta = 0.8 * (1.0 / (1.0 + dist / 18.0))
+                                    delta = 2.0 * (1.0 / (1.0 + dist / 30.0))
                                     s += delta
-                                    comp["value_header_align"] += delta
-                                if 'min' in header_map:
-                                    hdr = header_map['min']
-                                    hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
-                                    dist = abs(cand_cx - hx)
-                                    delta = 0.4 * (1.0 / (1.0 + dist / 18.0))
-                                    s -= delta
-                                    comp["min_header_penalty"] -= delta
-                                if 'max' in header_map:
-                                    hdr = header_map['max']
-                                    hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
-                                    dist = abs(cand_cx - hx)
-                                    delta = 0.4 * (1.0 / (1.0 + dist / 18.0))
-                                    s -= delta
-                                    comp["max_header_penalty"] -= delta
-                                # slight preference for smaller horizontal distance from label
+                                    comp["value_header"] += delta
+
+                                # 3. RANGE VALIDATION (max 1.5 points, min -0.5)
+                                if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
+                                    # Exactly equals boundary - PENALTY (might be grabbing range header)
+                                    if c['nval'] == spec.range_min or c['nval'] == spec.range_max:
+                                        delta = -0.5
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Strictly within range
+                                    elif spec.range_min < c['nval'] < spec.range_max:
+                                        delta = 1.5
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Slightly outside range (within 20%)
+                                    else:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance = 0.2 * range_span
+                                        if (spec.range_min - tolerance) <= c['nval'] <= (spec.range_max + tolerance):
+                                            delta = 0.4
+                                            s += delta
+                                            comp["range_validation"] += delta
+
+                                # 4. BETWEEN_MIN_MAX - detected line min/max (0.3 points)
+                                # Only award points if schema has range_min/max configured (not N/A)
+                                if (c['nval'] is not None
+                                    and line_min_txt is not None
+                                    and line_max_txt is not None
+                                    and spec.range_min is not None
+                                    and spec.range_max is not None):
+                                    try:
+                                        line_min_val = float(numeric_only(line_min_txt))
+                                        line_max_val = float(numeric_only(line_max_txt))
+                                        if line_min_val < c['nval'] < line_max_val:
+                                            delta = 0.3
+                                            s += delta
+                                            comp["between_min_max"] += delta
+                                    except Exception:
+                                        pass
+
+                                # 5. UNITS HINT (0.4 points)
+                                if units_hints and c.get('units') in units_hints:
+                                    delta = 0.4
+                                    s += delta
+                                    comp["units_hint"] += delta
+
+                                # 6. LABEL PROXIMITY (0.1 points)
                                 dx = max(0.0, float(c['x0']) - label_right_x)
-                                delta_dx = 0.05 * (1.0 / (1.0 + dx/10.0))
-                                s += delta_dx
-                                comp["label_dx"] += delta_dx
+                                delta = 0.1 * (1.0 / (1.0 + dx/10.0))
+                                s += delta
+                                comp["label_proximity"] += delta
+
+                                if debug_mode:
+                                    print(f"[SMART DEBUG][OCR] cand_score dpi={dpi} page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+
                                 comp["total"] = s
                                 combined_sec = header_alignment.get(id(c), 0.0)
                                 scored.append((s, c, combined_sec))

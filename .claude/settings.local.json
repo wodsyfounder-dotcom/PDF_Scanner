@@ -8,7 +8,10 @@
       "Bash(python:*)",
       "Bash(echo:*)",
       "Bash(del \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\scripts\\reorder_terms_columns.py\")",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(DEBUG_MODE=1 python:*)"
     ],
     "deny": [],
     "ask": []
