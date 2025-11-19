@@ -11,7 +11,16 @@
       "Bash(pip install:*)",
       "Bash(dir:*)",
       "Bash(findstr:*)",
-      "Bash(DEBUG_MODE=1 python:*)"
+      "Bash(DEBUG_MODE=1 python:*)",
+      "Bash(temp_debug_thermal_soak.out.txt)",
+      "Bash(DEBUG_MODE=1 OCR_MODE=easyocr python:*)",
+      "Bash(DEBUG_MODE=1 OCR_MODE=easyocr OCR_ROW_EPS=20 python:*)",
+      "Bash(temp_debug_scan_output.txt)",
+      "Bash(test:*)",
+      "Bash(temp_scan_stdout.txt 2)",
+      "Bash(temp_scan_stderr.txt)",
+      "Bash(temp_debug_thermal_soak_labels.txt)",
+      "Bash(bash -c:*)"
     ],
     "deny": [],
     "ask": []

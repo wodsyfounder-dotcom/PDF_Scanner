@@ -339,6 +339,11 @@ class MatchResult:
     smart_score_breakdown: Optional[Dict[str, Optional[float]]] = None
     # How the value was selected in smart mode: 'smart_position' or 'smart_score'
     smart_selection_method: Optional[str] = None
+    # Debug fields for Smart Position troubleshooting
+    debug_ordered_boxes: Optional[List[str]] = None
+    debug_fields_for_pos: Optional[List[str]] = None
+    debug_smart_position_requested: Optional[int] = None
+    debug_smart_position_extracted: Optional[str] = None
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -2617,6 +2622,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             best_score = 0.0
             best_info = None
             best_components = None
+            # Debug info for Smart Position
+            debug_boxes: Optional[List[str]] = None
+            debug_fields: Optional[List[str]] = None
+            debug_pos_requested: Optional[int] = None
+            debug_pos_extracted: Optional[str] = None
             # Track first occurrences of group_after/group_before across pages for OCR path
             group_after_seen = spec.group_after is None
             group_after_page: Optional[int] = None
@@ -2742,17 +2752,27 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # right-of approx via anchor match in token stream
                         tok_norms = [_normalize_anchor_token(t) for t in texts]
                         span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
-                        label_right_x = min((float(it.get('x0',0.0)) for it in row_items), default=0.0)
+                        label_right_x = 0.0
+                        label_box_index = None
                         if span:
                             _, j = span
+                            label_box_index = j
                             try:
-                                label_right_x = float(row_items[j].get('x1', row_items[j].get('cx', 0.0)))
+                                # Use the right edge (x1) of the matched label box
+                                label_right_x = float(row_items[j].get('x1', 0.0))
+                                if label_right_x == 0.0:
+                                    # Fallback: use center x + half width estimate
+                                    x0 = float(row_items[j].get('x0', 0.0))
+                                    label_right_x = float(row_items[j].get('cx', x0))
                             except Exception:
-                                pass
+                                label_right_x = 0.0
                         if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
-                            print(f"[DEBUG THERMAL SOAK] row_name={row_name!r} span={span} label_right_x={label_right_x:.1f}", file=sys.stderr)
-                            print(f"[DEBUG THERMAL SOAK] row_items: {[(it.get('text'), it.get('x0'), it.get('x1')) for it in row_items]}", file=sys.stderr)
-                        right_items = [it for it in row_items if float(it.get('x0',0.0)) >= label_right_x - 1.0]
+                            print(f"[DEBUG THERMAL SOAK] row_name={row_name!r} span={span} label_right_x={label_right_x:.1f} label_box_index={label_box_index}", file=sys.stderr)
+                            print(f"[DEBUG THERMAL SOAK] row_items ({len(row_items)}): {[(i, it.get('text'), it.get('x0'), it.get('x1')) for i, it in enumerate(row_items)]}", file=sys.stderr)
+                        # Exclude the label box itself from right_items to prevent off-by-1 Smart Position errors
+                        right_items = [it for i, it in enumerate(row_items)
+                                      if float(it.get('x0',0.0)) >= label_right_x - 1.0
+                                      and (label_box_index is None or i != label_box_index)]
                         if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
                             print(f"[DEBUG THERMAL SOAK] right_items ({len(right_items)}): {[it.get('text') for it in right_items]}", file=sys.stderr)
                         row_min_y = min((float(it.get('y0',0.0)) for it in row_items), default=0.0)
@@ -2784,6 +2804,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 if debug_mode:
                                     print(f"[SMART DEBUG] expanded right_items via band tolerance ({len(augmented)} extra)", file=sys.stderr)
                         ordered_right_items = [it for it in sorted(right_items, key=lambda t: (float(t.get('x0',0.0)), float(t.get('y0',0.0)))) if str(it.get('text') or '').strip()]
+
+                        # Defensive filter: explicitly exclude boxes matching the anchor text to prevent off-by-1 errors
+                        if row_name:
+                            row_name_norm = _normalize_anchor_token(row_name).lower()
+                            ordered_right_items = [it for it in ordered_right_items
+                                                  if row_name_norm not in _normalize_anchor_token(str(it.get('text') or '')).lower()]
+
+                        # Capture debug info for JSON output
+                        current_debug_boxes = [f"Box {idx}: '{item.get('text')}' (x0={item.get('x0'):.1f}, x1={item.get('x1'):.1f})"
+                                             for idx, item in enumerate(ordered_right_items, start=1)]
+
+                        if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
+                            print(f"\n[DEBUG] === After filtering and ordering for: {row_name} ===", file=sys.stderr)
+                            print(f"[DEBUG] ordered_right_items has {len(ordered_right_items)} boxes:", file=sys.stderr)
+                            for box_str in current_debug_boxes:
+                                print(f"[DEBUG]   {box_str}", file=sys.stderr)
                         column_positions: Dict[str, float] = {}
                         if group_after_tokens:
                             for ent in rows.values():
@@ -2883,10 +2919,20 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # Smart Position: treat as Nth \"box\" to the right
                             # of the term. For OCR, boxes are EasyOCR tokens.
                             fields_for_pos = _fields_from_items(ordered_right_items)
+
+                            # Capture debug fields for JSON output
+                            current_debug_fields = [f"Position {idx}: '{field}'" for idx, field in enumerate(fields_for_pos, start=1)]
+
                             if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
-                                print(f"[DEBUG THERMAL SOAK] ordered_right_items: {[it.get('text') for it in ordered_right_items]}", file=sys.stderr)
-                                print(f"[DEBUG THERMAL SOAK] fields_for_pos: {fields_for_pos}", file=sys.stderr)
-                                print(f"[DEBUG THERMAL SOAK] smart_position={pos_n} smart_kind={smart_kind}", file=sys.stderr)
+                                print(f"[DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
+                                print(f"[DEBUG] fields_for_pos has {len(fields_for_pos)} fields:", file=sys.stderr)
+                                for field_str in current_debug_fields:
+                                    print(f"[DEBUG]   {field_str}", file=sys.stderr)
+                                print(f"[DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
+                                if pos_n and 1 <= pos_n <= len(fields_for_pos):
+                                    print(f"[DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
+                                else:
+                                    print(f"[DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -2925,6 +2971,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best_score = score
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                     smart_pos_used = True
+                                    # Capture debug info
+                                    debug_boxes = current_debug_boxes
+                                    debug_fields = current_debug_fields
+                                    debug_pos_requested = pos_n
+                                    debug_pos_extracted = val
                                 continue
                         if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_items:
                             if has_smart_pos and fields_for_pos:
@@ -2956,6 +3007,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                             best_score = score
                                             best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                             smart_pos_used = True
+                                            # Capture debug info
+                                            debug_boxes = current_debug_boxes
+                                            debug_fields = current_debug_fields
+                                            debug_pos_requested = pos_n
+                                            debug_pos_extracted = val
                                         continue
                             elif not has_smart_pos:
                                 if pos_n <= len(ordered_right_items):
@@ -3215,6 +3271,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 smart_secondary_found=sec_found,
                 smart_score_breakdown=best_components,
                 smart_selection_method=sel_method,
+                debug_ordered_boxes=debug_boxes,
+                debug_fields_for_pos=debug_fields,
+                debug_smart_position_requested=debug_pos_requested,
+                debug_smart_position_extracted=debug_pos_extracted,
             )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
@@ -4986,12 +5046,15 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                     total_len = len(line_text)
                     if total_len > 0 and pos >= 0:
                         running = 0
+                        anchor_end_pos = pos + len(norm(anchor)) if anchor else pos
                         for w in ws_sorted:
                             txt = str(w[4])
+                            running_start = running
                             running_end = running + len(txt) + 1  # include a space
-                            if running_end >= pos:
-                                anchor_x = (float(w[0]) + float(w[2]))/2.0
-                                break
+                            # Find the rightmost word that overlaps with the anchor span
+                            if running_start < anchor_end_pos and running_end > pos:
+                                # This word is part of the anchor span
+                                anchor_x = float(w[2])  # Keep updating to get the rightmost word
                             running = running_end
                 # Build fields by geometric gaps (concatenate words until a big gap)
                 fields = []
@@ -5025,7 +5088,7 @@ def scan_pdf_for_term_line(pdf_path: Path, serial_number: str, spec: TermSpec, w
                     prev_x1 = float(w[2])
                 if current:
                     fields.append(" ".join(current).strip())
-                # Remove empties and ensure we have enough fields
+                # Remove empties
                 fields = [f for f in fields if f]
                 if len(fields) >= idx:
                     selected = fields[idx - 1].strip()
@@ -5918,6 +5981,11 @@ def run_scan(
                 "search_term": res.term,
                 "xy_fuzz": _xy_fuzz_debug,
                 "ocr_row_eps": _ocr_row_eps_debug,
+                # Debug fields for Smart Position troubleshooting
+                "debug_ordered_boxes": getattr(res, 'debug_ordered_boxes', None),
+                "debug_fields_for_pos": getattr(res, 'debug_fields_for_pos', None),
+                "debug_smart_position_requested": getattr(res, 'debug_smart_position_requested', None),
+                "debug_smart_position_extracted": getattr(res, 'debug_smart_position_extracted', None),
             }
             metadata_rows.append(meta)
             summary.append(meta)
