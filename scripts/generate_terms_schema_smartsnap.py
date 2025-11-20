@@ -15,6 +15,7 @@ HEADERS = [
     "Term Label",
     "Smart Snap Type",
     "Term",
+    "Secondary Term",
     "Pages",
     "GroupAfter",
     "GroupBefore",
@@ -22,24 +23,13 @@ HEADERS = [
     "Range (min)",
     "Range (max)",
     "Format",
-    "Secondary Term",
     "Smart Position",
-    # Hidden legacy columns (preserved for backward compatibility)
-    "Mode",
-    "Line",
-    "Column",
-    "Anchor",
-    "FieldIndex",
-    "FieldSplit",
-    "Return",
+    "OCR_Row_EPS",
+    "DPI",
 ]
 
-# Columns to hide in Excel (legacy full-table mode columns)
-HIDDEN_COLUMNS = ["Mode", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit", "Return"]
+# No hidden columns - removed legacy columns
 
-MODE_OPTIONS = ["smart", "full table"]
-RETURN_OPTIONS = ["number", "string"]
-SPLIT_OPTIONS = ["auto", "groups", "tokens"]
 SMART_TYPES = ["", "auto", "number", "date", "time", "title"]
 
 
@@ -76,13 +66,7 @@ def main() -> None:
         cell = ws.cell(row=1, column=idx)
         cell.font = header_font
         col_letter = get_column_letter(idx)
-
-        # Hide legacy columns
-        if header in HIDDEN_COLUMNS:
-            ws.column_dimensions[col_letter].hidden = True
-            ws.column_dimensions[col_letter].width = 14
-        else:
-            ws.column_dimensions[col_letter].width = max(14, len(header) + 2)
+        ws.column_dimensions[col_letter].width = max(14, len(header) + 2)
 
     # Data validations
     def _dv(values: list[str]) -> DataValidation:
@@ -90,32 +74,31 @@ def main() -> None:
 
     # Find column indices for validation
     smart_type_col = HEADERS.index("Smart Snap Type") + 1
-    mode_col = HEADERS.index("Mode") + 1
-    return_col = HEADERS.index("Return") + 1
-    split_col = HEADERS.index("FieldSplit") + 1
 
-    dv_mode = _dv(MODE_OPTIONS)
-    dv_return = _dv(RETURN_OPTIONS)
-    dv_split = _dv(SPLIT_OPTIONS)
     dv_smart = _dv([v or " " for v in SMART_TYPES])
-
-    for dv in (dv_mode, dv_return, dv_split, dv_smart):
-        ws.add_data_validation(dv)
+    ws.add_data_validation(dv_smart)
     dv_smart.add(f"{get_column_letter(smart_type_col)}2:{get_column_letter(smart_type_col)}2000")
-    dv_mode.add(f"{get_column_letter(mode_col)}2:{get_column_letter(mode_col)}2000")
-    dv_return.add(f"{get_column_letter(return_col)}2:{get_column_letter(return_col)}2000")
-    dv_split.add(f"{get_column_letter(split_col)}2:{get_column_letter(split_col)}2000")
 
-    # No conditional formatting - no grey cells
+    # Conditional formatting to improve usability
+    grey = PatternFill(start_color='00DDDDDD', end_color='00DDDDDD', fill_type='solid')
+    # If Smart Snap Type = "title", grey Units (I), Range (min) (J), Range (max) (K)
+    units_col = HEADERS.index("Units") + 1
+    range_min_col = HEADERS.index("Range (min)") + 1
+    range_max_col = HEADERS.index("Range (max)") + 1
+    ws.conditional_formatting.add(f'{get_column_letter(units_col)}2:{get_column_letter(units_col)}2000',
+                                   FormulaRule(formula=[f'${get_column_letter(smart_type_col)}2="title"'], fill=grey))
+    ws.conditional_formatting.add(f'{get_column_letter(range_min_col)}2:{get_column_letter(range_min_col)}2000',
+                                   FormulaRule(formula=[f'${get_column_letter(smart_type_col)}2="title"'], fill=grey))
+    ws.conditional_formatting.add(f'{get_column_letter(range_max_col)}2:{get_column_letter(range_max_col)}2000',
+                                   FormulaRule(formula=[f'${get_column_letter(smart_type_col)}2="title"'], fill=grey))
 
     # Example rows (Smart Snap mode)
-    # Column order: Data Group, Term Label, Smart Snap Type, Term, Pages, GroupAfter, GroupBefore,
-    #               Units, Range (min), Range (max), Format, Secondary Term, Smart Position,
-    #               Mode, Line, Column, Anchor, FieldIndex, FieldSplit, Return
+    # Column order: Data Group, Term Label, Smart Snap Type, Term, Secondary Term, Pages, GroupAfter, GroupBefore,
+    #               Units, Range (min), Range (max), Format, Smart Position, OCR_Row_EPS, DPI
     examples = [
-        ["Metadata", "Title", "title", "title", "1", "", "", "", "", "", "", "", "", "smart", "", "", "", "", "", "string"],
-        ["Performance", "Pre-Test ISP", "number", "isp", "1", "Pre Test", "Post Test", "sec", "40", "44", "", "", "", "smart", "", "", "", "", "", "number"],
-        ["Tables", "Proof Load", "number", "proof load", "2", "", "", "psi", "", "", "", "", "", "smart", "", "", "", "", "", "number"],
+        ["Metadata", "Title", "title", "title", "", "1", "", "", "", "", "", "", "", "", ""],
+        ["Performance", "Pre-Test ISP", "number", "isp", "", "1", "Pre Test", "Post Test", "sec", "40", "44", "", "", "", ""],
+        ["Tables", "Proof Load", "number", "proof load", "", "2", "", "", "psi", "", "", "", "", "12.0", "850"],
     ]
     for row in examples:
         ws.append(row)
@@ -148,6 +131,10 @@ def main() -> None:
         "Advanced Extraction:",
         " - Secondary Term: Disambiguate values when multiple matches exist in a row.",
         " - Smart Position: Position hint for value extraction.",
+        "",
+        "OCR Fine-Tuning (optional):",
+        " - OCR_Row_EPS: Y-axis tolerance (0.5-50.0) for grouping OCR text into rows. Default: 8.0.",
+        " - DPI: OCR rendering resolution (e.g., 700, 850). Higher values improve accuracy for small text.",
         "",
         "Tips:",
         " - Leave columns blank when not needed.",

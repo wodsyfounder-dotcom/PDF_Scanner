@@ -307,6 +307,9 @@ class TermSpec:
     secondary_term: Optional[str] = None
     # Optional positional pick (1-based) of the Nth value to the right (smart mode only)
     smart_position: Optional[int] = None
+    # Per-term OCR settings (override global defaults)
+    ocr_row_eps: Optional[float] = None  # OCR line Y tolerance for grouping text into rows
+    dpi: Optional[int] = None            # DPI for OCR rendering
 
 
 @dataclass
@@ -808,6 +811,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     smart_type_col = col_for("smart_snap_type") or col_for("smart") or col_for("smart snap type") or col_for("smart_snap")
     secondary_col = col_for("secondary_term") or col_for("secondary") or col_for("secondary label") or col_for("secondary_label")
     smart_pos_col = col_for("smart_position") or col_for("smart position") or col_for("smartpos")
+    ocr_row_eps_col = col_for("ocr_row_eps") or col_for("ocr row eps") or col_for("ocr_row_tolerance") or col_for("row_eps")
+    dpi_col = col_for("dpi") or col_for("ocr_dpi") or col_for("ocr dpi")
     if not term_col:
         print("[ERROR] Could not find 'Term' header in Excel file.", file=sys.stderr)
         sys.exit(2)
@@ -857,6 +862,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         smart_type_val = row[smart_type_col - 1].value if smart_type_col else None
         sec_val = row[secondary_col - 1].value if secondary_col else None
         smart_pos_val = row[smart_pos_col - 1].value if smart_pos_col else None
+        ocr_row_eps_val = row[ocr_row_eps_col - 1].value if ocr_row_eps_col else None
+        dpi_val = row[dpi_col - 1].value if dpi_col else None
         fmt_val = row[fmt_col - 1].value if fmt_col else None if fmt_col else None
         grp_val = row[group_col - 1].value if group_col else None
         grp_before_val = row[group_before_col - 1].value if group_before_col else None
@@ -902,6 +909,19 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                 smart_position = None
         except Exception:
             smart_position = None
+        # Parse per-term OCR settings
+        try:
+            ocr_row_eps = float(str(ocr_row_eps_val).strip()) if ocr_row_eps_val is not None and str(ocr_row_eps_val).strip() else None
+            if ocr_row_eps is not None:
+                ocr_row_eps = max(0.5, min(50.0, ocr_row_eps))
+        except Exception:
+            ocr_row_eps = None
+        try:
+            dpi = int(str(dpi_val).strip()) if dpi_val is not None and str(dpi_val).strip() else None
+            if dpi is not None and dpi < 1:
+                dpi = None
+        except Exception:
+            dpi = None
         if term:
             term_label = (str(term_label_val).strip() if term_label_val is not None and str(term_label_val).strip() else None)
             data_group = (str(data_group_val).strip() if data_group_val is not None and str(data_group_val).strip() else None)
@@ -916,7 +936,9 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                    group_before=(str(grp_before_val).strip() if grp_before_val is not None and str(grp_before_val).strip() else None),
                                    smart_snap_type=smart_snap_type,
                                    secondary_term=secondary_term,
-                                   smart_position=smart_position))
+                                   smart_position=smart_position,
+                                   ocr_row_eps=ocr_row_eps,
+                                   dpi=dpi))
     return terms
 
 
@@ -981,6 +1003,21 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         except Exception:
             smart_position = None
         smart_snap_type = _norm_smart_type(str(get(row, 'smart_snap_type') or get(row, 'smart') or get(row, 'smart_snap') or '').strip() or None)
+        # Parse per-term OCR settings
+        _ocr_row_eps_raw = str(get(row, 'ocr_row_eps') or get(row, 'ocr row eps') or get(row, 'ocr_row_tolerance') or get(row, 'row_eps') or '').strip()
+        try:
+            ocr_row_eps = float(_ocr_row_eps_raw) if _ocr_row_eps_raw else None
+            if ocr_row_eps is not None:
+                ocr_row_eps = max(0.5, min(50.0, ocr_row_eps))
+        except Exception:
+            ocr_row_eps = None
+        _dpi_raw = str(get(row, 'dpi') or get(row, 'ocr_dpi') or get(row, 'ocr dpi') or '').strip()
+        try:
+            dpi = int(_dpi_raw) if _dpi_raw else None
+            if dpi is not None and dpi < 1:
+                dpi = None
+        except Exception:
+            dpi = None
         out.append(TermSpec(term=term, pages=parse_page_ranges(pages_str), pages_raw=pages_str,
                             term_label=term_label, data_group=data_group,
                             mode=mode, line=line, column=column, anchor=anchor,
@@ -988,7 +1025,8 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
                                   range_min=rmin, range_max=rmax, units_hint=units_hint,
                                   range_min_disabled=rmin_disabled, range_max_disabled=rmax_disabled,
                             value_format=value_format, group_after=group_after, group_before=group_before,
-                            smart_snap_type=smart_snap_type, secondary_term=secondary_term, smart_position=smart_position))
+                            smart_snap_type=smart_snap_type, secondary_term=secondary_term, smart_position=smart_position,
+                            ocr_row_eps=ocr_row_eps, dpi=dpi))
     return out
 
 def parse_units_hint(v) -> List[str]:
@@ -2958,29 +2996,33 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     # OCR fallback with EasyOCR boxes -> lines
     if _HAVE_EASYOCR and _HAVE_PYMUPDF:
         try:
-            dpi_candidates: List[int] = []
+            # Use per-term DPI if specified, otherwise use global DPI list
+            if spec.dpi is not None:
+                dpi_candidates: List[int] = [spec.dpi]
+            else:
+                dpi_candidates = []
 
-            def _push_dpi(val: Optional[str]) -> None:
-                if not val:
-                    return
-                try:
-                    dpi_val = int(str(val).strip())
-                    if dpi_val > 0 and dpi_val not in dpi_candidates:
-                        dpi_candidates.append(dpi_val)
-                except Exception:
-                    pass
+                def _push_dpi(val: Optional[str]) -> None:
+                    if not val:
+                        return
+                    try:
+                        dpi_val = int(str(val).strip())
+                        if dpi_val > 0 and dpi_val not in dpi_candidates:
+                            dpi_candidates.append(dpi_val)
+                    except Exception:
+                        pass
 
-            raw_list = os.environ.get('SMART_DPI_LIST')
-            if raw_list:
-                for token in re.split(r"[;,]", raw_list):
-                    _push_dpi(token)
+                raw_list = os.environ.get('SMART_DPI_LIST')
+                if raw_list:
+                    for token in re.split(r"[;,]", raw_list):
+                        _push_dpi(token)
 
-            _push_dpi(os.environ.get('SMART_DPI_BASE'))
-            _push_dpi(os.environ.get('OCR_DPI'))
-            _push_dpi('700')
+                _push_dpi(os.environ.get('SMART_DPI_BASE'))
+                _push_dpi(os.environ.get('OCR_DPI'))
+                _push_dpi('700')
 
-            if not dpi_candidates:
-                dpi_candidates = [700]
+                if not dpi_candidates:
+                    dpi_candidates = [700]
             if debug_mode:
                 print(f"[SMART DEBUG] dpi_candidates={dpi_candidates}", file=sys.stderr)
 
@@ -3013,13 +3055,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             group_before_seen = spec.group_before is None
             group_before_page: Optional[int] = None
             # Vertical tolerance (in OCR pixel coordinates) for grouping
-            # EasyOCR boxes into logical text rows. Exposed via OCR_ROW_EPS
-            # so the UI can provide a slider; default tuned for 10–14pt text.
-            try:
-                row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
-            except Exception:
-                row_eps = 8.0
-            row_eps = max(0.5, min(50.0, row_eps))
+            # EasyOCR boxes into logical text rows. Use per-term value if specified,
+            # otherwise fall back to global OCR_ROW_EPS; default tuned for 10–14pt text.
+            if spec.ocr_row_eps is not None:
+                row_eps = spec.ocr_row_eps
+            else:
+                try:
+                    row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+                except Exception:
+                    row_eps = 8.0
+                row_eps = max(0.5, min(50.0, row_eps))
             for dpi in dpi_candidates:
                 for p in pages or []:
                     items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
@@ -4060,13 +4105,17 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
     value_format_text, _ = _value_format_info(_effective_value_format(spec))
     fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
 
-    try:
-        dpi_base = int(os.environ.get('OCR_DPI', '700'))
-    except Exception:
-        dpi_base = 700
-    dpi_candidates = [dpi_base]
-    if dpi_base > 700:
-        dpi_candidates.append(700)
+    # Use per-term DPI if specified, otherwise use global DPI
+    if spec.dpi is not None:
+        dpi_candidates = [spec.dpi]
+    else:
+        try:
+            dpi_base = int(os.environ.get('OCR_DPI', '700'))
+        except Exception:
+            dpi_base = 700
+        dpi_candidates = [dpi_base]
+        if dpi_base > 700:
+            dpi_candidates.append(700)
 
     try:
         doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
@@ -5125,11 +5174,15 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
     def _group_easyocr_rows(items: List[Dict[str, float]]) -> List[Dict[str, object]]:
         """Group EasyOCR boxes into text lines using a configurable Y tolerance."""
         rows: List[Dict[str, object]] = []
-        try:
-            row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
-        except Exception:
-            row_eps = 8.0
-        row_eps = max(0.5, min(50.0, row_eps))
+        # Use per-term value if specified, otherwise fall back to global OCR_ROW_EPS
+        if spec.ocr_row_eps is not None:
+            row_eps = spec.ocr_row_eps
+        else:
+            try:
+                row_eps = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+            except Exception:
+                row_eps = 8.0
+            row_eps = max(0.5, min(50.0, row_eps))
         for it in sorted(items, key=lambda d: (float(d.get("cy", 0.0)), float(d.get("cx", 0.0)))):
             cy = float(it.get("cy", 0.0))
             if not rows or abs(cy - float(rows[-1]["cy"])) > row_eps:
@@ -5149,13 +5202,17 @@ def scan_pdf_for_term_nearest(pdf_path: Path, serial_number: str, spec: TermSpec
             return None, False, "No anchor text specified for nearest-line mode"
         langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
         langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
-        try:
-            dpi_base = int(os.environ.get('OCR_DPI', '700'))
-        except Exception:
-            dpi_base = 700
-        dpi_candidates = [dpi_base]
-        if dpi_base > 700:
-            dpi_candidates.append(700)
+        # Use per-term DPI if specified, otherwise use global DPI
+        if spec.dpi is not None:
+            dpi_candidates = [spec.dpi]
+        else:
+            try:
+                dpi_base = int(os.environ.get('OCR_DPI', '700'))
+            except Exception:
+                dpi_base = 700
+            dpi_candidates = [dpi_base]
+            if dpi_base > 700:
+                dpi_candidates.append(700)
         try:
             doc = fitz.open(str(pdf_path))
             total_pages = getattr(doc, 'page_count', 0)

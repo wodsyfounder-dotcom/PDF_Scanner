@@ -318,6 +318,7 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Smart Snap Type",
         "Mode",
         "Term",
+        "Secondary Term",
         "Pages",
         "GroupAfter",
         "GroupBefore",
@@ -325,8 +326,9 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Range (min)",
         "Range (max)",
         "Format",
-        "Secondary Term",
         "Smart Position",
+        "OCR_Row_EPS",
+        "DPI",
     ]
     COLUMN_DISPLAY_NAMES = {
         "Data Group": "Data Grouping",
@@ -343,8 +345,10 @@ class TermsEditorDialog(QtWidgets.QDialog):
         "Format": "Format / Pattern",
         "Secondary Term": "Secondary Term",
         "Smart Position": "Smart Position",
+        "OCR_Row_EPS": "OCR Row Tolerance",
+        "DPI": "OCR DPI",
     }
-    DEFAULT_HIDDEN = {"Return", "Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
+    DEFAULT_HIDDEN = {"Return"}
 
     def __init__(self, terms_path: Path, parent=None):
         super().__init__(parent)
@@ -1746,46 +1750,6 @@ class MainWindow(QtWidgets.QMainWindow):
         ocr_layout.addWidget(self.cmb_ocr_mode)
         ls.addWidget(ocr_container)
 
-        # XY Fuzz Tolerance with info icon
-        xy_container = QtWidgets.QWidget()
-        xy_layout = QtWidgets.QVBoxLayout(xy_container)
-        xy_layout.setContentsMargins(0, 0, 0, 0)
-        xy_layout.setSpacing(6)
-        xy_header = QtWidgets.QHBoxLayout()
-        xy_label = QtWidgets.QLabel("XY Fuzz Tolerance")
-        xy_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
-        xy_header.addWidget(xy_label)
-        xy_info = QtWidgets.QLabel("\u24D8")  # Info icon
-        xy_info.setStyleSheet("color: #9ca3af; font-size: 14px;")
-        xy_info.setToolTip("Tolerance for matching table cell positions (higher = more lenient)")
-        xy_header.addWidget(xy_info)
-        xy_header.addStretch()
-        self.lbl_xy_val = QtWidgets.QLabel("0.46")
-        self.lbl_xy_val.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
-        xy_header.addWidget(self.lbl_xy_val)
-        xy_layout.addLayout(xy_header)
-        self.sld_xy_fuzz = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.sld_xy_fuzz.setRange(0, 100)
-        self.sld_xy_fuzz.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #e5e7eb;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                width: 16px;
-                height: 16px;
-                margin: -5px 0;
-                border-radius: 8px;
-                background: #2563eb;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #1d4ed8;
-            }
-        """)
-        xy_layout.addWidget(self.sld_xy_fuzz)
-        ls.addWidget(xy_container)
-
         # OCR line Y tolerance (row grouping)
         ytol_container = QtWidgets.QWidget()
         ytol_layout = QtWidgets.QVBoxLayout(ytol_container)
@@ -1951,7 +1915,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Persist on change
         self.cmb_ocr_mode.currentTextChanged.connect(self._persist_settings_from_panel)
-        self.sld_xy_fuzz.valueChanged.connect(self._on_xy_slider)
         self.sld_ocr_row_tol.valueChanged.connect(self._on_ocr_row_tol_slider)
         self.sld_ocr_dpi.valueChanged.connect(self._on_dpi_slider)
         self.chk_logging.stateChanged.connect(self._persist_settings_from_panel)
@@ -3689,15 +3652,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 if display not in [self.cmb_ocr_mode.itemText(i) for i in range(self.cmb_ocr_mode.count())]:
                     self.cmb_ocr_mode.addItem(display)
                 self.cmb_ocr_mode.setCurrentText(display)
-            xy = env.get("XY_FUZZ", "0.50")
-            try:
-                val = float(xy)
-                self.sld_xy_fuzz.blockSignals(True)
-                self.sld_xy_fuzz.setValue(int(round(val * 100)))
-                self.sld_xy_fuzz.blockSignals(False)
-                self.lbl_xy_val.setText(f"{val:0.2f}")
-            except Exception:
-                pass
             # OCR row Y tolerance (pixels)
             row_eps = env.get("OCR_ROW_EPS", "8")
             try:
@@ -4042,13 +3996,6 @@ class MainWindow(QtWidgets.QMainWindow):
         return pix
 
     # Settings persistence
-    def _on_xy_slider(self, value: int):
-        try:
-            self.lbl_xy_val.setText(f"{value/100.0:0.2f}")
-        except Exception:
-            pass
-        self._persist_settings_from_panel()
-
     def _on_ocr_row_tol_slider(self, value: int):
         try:
             self.lbl_ocr_row_tol.setText(str(value))
@@ -4068,7 +4015,6 @@ class MainWindow(QtWidgets.QMainWindow):
             env = be.parse_scanner_env()
             disp = self.cmb_ocr_mode.currentText()
             env["OCR_MODE"] = self._ocr_display_to_value.get(disp, "fallback") if hasattr(self, "_ocr_display_to_value") else disp.strip().lower()
-            env["XY_FUZZ"] = f"{self.sld_xy_fuzz.value()/100.0:0.2f}"
             env["OCR_ROW_EPS"] = str(int(self.sld_ocr_row_tol.value()))
             env["OCR_DPI"] = str(int(self.sld_ocr_dpi.value()))
             # QUIET is inverse of logging toggle

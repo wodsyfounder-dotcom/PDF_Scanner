@@ -24,24 +24,21 @@ TERMS_TEMPLATE_SHEET = "Template"
 TERMS_SCHEMA_COLUMNS = [
     "Data Group",
     "Term Label",
+    "Smart Snap Type",
     "Term",
+    "Secondary Term",
     "Pages",
-    "Mode",
-    "Line",
-    "Column",
-    "Anchor",
-    "FieldIndex",
-    "FieldSplit",
-    "Return",
+    "GroupAfter",
+    "GroupBefore",
     "Units",
     "Range (min)",
     "Range (max)",
     "Format",
-    "GroupAfter",
-    "GroupBefore",
-    "Smart Snap Type",
-    "Secondary Term",
     "Smart Position",
+    "OCR_Row_EPS",
+    "DPI",
+    "Mode",
+    "Return",
 ]
 TERMS_MODE_CHOICES = ["smart", "full table"]
 TERMS_SMART_TYPE_CHOICES = ["", "auto", "number", "date", "time", "title"]
@@ -90,7 +87,6 @@ def save_scanner_env(env_map: Dict[str, str], path: Path = SCANNER_ENV) -> None:
         "USE_EASYOCR_XY",
         "XY_LOG",
         "OCR_ROW_EPS",
-        "XY_FUZZ",
         "VENV_DIR",
     ]
     written = set()
@@ -353,6 +349,23 @@ def ensure_terms_columns(path: Optional[Path] = None) -> bool:
         if TERMS_TEMPLATE_SHEET not in wb.sheetnames:
             return False
         ws = wb[TERMS_TEMPLATE_SHEET]
+        changed = False
+
+        # Remove legacy line-mode columns that are no longer used in the Smart-Snap schema.
+        deprecated = {"Line", "Column", "Anchor", "FieldIndex", "FieldSplit"}
+        try:
+            max_col = ws.max_column or 0
+            for col_idx in range(max_col, 0, -1):
+                raw = ws.cell(row=1, column=col_idx).value
+                if raw is None:
+                    continue
+                name = str(raw).strip()
+                if name in deprecated:
+                    ws.delete_cols(col_idx)
+                    changed = True
+        except Exception:
+            # Best-effort cleanup; ignore failures so we still enforce required columns.
+            pass
 
         # Read existing headers
         existing_headers = []
@@ -365,16 +378,16 @@ def ensure_terms_columns(path: Optional[Path] = None) -> bool:
 
         # Check if we need to add any columns
         missing_columns = [col for col in TERMS_SCHEMA_COLUMNS if col not in existing_headers]
-        if not missing_columns:
-            return False
+        if missing_columns:
+            # Add missing column headers to row 1
+            start_col = len(existing_headers) + 1
+            for idx, col_name in enumerate(missing_columns, start=start_col):
+                ws.cell(row=1, column=idx, value=col_name)
+            changed = True
 
-        # Add missing column headers to row 1
-        start_col = len(existing_headers) + 1
-        for idx, col_name in enumerate(missing_columns, start=start_col):
-            ws.cell(row=1, column=idx, value=col_name)
-
-        wb.save(tgt)
-        return True
+        if changed:
+            wb.save(tgt)
+        return changed
     finally:
         wb.close()
 
