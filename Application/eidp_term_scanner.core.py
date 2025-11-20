@@ -344,6 +344,11 @@ class MatchResult:
     debug_fields_for_pos: Optional[List[str]] = None
     debug_smart_position_requested: Optional[int] = None
     debug_smart_position_extracted: Optional[str] = None
+    # Debug fields for label matching
+    debug_label_used: Optional[str] = None
+    debug_label_normalized: Optional[str] = None
+    debug_anchor_span: Optional[str] = None
+    debug_extracted_term: Optional[str] = None  # The actual term/label string matched in the document
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -376,6 +381,29 @@ def _effective_value_format(spec) -> Optional[str]:
     return DEFAULT_SMART_FORMATS.get(smart_kind)
 TIME_REGEX = re.compile(r"\b(?:(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:[AP]M|[ap]m)?|(?:\d+\s*(?:ms|s|sec|mins?|minutes?|hrs?|hours?)))\b")
 
+
+def _format_score_breakdown(breakdown: Optional[Dict[str, Optional[float]]]) -> Optional[Dict[str, Optional[float]]]:
+    """Add descriptive labels to score breakdown keys for clarity in JSON output."""
+    if not breakdown:
+        return breakdown
+
+    descriptions = {
+        "format_match": "format match",
+        "units_hint": "units match",
+        "range_validation": "range validation",
+        "secondary_vertical": "secondary vertical (deprecated)",
+        "secondary_header": "secondary header X-axis alignment",
+        "value_header": "value header alignment",
+        "label_proximity": "label proximity",
+        "total": "total score"
+    }
+
+    result = {}
+    for key, value in breakdown.items():
+        desc = descriptions.get(key, key)
+        new_key = f"{key} ({desc})" if key != "total" else key
+        result[new_key] = value
+    return result
 
 
 def numeric_only(value: Optional[str]) -> Optional[str]:
@@ -1640,6 +1668,113 @@ def _anchor_tokens_present(anchor: str, text: str) -> bool:
     return present >= needed
 
 
+def _extend_label_boundary(tokens_with_pos: Sequence[Any], anchor_end_index: int) -> Tuple[int, str]:
+    """
+    Extend the label boundary beyond the matched anchor using spatial gap detection.
+
+    Uses the same GAP = 6.0 logic as _fields_from_items to determine field boundaries.
+    Tokens with gap <= 6.0 are considered part of the same label.
+    Tokens with gap > 6.0 mark the start of the value (separate field).
+
+    Examples:
+    - "Serial / Component" (gap <= 6.0 between all) → "Serial / Component"
+    - "Serial / Component    SN42-AX" (gap > 6.0 before SN42-AX) → "Serial / Component"
+    - "Date Compiled" (gap <= 6.0) → "Date Compiled"
+    - "Program    Hyperion" (gap > 6.0) → "Program"
+
+    Args:
+        tokens_with_pos: List of tokens with position data (PyMuPDF tuples or OCR dicts)
+        anchor_end_index: Index of the last token in the matched anchor
+
+    Returns:
+        (extended_end_index, extracted_term_string)
+    """
+    if anchor_end_index < 0 or anchor_end_index >= len(tokens_with_pos):
+        # Fallback: extract text from tokens up to anchor_end_index
+        texts = []
+        for i in range(min(anchor_end_index + 1, len(tokens_with_pos))):
+            try:
+                _, _, text = _token_bounds_and_text(tokens_with_pos[i])
+                texts.append(text)
+            except Exception:
+                pass
+        return anchor_end_index, ' '.join(texts) if texts else ""
+
+    # Same gap threshold as _fields_from_items
+    GAP = 6.0
+
+    # Special characters that connect label parts (ignore gaps when these are present)
+    SEPARATOR_CHARS = {'/', '\\', '|', ':', '-', '–', '—', '_', '+', '&', '#'}
+
+    # Start with the matched anchor
+    end_idx = anchor_end_index
+    label_tokens = []
+
+    # Collect tokens up to and including anchor_end_index
+    for i in range(anchor_end_index + 1):
+        try:
+            _, _, text = _token_bounds_and_text(tokens_with_pos[i])
+            if text.strip():
+                label_tokens.append(text)
+        except Exception:
+            pass
+
+    # Get the right edge of the anchor token
+    try:
+        _, anchor_right_x, _ = _token_bounds_and_text(tokens_with_pos[anchor_end_index])
+    except Exception:
+        return anchor_end_index, ' '.join(label_tokens)
+
+    # Extend based on gap + separator logic
+    prev_right = anchor_right_x
+    prev_was_separator = False
+
+    for i in range(anchor_end_index + 1, len(tokens_with_pos)):
+        try:
+            x0, x1, text = _token_bounds_and_text(tokens_with_pos[i])
+            text_stripped = text.strip()
+            if not text_stripped:
+                continue
+
+            # Check if current token is a separator character
+            is_separator = text_stripped in SEPARATOR_CHARS
+
+            # RULE 1: Always include separator characters (they bridge gaps)
+            if is_separator:
+                label_tokens.append(text)
+                end_idx = i
+                prev_right = x1
+                prev_was_separator = True
+                continue
+
+            # RULE 2: Always include token after separator (regardless of gap)
+            if prev_was_separator:
+                label_tokens.append(text)
+                end_idx = i
+                prev_right = x1
+                prev_was_separator = False
+                continue
+
+            # RULE 3: Use gap threshold for regular tokens
+            gap = x0 - prev_right
+            if gap > GAP:
+                # Gap too large - this is a separate field (the value starts here)
+                break
+
+            # Gap small enough - include in label
+            label_tokens.append(text)
+            end_idx = i
+            prev_right = x1
+            prev_was_separator = False
+
+        except Exception:
+            # If we can't get position data, stop extending
+            break
+
+    extracted_term = ' '.join(label_tokens)
+    return end_idx, extracted_term
+
+
 def _strip_label_tokens(value: Optional[str], label: Optional[str]) -> Optional[str]:
     """
     Remove leading/trailing occurrences of the label tokens from a value.
@@ -1889,6 +2024,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 best_components: Optional[Dict[str, Optional[float]]] = None  # numeric candidate scoring breakdown
                 best_selection_method: Optional[str] = None  # 'smart_position' vs 'smart_score'
                 best_selection_method: Optional[str] = None  # 'smart_position' vs 'smart_score'
+                best_extracted_term: Optional[str] = None  # The extracted term/label string from the document
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
                 # Track first occurrences of group_after/group_before across pages
                 group_after_seen = spec.group_after is None
@@ -2043,16 +2179,36 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         tok_norms = [_normalize_anchor_token(t) for t in texts]
                         anchor_span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
                         label_right_x = entry['x0']
+                        anchor_end_index = -1
+                        extracted_term = None
                         if anchor_span:
                             _, j = anchor_span
-                            label_right_x = tokens[j][2]
-                        # right-side tokens
+                            # Extend label boundary to include continuous label components (e.g., "Serial / Component")
+                            # Use GAP = 6.0 spacing logic to determine where label ends and value begins
+                            extended_end_index, extracted_term = _extend_label_boundary(tokens, j)
+                            label_right_x = tokens[extended_end_index][2]
+                            anchor_end_index = extended_end_index
+                        # right-side tokens: use sequential tokens after the anchor for more robust string extraction
+                        # For numeric extraction, also filter by X position to handle tabular layouts
+                        if anchor_end_index >= 0:
+                            # All tokens after the matched label
+                            tokens_after_label = [tokens[i] for i in range(anchor_end_index + 1, len(tokens)) if str(tokens[i][4]).strip()]
+                        else:
+                            tokens_after_label = []
                         right_tokens = [t for t in tokens if t[0] >= label_right_x - 1.0]
                         ordered_right_tokens = [t for t in sorted(right_tokens, key=lambda tok: (tok[0], tok[1])) if str(t[4]).strip()]
+                        # For strings, use sequential tokens; for numbers, use X-filtered tokens
+                        right_text_segment_sequential = ' '.join([t[4] for t in tokens_after_label]).strip() if tokens_after_label else ""
                         right_text_segment = ' '.join([t[4] for t in ordered_right_tokens]).strip() if ordered_right_tokens else ""
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
+                        # Capture label debug info for this row (PDF path)
+                        current_label_used = row_name
+                        current_label_normalized = _normalize_anchor_token(row_name).lower() if row_name else None
+                        current_anchor_span = f"span={anchor_span}, anchor_end_index={anchor_end_index}, extracted_term={extracted_term!r}" if anchor_span else None
+                        current_extracted_term = extracted_term
                         if debug_mode:
                             print(f"[SMART DEBUG][PDF] cand page={p} score={score:.3f} smart_kind={smart_kind} row={line_text!r} right={right_text_segment!r}", file=sys.stderr)
+                            print(f"[SMART DEBUG][PDF] ordered_right_tokens count={len(ordered_right_tokens)}: {[t[4] for t in ordered_right_tokens]}", file=sys.stderr)
 
                         # Identify nearest header positions above this row
                         header_map: Dict[str, float] = {}
@@ -2210,6 +2366,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best_score = score
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                     best_selection_method = "smart_position"
+                                    best_extracted_term = current_extracted_term
                                     smart_pos_used = True
                                 continue
                         elif column_text_for_pos and smart_kind != 'number':
@@ -2219,6 +2376,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 best_score = score
                                 best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                 best_selection_method = "smart_position"
+                                best_extracted_term = current_extracted_term
                                 smart_pos_used = True
                             continue
                         elif smart_kind != 'number' and has_smart_pos and pos_n and pos_n >= 1 and fields_for_pos:
@@ -2231,6 +2389,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best_score = score
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                     best_selection_method = "smart_position"
+                                    best_extracted_term = current_extracted_term
                                     smart_pos_used = True
                                 continue
                         if smart_kind == 'number' and pos_n and pos_n >= 1:
@@ -2267,6 +2426,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                             best_score = score
                                             best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                             best_selection_method = "smart_position"
+                                            best_extracted_term = current_extracted_term
                                             smart_pos_used = True
                                         continue
                             elif (not has_smart_pos) and ordered_right_tokens:
@@ -2297,6 +2457,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if score > best_score:
                                         best_score = score
                                         best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                        best_extracted_term = current_extracted_term
                                     continue
                         unitful_candidates = [c for c in numeric_cands if c.get('unit_neighbor')]
                         if unitful_candidates:
@@ -2309,6 +2470,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 return 0.0
 
                             # Optional: header-based alignment across candidates in this row.
+                            # Draw vertical line from secondary header X position, match candidates by X distance
                             sec_header_x0 = None
                             if sec_term and sec_norm_global:
                                 try:
@@ -2338,10 +2500,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         header_candidates.append((sc, cy_tok, float(ot[0])))
                                 if header_candidates:
                                     header_candidates.sort(key=lambda t: (-t[0], abs(t[1] - row_top)))
-                                    sec_header_x0 = header_candidates[0][2]
+                                    sec_header_x0 = header_candidates[0][2]  # X position (vertical line)
 
                             header_alignment: Dict[int, float] = {}
                             if sec_header_x0 is not None and numeric_cands:
+                                # Calculate X-axis distance from each candidate to the vertical line from header
+                                # Proportional scoring: closer to header X = higher score
                                 dists: List[float] = []
                                 for c in numeric_cands:
                                     try:
@@ -2349,33 +2513,27 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     except Exception:
                                         d = abs(c['x0'] - sec_header_x0)  # type: ignore[operator]
                                     dists.append(d)
+
                                 if dists:
+                                    # Proportional distance-based scoring
+                                    # Closest gets 1.0, others decay proportionally
                                     d_min = min(dists)
-                                    d_max = max(dists)
-                                    span = max(d_max - d_min, 1e-6)
                                     for c, d in zip(numeric_cands, dists):
-                                        if d_max == d_min:
+                                        if d == 0:
                                             h = 1.0
                                         else:
-                                            h = max(0.0, 1.0 - (d - d_min) / span)
+                                            # Proportional decay: score inversely proportional to distance
+                                            # Using exponential decay with characteristic distance of 20 pixels
+                                            h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
                                         header_alignment[id(c)] = h
 
                             scored = []
                             score_components: Dict[int, Dict[str, Optional[float]]] = {}
-                            # Calculate distance span for adaptive scoring
-                            if header_alignment:
-                                align_values = list(header_alignment.values())
-                                # Use actual pixel distance from header
-                                header_span = None
-                                if sec_header_x0 is not None and numeric_cands:
-                                    dists_px = [abs(float(c.get('x0', 0)) - float(sec_header_x0)) for c in numeric_cands]
-                                    if dists_px:
-                                        header_span = max(dists_px) - min(dists_px)
 
                             for c in numeric_cands:
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
-                                    "between_min_max": 0.0,
+                                    "format_match": 0.0,
                                     "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
@@ -2383,25 +2541,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     "value_header": 0.0,
                                     "label_proximity": 0.0,
                                 }
+                                is_nullified = False  # Track candidates that fail the nullifier condition
 
                                 # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                # Proportional Y-axis distance scoring
                                 hdr_align = header_alignment.get(id(c))
                                 if hdr_align is not None and sec_term:
-                                    # Adaptive scoring based on header spacing
-                                    is_tight = header_span is not None and header_span < 80
-
-                                    if is_tight:
-                                        # Gentle falloff for tight headers
-                                        if hdr_align >= 0.7:
-                                            delta = 1.6 + (hdr_align - 0.7) * (0.4 / 0.3)  # 1.6-2.0
-                                        elif hdr_align >= 0.4:
-                                            delta = 1.0 + (hdr_align - 0.4) * (0.6 / 0.3)  # 1.0-1.6
-                                        else:
-                                            delta = hdr_align * (1.0 / 0.4)  # 0.0-1.0
-                                    else:
-                                        # Linear falloff for loose headers
-                                        delta = 2.0 * hdr_align
-
+                                    # Direct proportional scoring: max 2.0 points
+                                    delta = 2.0 * hdr_align
                                     s += delta
                                     comp["secondary_header"] += delta
 
@@ -2414,43 +2561,41 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     s += delta
                                     comp["value_header"] += delta
 
-                                # 3. RANGE VALIDATION (max 1.5 points, min -0.5)
+                                # 3. RANGE VALIDATION (max 2.0 points, equal weight to secondary header)
                                 if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
-                                    # Exactly equals boundary - PENALTY (might be grabbing range header)
-                                    if c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = -0.5
-                                        s += delta
-                                        comp["range_validation"] += delta
-                                    # Strictly within range
-                                    elif spec.range_min < c['nval'] < spec.range_max:
-                                        delta = 1.5
-                                        s += delta
-                                        comp["range_validation"] += delta
-                                    # Slightly outside range (within 20%)
-                                    else:
-                                        range_span = spec.range_max - spec.range_min
-                                        tolerance = 0.2 * range_span
-                                        if (spec.range_min - tolerance) <= c['nval'] <= (spec.range_max + tolerance):
-                                            delta = 0.4
-                                            s += delta
-                                            comp["range_validation"] += delta
+                                    range_span = spec.range_max - spec.range_min
+                                    tolerance_20 = 0.2 * range_span
+                                    tolerance_50 = 0.5 * range_span
 
-                                # 4. BETWEEN_MIN_MAX - detected line min/max (0.3 points)
-                                # Only award points if schema has range_min/max configured (not N/A)
-                                if (c['nval'] is not None
-                                    and line_min_txt is not None
-                                    and line_max_txt is not None
-                                    and spec.range_min is not None
-                                    and spec.range_max is not None):
-                                    try:
-                                        line_min_val = float(numeric_only(line_min_txt))
-                                        line_max_val = float(numeric_only(line_max_txt))
-                                        if line_min_val < c['nval'] < line_max_val:
-                                            delta = 0.3
-                                            s += delta
-                                            comp["between_min_max"] += delta
-                                    except Exception:
-                                        pass
+                                    # NULLIFIER: Value is >50% off range - mark as invalid
+                                    if (c['nval'] < spec.range_min - tolerance_50 or
+                                        c['nval'] > spec.range_max + tolerance_50):
+                                        is_nullified = True
+                                        # Don't add any score for nullified candidates
+                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
+                                        delta = 1.8  # 2.0 - 10% penalty
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Between 20% and 50% outside range - 10% penalty
+                                    elif not ((spec.range_min - tolerance_20) <= c['nval'] <= (spec.range_max + tolerance_20)):
+                                        # Value is outside the 20% tolerance but within 50%
+                                        delta = 1.8  # 2.0 - 10% penalty
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Within range OR up to 20% tolerance outside range = full match
+                                    else:
+                                        delta = 2.0
+                                        s += delta
+                                        comp["range_validation"] += delta
+
+                                # 4. FORMAT MATCH - special formatting pattern (0.2 points)
+                                # Award points if value matches user-specified format pattern
+                                if fmt_pat and c.get('text'):
+                                    if fmt_pat.search(str(c['text'])):
+                                        delta = 0.2
+                                        s += delta
+                                        comp["format_match"] += delta
 
                                 # 5. UNITS HINT (0.4 points)
                                 if units_hint_set and c.get('units') in units_hint_set:
@@ -2465,12 +2610,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 comp["label_proximity"] += delta
 
                                 if debug_mode:
-                                    print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+                                    print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} s={s:.3f} breakdown={comp} nullified={is_nullified}", file=sys.stderr)
 
                                 comp["total"] = s
                                 combined_sec = header_alignment.get(id(c), 0.0)
-                                scored.append((s, c, combined_sec))
+                                scored.append((s, c, combined_sec, is_nullified))
                                 score_components[id(c)] = comp
+
+                            # Filter out nullified candidates
+                            scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
                                 candidate_pool = scored
@@ -2506,19 +2654,241 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if debug_mode:
                                         print(f"[SMART DEBUG][PDF] best_update page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                         else:
-                            # string/date/time handling via original helper; for numeric snaps only when no Smart Position is configured
-                            val = None
+                            # String/date/time/title candidate scoring when no Smart Position is configured
                             if smart_kind != 'number' or not has_smart_pos:
-                                val = extract_from_line(line_text, right_text_segment, smart_kind)
-                                if val and smart_kind == 'number':
-                                    val = _strip_units_from_numeric_text(val) or val
-                            if val:
-                                if score > best_score:
-                                    best_score = score
-                                    best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
-                                    best_components = row_components
+                                # Calculate secondary header position for string scoring
+                                sec_header_x0 = None
+                                if sec_term and sec_norm_global:
+                                    try:
+                                        row_top = float(entry.get('y0', 0.0))
+                                    except Exception:
+                                        row_top = float(entry['y0'])
+                                    header_candidates: List[Tuple[float, float, float]] = []
+                                    for _, ent2 in lines_map.items():
+                                        try:
+                                            ent2_bottom = float(ent2.get('y1', 0.0))
+                                        except Exception:
+                                            ent2_bottom = float(ent2['y1'])
+                                        # Only consider headers that are visually above this row
+                                        if ent2_bottom >= row_top - 0.5:
+                                            continue
+                                        for ot in ent2['tokens']:
+                                            raw_txt = str(ot[4] or "")
+                                            if not raw_txt.strip():
+                                                continue
+                                            sc = _fuzzy_ratio(raw_txt, sec_term)
+                                            ot_norm = _normalize_anchor_token(raw_txt)
+                                            if sec_norm_global and sec_norm_global in ot_norm:
+                                                sc = max(sc, 0.99)
+                                            if sc < 0.6:
+                                                continue
+                                            cy_tok = (float(ot[1]) + float(ot[3])) / 2.0
+                                            header_candidates.append((sc, cy_tok, float(ot[0])))
+                                    if header_candidates:
+                                        header_candidates.sort(key=lambda t: (-t[0], abs(t[1] - row_top)))
+                                        sec_header_x0 = header_candidates[0][2]  # X position (vertical line)
+
+                                # Build string candidates
+                                string_cands = []
+
+                                # For title/string without EXPLICIT format pattern:
+                                # Just return the full text after the label directly (no tokenization/scoring)
+                                has_explicit_format = getattr(spec, 'value_format', None) is not None
+                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format:
+                                    # Use sequential tokens to get all text after label
+                                    string_text_to_use = right_text_segment_sequential if right_text_segment_sequential.strip() else right_text_segment
+                                    if string_text_to_use.strip():
+                                        # For strings, just use the text directly without candidate creation
+                                        val = string_text_to_use.strip()
+                                        if score > best_score:
+                                            best_score = score
+                                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                            best_components = None  # No scoring for strings
+                                            best_extracted_term = current_extracted_term
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG][PDF STRING] Direct string extraction: {val!r}", file=sys.stderr)
+                                else:
+                                    # For dates and times, extract from individual tokens
+                                    # For strings, extract from grouped fields to preserve multi-word strings
+                                    if smart_kind in ('title', 'string', 'text'):
+                                        # Group tokens into fields (preserves "Hyperion Dragonfly Propulsion Demo" as one field)
+                                        fields = _fields_from_items(ordered_right_tokens)
+                                        if debug_mode:
+                                            print(f"[SMART DEBUG][PDF STRING] Grouped fields: {fields}", file=sys.stderr)
+
+                                        # For strings, each field is a candidate
+                                        for field_idx, field_text in enumerate(fields):
+                                            if not field_text.strip():
+                                                continue
+
+                                            # Extract value based on format pattern if specified
+                                            cand_val = None
+                                            if fmt_pat:
+                                                m = fmt_pat.search(field_text)
+                                                cand_val = m.group(0) if m else None
+                                            else:
+                                                # Without format pattern, use the entire field
+                                                cand_val = field_text
+
+                                            if cand_val:
+                                                # Get bounding box for this field from its constituent tokens
+                                                # Find tokens that contributed to this field
+                                                field_tokens = []
+                                                for t in ordered_right_tokens:
+                                                    t_text = str(t[4]).strip()
+                                                    if t_text and t_text in field_text:
+                                                        field_tokens.append(t)
+
+                                                if field_tokens:
+                                                    x0_min = min(float(t[0]) for t in field_tokens)
+                                                    y0_min = min(float(t[1]) for t in field_tokens)
+                                                    x1_max = max(float(t[2]) for t in field_tokens)
+                                                    y1_max = max(float(t[3]) for t in field_tokens)
+                                                else:
+                                                    # Fallback to first token's position
+                                                    x0_min, y0_min, x1_max, y1_max = 0.0, 0.0, 0.0, 0.0
+
+                                                string_cands.append({
+                                                    'text': cand_val,
+                                                    'raw': field_text,
+                                                    'x0': x0_min, 'y0': y0_min, 'x1': x1_max, 'y1': y1_max,
+                                                })
+                                    else:
+                                        # For dates and times, use individual tokens
+                                        for t in ordered_right_tokens:
+                                            raw = str(t[4]).strip()
+                                            if not raw:
+                                                continue
+
+                                            # Extract value based on smart_kind
+                                            cand_val = None
+                                            if smart_kind == 'date':
+                                                m = DATE_REGEX.search(raw)
+                                                cand_val = m.group(0) if m else None
+                                            elif smart_kind == 'time':
+                                                m = TIME_REGEX.search(raw)
+                                                cand_val = m.group(0) if m else None
+
+                                            if cand_val:
+                                                string_cands.append({
+                                                    'text': cand_val,
+                                                    'raw': raw,
+                                                    'x0': t[0], 'y0': t[1], 'x1': t[2], 'y1': t[3],
+                                                })
+
+                                if string_cands and not has_smart_pos:
                                     if debug_mode:
-                                        print(f"[SMART DEBUG][PDF] best_update(direct) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                        print(f"[SMART DEBUG][PDF STRING] string_cands count={len(string_cands)}, has_smart_pos={has_smart_pos}", file=sys.stderr)
+                                    # If only one string candidate, use it directly without scoring
+                                    if len(string_cands) == 1:
+                                        val = string_cands[0]['text']
+                                        if debug_mode:
+                                            print(f"[SMART DEBUG][PDF STRING] Taking single-candidate path: {val!r}", file=sys.stderr)
+                                        if score > best_score:
+                                            best_score = score
+                                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                            # No detailed scoring breakdown for single candidate
+                                            best_components = None
+                                            best_extracted_term = current_extracted_term
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG] best_update(single_string) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                    else:
+                                        if debug_mode:
+                                            print(f"[SMART DEBUG][PDF STRING] Multiple candidates ({len(string_cands)}), entering scoring", file=sys.stderr)
+                                        # Calculate header alignment for string candidates (multiple candidates)
+                                        string_header_alignment: Dict[int, float] = {}
+                                        if sec_header_x0 is not None and string_cands:
+                                            # Calculate X-axis distance from each candidate to the vertical line from header
+                                            dists: List[float] = []
+                                            for c in string_cands:
+                                                try:
+                                                    d = abs(float(c['x0']) - float(sec_header_x0))
+                                                except Exception:
+                                                    d = abs(c['x0'] - sec_header_x0)  # type: ignore[operator]
+                                                dists.append(d)
+
+                                            if dists:
+                                                # Proportional distance-based scoring
+                                                d_min = min(dists)
+                                                for c, d in zip(string_cands, dists):
+                                                    if d == 0:
+                                                        h = 1.0
+                                                    else:
+                                                        # Proportional decay with characteristic distance of 20 pixels
+                                                        h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
+                                                    string_header_alignment[id(c)] = h
+
+                                        # Score string candidates
+                                        scored = []
+                                        score_components: Dict[int, Dict[str, Optional[float]]] = {}
+
+                                        for c in string_cands:
+                                            s = 0.0
+                                            comp: Dict[str, Optional[float]] = {
+                                                "format_match": 0.0,
+                                                "secondary_header": 0.0,
+                                                "value_header": 0.0,
+                                                "label_proximity": 0.0,
+                                            }
+
+                                            # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                            hdr_align = string_header_alignment.get(id(c))
+                                            if hdr_align is not None and sec_term:
+                                                delta = 2.0 * hdr_align
+                                                s += delta
+                                                comp["secondary_header"] += delta
+
+                                            # 2. VALUE HEADER FALLBACK (max 2.0 points) - only if NO secondary term
+                                            elif not sec_term and 'value' in header_map:
+                                                cx_cand = (c['x0'] + c['x1']) / 2.0
+                                                dist = abs(cx_cand - header_map['value'])
+                                                delta = 2.0 * (1.0 / (1.0 + dist / 30.0))
+                                                s += delta
+                                                comp["value_header"] += delta
+
+                                            # 3. FORMAT MATCH (0.2 points)
+                                            if fmt_pat and c.get('text'):
+                                                if fmt_pat.search(str(c['text'])):
+                                                    delta = 0.2
+                                                    s += delta
+                                                    comp["format_match"] += delta
+
+                                            # 4. LABEL PROXIMITY (0.1 points)
+                                            dx = max(0.0, c['x0'] - label_right_x)
+                                            delta = 0.1 * (1.0 / (1.0 + dx/10.0))
+                                            s += delta
+                                            comp["label_proximity"] += delta
+
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG] string_cand_score page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+
+                                            comp["total"] = s
+                                            scored.append((s, c))
+                                            score_components[id(c)] = comp
+
+                                        scored.sort(key=lambda t: t[0], reverse=True)
+                                        if scored:
+                                            chosen = scored[0][1]
+                                            row_components = score_components.get(id(chosen))
+                                            val = chosen['text']
+                                            if score > best_score:
+                                                best_score = score
+                                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                                best_components = row_components
+                                                best_extracted_term = current_extracted_term
+                                                if debug_mode:
+                                                    print(f"[SMART DEBUG] best_update(string) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                else:
+                                    # Fallback to simple extraction if no candidates
+                                    val = extract_from_line(line_text, right_text_segment, smart_kind)
+                                    if val:
+                                        if score > best_score:
+                                            best_score = score
+                                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                            best_extracted_term = current_extracted_term
+                                            best_components = row_components
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG][PDF] best_update(direct) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
             finally:
                 try:
                     doc.close()
@@ -2529,7 +2899,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 # For title/text smart snaps, strip label tokens and normalize
                 # common status values so we return just the field contents
                 # (e.g., 'NO' instead of 'NO +88*C').
-                if smart_kind == 'title':
+                # However, when using Smart Position, the field is already separated from the label,
+                # so we should NOT strip label tokens.
+                has_smart_pos = getattr(spec, "smart_position", None) is not None
+                if smart_kind == 'title' and not has_smart_pos:
                     value_text = _strip_label_tokens(value_text, row_name)
                     value_text = _extract_status_from_title(value_text)
                 row_text_selected = context_line_text
@@ -2557,8 +2930,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     smart_line_max=line_max_txt,
                     smart_conflict=conflict_reason,
                     smart_secondary_found=sec_found,
-                    smart_score_breakdown=best_components,
+                    smart_score_breakdown=_format_score_breakdown(best_components),
                     smart_selection_method=sel_method,
+                    debug_extracted_term=best_extracted_term,
                 )
             if best_info is None and pdf_best_line_only is not None:
                 p, context_line_text, sc = pdf_best_line_only
@@ -2622,11 +2996,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             best_score = 0.0
             best_info = None
             best_components = None
+            best_extracted_term: Optional[str] = None  # The extracted term/label string from the document
             # Debug info for Smart Position
             debug_boxes: Optional[List[str]] = None
             debug_fields: Optional[List[str]] = None
             debug_pos_requested: Optional[int] = None
             debug_pos_extracted: Optional[str] = None
+            # Debug info for label matching
+            debug_label_used: Optional[str] = None
+            debug_label_normalized: Optional[str] = None
+            debug_anchor_span: Optional[str] = None
+            debug_extracted_term: Optional[str] = None
             # Track first occurrences of group_after/group_before across pages for OCR path
             group_after_seen = spec.group_after is None
             group_after_page: Optional[int] = None
@@ -2754,21 +3134,30 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
                         label_right_x = 0.0
                         label_box_index = None
+                        extracted_term = None
                         if span:
                             _, j = span
-                            label_box_index = j
+                            # Extend label boundary to include continuous label components (e.g., "Serial / Component")
+                            # Use GAP = 6.0 spacing logic to determine where label ends and value begins
+                            extended_box_index, extracted_term = _extend_label_boundary(row_items, j)
+                            label_box_index = extended_box_index
                             try:
                                 # Use the right edge (x1) of the matched label box
-                                label_right_x = float(row_items[j].get('x1', 0.0))
+                                label_right_x = float(row_items[extended_box_index].get('x1', 0.0))
                                 if label_right_x == 0.0:
                                     # Fallback: use center x + half width estimate
-                                    x0 = float(row_items[j].get('x0', 0.0))
-                                    label_right_x = float(row_items[j].get('cx', x0))
+                                    x0 = float(row_items[extended_box_index].get('x0', 0.0))
+                                    label_right_x = float(row_items[extended_box_index].get('cx', x0))
                             except Exception:
                                 label_right_x = 0.0
                         if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
                             print(f"[DEBUG THERMAL SOAK] row_name={row_name!r} span={span} label_right_x={label_right_x:.1f} label_box_index={label_box_index}", file=sys.stderr)
                             print(f"[DEBUG THERMAL SOAK] row_items ({len(row_items)}): {[(i, it.get('text'), it.get('x0'), it.get('x1')) for i, it in enumerate(row_items)]}", file=sys.stderr)
+                        # Sequential items after label for robust string extraction
+                        if label_box_index is not None and label_box_index >= 0:
+                            items_after_label = [row_items[i] for i in range(label_box_index + 1, len(row_items)) if str(row_items[i].get('text') or '').strip()]
+                        else:
+                            items_after_label = []
                         # Exclude the label box itself from right_items to prevent off-by-1 Smart Position errors
                         right_items = [it for i, it in enumerate(row_items)
                                       if float(it.get('x0',0.0)) >= label_right_x - 1.0
@@ -2814,6 +3203,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # Capture debug info for JSON output
                         current_debug_boxes = [f"Box {idx}: '{item.get('text')}' (x0={item.get('x0'):.1f}, x1={item.get('x1'):.1f})"
                                              for idx, item in enumerate(ordered_right_items, start=1)]
+                        # Capture label debug info for this row
+                        current_label_used = row_name
+                        current_label_normalized = _normalize_anchor_token(row_name).lower() if row_name else None
+                        current_anchor_span = f"span={span}, label_box_index={label_box_index}, extracted_term={extracted_term!r}" if span else None
+                        current_extracted_term = extracted_term
 
                         if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
                             print(f"\n[DEBUG] === After filtering and ordering for: {row_name} ===", file=sys.stderr)
@@ -2833,6 +3227,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if tok_norm in group_after_tokens and tok_norm not in column_positions:
                                         cx_tok = (float(tok.get('x0', 0.0)) + float(tok.get('x1', 0.0))) / 2.0
                                         column_positions[tok_norm] = cx_tok
+                        # For strings, use sequential items; for numbers, use X-filtered items
+                        right_text_segment_sequential = ' '.join([str(it.get('text') or '') for it in items_after_label]).strip() if items_after_label else ""
                         right_text_segment = ' '.join([str(it.get('text') or '') for it in right_items]).strip() if right_items else ""
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
                         if debug_mode:
@@ -2954,6 +3350,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 if score > best_score:
                                     best_score = score
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                    best_extracted_term = current_extracted_term
                                     smart_pos_used = True
                                 continue
                         elif column_text_for_pos and smart_kind != 'number':
@@ -2961,6 +3358,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if score > best_score:
                                 best_score = score
                                 best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                best_extracted_term = current_extracted_term
                                 smart_pos_used = True
                             continue
                         elif smart_kind != 'number' and has_smart_pos and pos_n and pos_n >= 1 and fields_for_pos:
@@ -2971,11 +3369,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     best_score = score
                                     best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                     smart_pos_used = True
+                                    best_extracted_term = current_extracted_term
                                     # Capture debug info
                                     debug_boxes = current_debug_boxes
                                     debug_fields = current_debug_fields
                                     debug_pos_requested = pos_n
                                     debug_pos_extracted = val
+                                    debug_label_used = current_label_used
+                                    debug_label_normalized = current_label_normalized
+                                    debug_anchor_span = current_anchor_span
+                                    debug_extracted_term = current_extracted_term
                                 continue
                         if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_items:
                             if has_smart_pos and fields_for_pos:
@@ -3006,12 +3409,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         if score > best_score:
                                             best_score = score
                                             best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                            best_extracted_term = current_extracted_term
                                             smart_pos_used = True
                                             # Capture debug info
                                             debug_boxes = current_debug_boxes
                                             debug_fields = current_debug_fields
                                             debug_pos_requested = pos_n
                                             debug_pos_extracted = val
+                                            debug_label_used = current_label_used
+                                            debug_label_normalized = current_label_normalized
+                                            debug_anchor_span = current_anchor_span
+                                            debug_extracted_term = current_extracted_term
                                         continue
                             elif not has_smart_pos:
                                 if pos_n <= len(ordered_right_items):
@@ -3040,6 +3448,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     if score > best_score:
                                         best_score = score
                                         best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
+                                        # Capture debug info
+                                        debug_boxes = current_debug_boxes
+                                        debug_fields = current_debug_fields
+                                        debug_pos_requested = pos_n
+                                        debug_pos_extracted = val
+                                        debug_label_used = row_name
+                                        debug_label_normalized = _normalize_anchor_token(row_name).lower() if row_name else None
+                                        debug_anchor_span = f"span={span}, label_box_index={label_box_index}" if span else None
                                     continue
                         if smart_kind == 'number' and numeric_cands and not has_smart_pos:
                             # Score candidates using middle-of-line (between min/max), units hints, range, and secondary-term header alignment.
@@ -3048,6 +3464,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 return 0.0
 
                             # Optional secondary header alignment across this row's candidates
+                            # Draw vertical line from secondary header X position, match candidates by X distance
                             sec_header_x0 = None
                             if sec_term and sec_norm_global:
                                 header_candidates: List[Tuple[float, float, float]] = []
@@ -3068,37 +3485,33 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     header_candidates.append((sc, cy_tok, float(it.get('x0', 0.0))))
                                 if header_candidates:
                                     header_candidates.sort(key=lambda t: (-t[0], abs(t[1] - row_min_y)))
-                                    sec_header_x0 = header_candidates[0][2]
+                                    sec_header_x0 = header_candidates[0][2]  # X position (vertical line)
 
                             header_alignment: Dict[int, float] = {}
                             if sec_header_x0 is not None and numeric_cands:
+                                # Calculate X-axis distance from each candidate to the vertical line from header
                                 dists: List[float] = []
                                 for c in numeric_cands:
                                     dists.append(abs(float(c['x0']) - float(sec_header_x0)))
+
                                 if dists:
+                                    # Proportional distance-based scoring
                                     d_min = min(dists)
-                                    d_max = max(dists)
-                                    span = max(d_max - d_min, 1e-6)
                                     for c, d in zip(numeric_cands, dists):
-                                        if d_max == d_min:
+                                        if d == 0:
                                             h = 1.0
                                         else:
-                                            h = max(0.0, 1.0 - (d - d_min) / span)
+                                            # Proportional decay with characteristic distance of 20 pixels
+                                            h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
                                         header_alignment[id(c)] = h
 
                             scored = []
                             score_components: Dict[int, Dict[str, Optional[float]]] = {}
-                            # Calculate distance span for adaptive scoring
-                            header_span = None
-                            if header_alignment and sec_header_x0 is not None and numeric_cands:
-                                dists_px = [abs(float(c.get('x0', 0)) - float(sec_header_x0)) for c in numeric_cands]
-                                if dists_px:
-                                    header_span = max(dists_px) - min(dists_px)
 
                             for c in numeric_cands:
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
-                                    "between_min_max": 0.0,
+                                    "format_match": 0.0,
                                     "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
@@ -3106,25 +3519,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     "value_header": 0.0,
                                     "label_proximity": 0.0,
                                 }
+                                is_nullified = False  # Track candidates that fail the nullifier condition
 
                                 # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                # Proportional Y-axis distance scoring
                                 hdr_align = header_alignment.get(id(c))
                                 if hdr_align is not None and sec_term:
-                                    # Adaptive scoring based on header spacing
-                                    is_tight = header_span is not None and header_span < 80
-
-                                    if is_tight:
-                                        # Gentle falloff for tight headers
-                                        if hdr_align >= 0.7:
-                                            delta = 1.6 + (hdr_align - 0.7) * (0.4 / 0.3)  # 1.6-2.0
-                                        elif hdr_align >= 0.4:
-                                            delta = 1.0 + (hdr_align - 0.4) * (0.6 / 0.3)  # 1.0-1.6
-                                        else:
-                                            delta = hdr_align * (1.0 / 0.4)  # 0.0-1.0
-                                    else:
-                                        # Linear falloff for loose headers
-                                        delta = 2.0 * hdr_align
-
+                                    # Direct proportional scoring: max 2.0 points
+                                    delta = 2.0 * hdr_align
                                     s += delta
                                     comp["secondary_header"] += delta
 
@@ -3138,43 +3540,41 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     s += delta
                                     comp["value_header"] += delta
 
-                                # 3. RANGE VALIDATION (max 1.5 points, min -0.5)
+                                # 3. RANGE VALIDATION (max 2.0 points, equal weight to secondary header)
                                 if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
-                                    # Exactly equals boundary - PENALTY (might be grabbing range header)
-                                    if c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = -0.5
-                                        s += delta
-                                        comp["range_validation"] += delta
-                                    # Strictly within range
-                                    elif spec.range_min < c['nval'] < spec.range_max:
-                                        delta = 1.5
-                                        s += delta
-                                        comp["range_validation"] += delta
-                                    # Slightly outside range (within 20%)
-                                    else:
-                                        range_span = spec.range_max - spec.range_min
-                                        tolerance = 0.2 * range_span
-                                        if (spec.range_min - tolerance) <= c['nval'] <= (spec.range_max + tolerance):
-                                            delta = 0.4
-                                            s += delta
-                                            comp["range_validation"] += delta
+                                    range_span = spec.range_max - spec.range_min
+                                    tolerance_20 = 0.2 * range_span
+                                    tolerance_50 = 0.5 * range_span
 
-                                # 4. BETWEEN_MIN_MAX - detected line min/max (0.3 points)
-                                # Only award points if schema has range_min/max configured (not N/A)
-                                if (c['nval'] is not None
-                                    and line_min_txt is not None
-                                    and line_max_txt is not None
-                                    and spec.range_min is not None
-                                    and spec.range_max is not None):
-                                    try:
-                                        line_min_val = float(numeric_only(line_min_txt))
-                                        line_max_val = float(numeric_only(line_max_txt))
-                                        if line_min_val < c['nval'] < line_max_val:
-                                            delta = 0.3
-                                            s += delta
-                                            comp["between_min_max"] += delta
-                                    except Exception:
-                                        pass
+                                    # NULLIFIER: Value is >50% off range - mark as invalid
+                                    if (c['nval'] < spec.range_min - tolerance_50 or
+                                        c['nval'] > spec.range_max + tolerance_50):
+                                        is_nullified = True
+                                        # Don't add any score for nullified candidates
+                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
+                                        delta = 1.8  # 2.0 - 10% penalty
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Between 20% and 50% outside range - 10% penalty
+                                    elif not ((spec.range_min - tolerance_20) <= c['nval'] <= (spec.range_max + tolerance_20)):
+                                        # Value is outside the 20% tolerance but within 50%
+                                        delta = 1.8  # 2.0 - 10% penalty
+                                        s += delta
+                                        comp["range_validation"] += delta
+                                    # Within range OR up to 20% tolerance outside range = full match
+                                    else:
+                                        delta = 2.0
+                                        s += delta
+                                        comp["range_validation"] += delta
+
+                                # 4. FORMAT MATCH - special formatting pattern (0.2 points)
+                                # Award points if value matches user-specified format pattern
+                                if fmt_pat and c.get('text'):
+                                    if fmt_pat.search(str(c['text'])):
+                                        delta = 0.2
+                                        s += delta
+                                        comp["format_match"] += delta
 
                                 # 5. UNITS HINT (0.4 points)
                                 if units_hints and c.get('units') in units_hints:
@@ -3189,12 +3589,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 comp["label_proximity"] += delta
 
                                 if debug_mode:
-                                    print(f"[SMART DEBUG][OCR] cand_score dpi={dpi} page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+                                    print(f"[SMART DEBUG][OCR] cand_score dpi={dpi} page={p} val={c['text']} s={s:.3f} breakdown={comp} nullified={is_nullified}", file=sys.stderr)
 
                                 comp["total"] = s
                                 combined_sec = header_alignment.get(id(c), 0.0)
-                                scored.append((s, c, combined_sec))
+                                scored.append((s, c, combined_sec, is_nullified))
                                 score_components[id(c)] = comp
+
+                            # Filter out nullified candidates
+                            scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
                                 top_score = scored[0][0]
@@ -3226,17 +3629,230 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         print(f"[SMART DEBUG] best_update dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
                                 continue
                         else:
-                            # Only use generic extraction for non-numeric smart snaps or when no Smart Position is configured.
-                            val = None
+                            # String/date/time/title candidate scoring when no Smart Position is configured
                             if smart_kind != 'number' or not has_smart_pos:
-                                val = extract_from_line(line_text, right_text_segment, smart_kind)
-                                if val and smart_kind == 'number':
-                                    val = _strip_units_from_numeric_text(val) or val
-                            if val and score > best_score:
-                                best_score = score
-                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
-                                if debug_mode:
-                                    print(f"[SMART DEBUG] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                # Calculate secondary header position for string scoring (OCR)
+                                sec_header_x0 = None
+                                if sec_term and sec_norm_global:
+                                    header_candidates: List[Tuple[float, float, float]] = []
+                                    for it in items:
+                                        txt = str(it.get('text') or '')
+                                        if not txt.strip():
+                                            continue
+                                        cy_tok = float(it.get('cy', 0.0)) if it.get('cy', None) is not None else (float(it.get('y0', 0.0)) + float(it.get('y1', 0.0))) / 2.0
+                                        # Only consider tokens visually above this row
+                                        if cy_tok >= row_min_y - 0.5:
+                                            continue
+                                        sc = _fuzzy_ratio(txt, sec_term)
+                                        tok_norm = _normalize_anchor_token(txt)
+                                        if sec_norm_global and sec_norm_global in tok_norm:
+                                            sc = max(sc, 0.99)
+                                        if sc < 0.6:
+                                            continue
+                                        header_candidates.append((sc, cy_tok, float(it.get('x0', 0.0))))
+                                    if header_candidates:
+                                        header_candidates.sort(key=lambda t: (-t[0], abs(t[1] - row_min_y)))
+                                        sec_header_x0 = header_candidates[0][2]  # X position (vertical line)
+
+                                # Build string candidates (OCR)
+                                string_cands = []
+
+                                # For title/string without EXPLICIT format pattern:
+                                # Just return the full text after the label directly (no tokenization/scoring)
+                                has_explicit_format = getattr(spec, 'value_format', None) is not None
+                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format:
+                                    # For OCR, use X-filtered text since item order can be unreliable
+                                    # OCR may read items in wrong sequence, but X-position is more reliable
+                                    string_text_to_use = right_text_segment.strip()
+                                    if string_text_to_use:
+                                        # For strings, just use the text directly without candidate creation
+                                        val = string_text_to_use
+                                        if score > best_score:
+                                            best_score = score
+                                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                            best_components = None  # No scoring for strings
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG][OCR STRING] Direct string extraction: {val!r}", file=sys.stderr)
+                                else:
+                                    # For dates and times, extract from individual items
+                                    # For strings, extract from grouped fields to preserve multi-word strings
+                                    if smart_kind in ('title', 'string', 'text'):
+                                        # Group items into fields (preserves "Hyperion Dragonfly Propulsion Demo" as one field)
+                                        fields = _fields_from_items(ordered_right_items)
+                                        if debug_mode:
+                                            print(f"[SMART DEBUG][OCR STRING] Grouped fields: {fields}", file=sys.stderr)
+
+                                        # For strings, each field is a candidate
+                                        for field_idx, field_text in enumerate(fields):
+                                            if not field_text.strip():
+                                                continue
+
+                                            # Extract value based on format pattern if specified
+                                            cand_val = None
+                                            if fmt_pat:
+                                                m = fmt_pat.search(field_text)
+                                                cand_val = m.group(0) if m else None
+                                            else:
+                                                # Without format pattern, use the entire field
+                                                cand_val = field_text
+
+                                            if cand_val:
+                                                # Get bounding box for this field from its constituent items
+                                                # Find items that contributed to this field
+                                                field_items = []
+                                                for it in ordered_right_items:
+                                                    it_text = str(it.get('text', '')).strip()
+                                                    if it_text and it_text in field_text:
+                                                        field_items.append(it)
+
+                                                if field_items:
+                                                    x0_min = min(float(it.get('x0', 0.0)) for it in field_items)
+                                                    y0_min = min(float(it.get('y0', 0.0)) for it in field_items)
+                                                    x1_max = max(float(it.get('x1', 0.0)) for it in field_items)
+                                                    y1_max = max(float(it.get('y1', 0.0)) for it in field_items)
+                                                else:
+                                                    # Fallback to zero position
+                                                    x0_min, y0_min, x1_max, y1_max = 0.0, 0.0, 0.0, 0.0
+
+                                                string_cands.append({
+                                                    'text': cand_val,
+                                                    'raw': field_text,
+                                                    'x0': x0_min,
+                                                    'y0': y0_min,
+                                                    'x1': x1_max,
+                                                    'y1': y1_max,
+                                                })
+                                    else:
+                                        # For dates and times, use individual items
+                                        for it in ordered_right_items:
+                                            raw = str(it.get('text', '')).strip()
+                                            if not raw:
+                                                continue
+
+                                            # Extract value based on smart_kind
+                                            cand_val = None
+                                            if smart_kind == 'date':
+                                                m = DATE_REGEX.search(raw)
+                                                cand_val = m.group(0) if m else None
+                                            elif smart_kind == 'time':
+                                                m = TIME_REGEX.search(raw)
+                                                cand_val = m.group(0) if m else None
+
+                                            if cand_val:
+                                                string_cands.append({
+                                                    'text': cand_val,
+                                                    'raw': raw,
+                                                    'x0': float(it.get('x0', 0.0)),
+                                                    'y0': float(it.get('y0', 0.0)),
+                                                    'x1': float(it.get('x1', 0.0)),
+                                                    'y1': float(it.get('y1', 0.0)),
+                                                })
+
+                                if string_cands and not has_smart_pos:
+                                    # If only one string candidate, use it directly without scoring
+                                    if len(string_cands) == 1:
+                                        val = string_cands[0]['text']
+                                        if score > best_score:
+                                            best_score = score
+                                            best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                            # No detailed scoring breakdown for single candidate
+                                            best_components = None
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG] best_update(single_string) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                    else:
+                                        # Calculate header alignment for string candidates (multiple candidates)
+                                        string_header_alignment: Dict[int, float] = {}
+                                        if sec_header_x0 is not None and string_cands:
+                                            # Calculate X-axis distance from each candidate to the vertical line from header
+                                            dists: List[float] = []
+                                            for c in string_cands:
+                                                try:
+                                                    d = abs(float(c['x0']) - float(sec_header_x0))
+                                                except Exception:
+                                                    d = abs(c['x0'] - sec_header_x0)  # type: ignore[operator]
+                                                dists.append(d)
+
+                                            if dists:
+                                                # Proportional distance-based scoring
+                                                d_min = min(dists)
+                                                for c, d in zip(string_cands, dists):
+                                                    if d == 0:
+                                                        h = 1.0
+                                                    else:
+                                                        # Proportional decay with characteristic distance of 20 pixels
+                                                        h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
+                                                    string_header_alignment[id(c)] = h
+
+                                        # Score string candidates
+                                        scored = []
+                                        score_components: Dict[int, Dict[str, Optional[float]]] = {}
+
+                                        for c in string_cands:
+                                            s = 0.0
+                                            comp: Dict[str, Optional[float]] = {
+                                                "format_match": 0.0,
+                                                "secondary_header": 0.0,
+                                                "value_header": 0.0,
+                                                "label_proximity": 0.0,
+                                            }
+
+                                            # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                            hdr_align = string_header_alignment.get(id(c))
+                                            if hdr_align is not None and sec_term:
+                                                delta = 2.0 * hdr_align
+                                                s += delta
+                                                comp["secondary_header"] += delta
+
+                                            # 2. VALUE HEADER FALLBACK (max 2.0 points) - only if NO secondary term
+                                            elif not sec_term and 'value' in header_map:
+                                                cand_cx = (float(c['x0']) + float(c['x1'])) / 2.0
+                                                hdr = header_map['value']
+                                                hx = (float(hdr.get('x0',0.0)) + float(hdr.get('x1',0.0))) / 2.0
+                                                dist = abs(cand_cx - hx)
+                                                delta = 2.0 * (1.0 / (1.0 + dist / 30.0))
+                                                s += delta
+                                                comp["value_header"] += delta
+
+                                            # 3. FORMAT MATCH (0.2 points)
+                                            if fmt_pat and c.get('text'):
+                                                if fmt_pat.search(str(c['text'])):
+                                                    delta = 0.2
+                                                    s += delta
+                                                    comp["format_match"] += delta
+
+                                            # 4. LABEL PROXIMITY (0.1 points)
+                                            dx = max(0.0, float(c['x0']) - label_right_x)
+                                            delta = 0.1 * (1.0 / (1.0 + dx/10.0))
+                                            s += delta
+                                            comp["label_proximity"] += delta
+
+                                            if debug_mode:
+                                                print(f"[SMART DEBUG] string_cand_score dpi={dpi} page={p} val={c['text']} s={s:.3f} breakdown={comp}", file=sys.stderr)
+
+                                            comp["total"] = s
+                                            scored.append((s, c))
+                                            score_components[id(c)] = comp
+
+                                        scored.sort(key=lambda t: t[0], reverse=True)
+                                        if scored:
+                                            chosen = scored[0][1]
+                                            row_components = score_components.get(id(chosen))
+                                            val = chosen['text']
+                                            if score > best_score:
+                                                best_score = score
+                                                best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                                best_components = row_components
+                                                if debug_mode:
+                                                    print(f"[SMART DEBUG] best_update(string) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                                else:
+                                    # Fallback to simple extraction if no candidates
+                                    val = extract_from_line(line_text, right_text_segment, smart_kind)
+                                    if val and score > best_score:
+                                        best_score = score
+                                        best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, conflict_reason, None)
+                                        best_extracted_term = current_extracted_term
+                                        if debug_mode:
+                                            print(f"[SMART DEBUG][OCR] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
         finally:
             try:
                 if doc is not None:
@@ -3245,7 +3861,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pass
         if best_info:
             page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
-            if smart_kind == 'title':
+            # For title/text smart snaps, strip label tokens only when NOT using Smart Position
+            # (Smart Position explicitly selects a field that's already separated from the label)
+            has_smart_pos = getattr(spec, "smart_position", None) is not None
+            if smart_kind == 'title' and not has_smart_pos:
                 value_text = _strip_label_tokens(value_text, row_name)
                 value_text = _extract_status_from_title(value_text)
             sel_method = "smart_position" if getattr(spec, "smart_position", None) is not None else "smart_score"
@@ -3269,12 +3888,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 smart_line_max=line_max_txt,
                 smart_conflict=conflict_reason,
                 smart_secondary_found=sec_found,
-                smart_score_breakdown=best_components,
+                smart_score_breakdown=_format_score_breakdown(best_components),
                 smart_selection_method=sel_method,
                 debug_ordered_boxes=debug_boxes,
                 debug_fields_for_pos=debug_fields,
                 debug_smart_position_requested=debug_pos_requested,
                 debug_smart_position_extracted=debug_pos_extracted,
+                debug_label_used=debug_label_used,
+                debug_label_normalized=debug_label_normalized,
+                debug_anchor_span=debug_anchor_span,
+                debug_extracted_term=debug_extracted_term,
             )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
@@ -5986,6 +6609,11 @@ def run_scan(
                 "debug_fields_for_pos": getattr(res, 'debug_fields_for_pos', None),
                 "debug_smart_position_requested": getattr(res, 'debug_smart_position_requested', None),
                 "debug_smart_position_extracted": getattr(res, 'debug_smart_position_extracted', None),
+                # Debug fields for label matching
+                "debug_label_used": getattr(res, 'debug_label_used', None),
+                "debug_label_normalized": getattr(res, 'debug_label_normalized', None),
+                "debug_anchor_span": getattr(res, 'debug_anchor_span', None),
+                "debug_extracted_term": getattr(res, 'debug_extracted_term', None),
             }
             metadata_rows.append(meta)
             summary.append(meta)
