@@ -20,7 +20,9 @@
       "Bash(temp_scan_stdout.txt 2)",
       "Bash(temp_scan_stderr.txt)",
       "Bash(temp_debug_thermal_soak_labels.txt)",
-      "Bash(bash -c:*)"
+      "Bash(bash -c:*)",
+      "Bash(temp_debug_source_bundle.txt)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
