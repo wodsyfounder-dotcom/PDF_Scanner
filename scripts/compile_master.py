@@ -23,6 +23,8 @@ import csv
 import re
 import json
 import sys
+import math
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -33,6 +35,89 @@ REG_XLSX = EXPORTS / "run_registry.xlsx"
 REG_CSV = EXPORTS / "run_registry.csv"
 OUT_XLSX = EXPORTS / "master.xlsx"
 OUT_CSV = EXPORTS / "master.csv"
+
+
+def norm(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _clean_master_cell(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    return str(value).strip()
+
+
+def _read_existing_master() -> Tuple[List[str], List[Dict[str, str]], Optional[float]]:
+    """Return (header, rows, mtime) from an existing master workbook if present."""
+    target: Optional[Path] = None
+    if OUT_XLSX.exists():
+        target = OUT_XLSX
+    elif OUT_CSV.exists():
+        target = OUT_CSV
+    if not target:
+        return [], [], None
+
+    mtime = target.stat().st_mtime
+    header: List[str] = []
+    rows: List[Dict[str, str]] = []
+    suffix = target.suffix.lower()
+
+    if suffix == ".xlsx":
+        try:
+            import pandas as pd  # type: ignore
+            df = pd.read_excel(target, dtype=object, keep_default_na=False)
+            header = [str(col) for col in df.columns]
+            raw_rows = df.to_dict(orient="records")
+            for record in raw_rows:
+                cleaned = {str(k): _clean_master_cell(v) for k, v in record.items()}
+                rows.append(cleaned)
+            return header, rows, mtime
+        except Exception:
+            try:
+                from openpyxl import load_workbook  # type: ignore
+                wb = load_workbook(str(target), data_only=True)
+                ws = wb.active
+                first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+                header = [(_clean_master_cell(val) or f"column_{idx}") for idx, val in enumerate(first_row)]
+                for values in ws.iter_rows(min_row=2, values_only=True):
+                    record: Dict[str, str] = {}
+                    for idx, val in enumerate(values):
+                        if idx >= len(header):
+                            continue
+                        record[header[idx]] = _clean_master_cell(val)
+                    rows.append(record)
+                wb.close()
+                return header, rows, mtime
+            except Exception:
+                pass
+
+    if suffix == ".csv":
+        try:
+            with target.open("r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                header = reader.fieldnames or []
+                for row in reader:
+                    cleaned = {str(k): _clean_master_cell(v) for k, v in row.items()}
+                    rows.append(cleaned)
+            return header, rows, mtime
+        except Exception:
+            pass
+
+    return [], [], mtime
+
+
+def _parse_run_datetime(run_dir: Path) -> datetime:
+    """Parse run folder name as timestamp; fallback to filesystem mtime."""
+    try:
+        return datetime.strptime(run_dir.name, "%Y%m%d_%H%M%S")
+    except Exception:
+        return datetime.fromtimestamp(run_dir.stat().st_mtime)
 
 
 def load_registry() -> List[Tuple[str, Path, Dict[str, str]]]:
@@ -129,30 +214,72 @@ def load_results_json(run_folder: Path) -> List[Dict]:
 
 
 def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str], Dict[str, str]]:
-    """Return serial list, term rows, and program/vehicle/data mappings."""
-    reg = load_registry()
-    if not reg:
-        print("[WARN] No registry entries found. Nothing to compile.")
-        return [], [], {}, {}, {}
+    """Return serial list, term rows, and program/vehicle/data mappings.
 
-    # Keep last occurrence per SN (registry is already latest-first, but be safe)
-    last_for_sn: Dict[str, Tuple[Path, Dict[str, str]]] = {}
-    for sn, rf, meta in reg:
-        last_for_sn[sn] = (rf, meta or {})
+    This implementation seeds from any existing master.xlsx so user edits /
+    overrides persist. Only run_data folders newer than the master file are
+    applied, and they only fill blank cells—non-blank cells are treated as
+    canonical (user-entered or previously accepted values).
+    """
+    base_columns = ["Term Label", "Data Group", "Units", "Min", "Max"]
 
-    serials = list(last_for_sn.keys())
+    # --- Seed from existing master (if present) so user edits persist
+    header_existing, rows_existing, master_mtime = _read_existing_master()
+    serials: List[str] = [col for col in header_existing if col not in base_columns]
     terms_order: List[Tuple[str, str]] = []
     term_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
     program_by_sn: Dict[str, str] = {}
     sv_by_sn: Dict[str, str] = {}
     data_by_sn: Dict[str, str] = {}
 
-    def norm(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, str):
-            return value.strip()
-        return str(value).strip()
+    for row in rows_existing:
+        term_label = norm(row.get("Term Label"))
+        if not term_label:
+            continue
+        tl_lower = term_label.lower()
+        data_group = norm(row.get("Data Group"))
+        if tl_lower == "program":
+            for sn in serials:
+                val = norm(row.get(sn))
+                if val:
+                    program_by_sn[sn] = val
+            continue
+        if tl_lower == "space vehicle":
+            for sn in serials:
+                val = norm(row.get(sn))
+                if val:
+                    sv_by_sn[sn] = val
+            continue
+        if tl_lower == "data":
+            for sn in serials:
+                val = norm(row.get(sn))
+                if val:
+                    data_by_sn[sn] = val
+            continue
+
+        key = (tl_lower, data_group.lower())
+        if key not in term_map:
+            term_map[key] = {
+                "term_label": term_label,
+                "data_group": data_group,
+                "units": norm(row.get("Units")),
+                "range_min": norm(row.get("Min")),
+                "range_max": norm(row.get("Max")),
+                "values": {},
+            }
+            terms_order.append(key)
+        entry = term_map[key]
+        entry_units = norm(row.get("Units"))
+        if entry_units and not entry["units"]:
+            entry["units"] = entry_units
+        rng_min = norm(row.get("Min"))
+        if rng_min and not entry["range_min"]:
+            entry["range_min"] = rng_min
+        rng_max = norm(row.get("Max"))
+        if rng_max and not entry["range_max"]:
+            entry["range_max"] = rng_max
+        for sn in serials:
+            entry["values"][sn] = norm(row.get(sn))
 
     def extract_units(entry: Dict[str, Any]) -> str:
         direct = norm(entry.get("units"))
@@ -202,103 +329,120 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
             return "N/A"
         return None
 
-    for sn, (rf, registry_meta) in last_for_sn.items():
-        registry_meta = registry_meta or {}
-        reg_prog = norm(registry_meta.get("program_name"))
-        reg_sv = norm(registry_meta.get("vehicle_number"))
-        reg_data = norm(registry_meta.get("serial_component"))
-        rows = load_results_json(rf)
-        if not rows:
-            print(f"[WARN] No scan_results.json in {rf}")
-            if reg_prog and sn not in program_by_sn:
-                program_by_sn[sn] = reg_prog
-            if reg_sv and sn not in sv_by_sn:
-                sv_by_sn[sn] = reg_sv
-            if reg_data and sn not in data_by_sn:
-                data_by_sn[sn] = reg_data
-            continue
-        # Capture every row for this SN, grouped by displayed term/data group
-        for row in rows:
-            row_id = (row.get("serial_component") or row.get("serial_number") or "").strip()
-            if row_id and row_id != sn:
-                continue
-            # Capture metadata per SN if present (or derive from filename)
-            prog = norm(row.get("program_name") or row.get("program"))
-            sv = norm(row.get("vehicle_number") or row.get("space_vehicle"))
-            serial_component = norm(row.get("serial_component")) or reg_data
-            if not prog:
-                # Derive from filename
-                pdf_file = norm(row.get("pdf_file"))
-                stem = Path(pdf_file).stem if pdf_file else ""
-                # simple parse mirroring enrich script behavior
-                if stem:
-                    if "_" in stem:
-                        parts = [p.strip() for p in stem.split("_") if p.strip()]
-                        # find SN part index
-                        sn_idx = None
-                        for i, p in enumerate(parts):
-                            if re.search(r"\bSN\b", p, flags=re.IGNORECASE) or re.search(r"\bSN\W*", p, flags=re.IGNORECASE):
-                                sn_idx = i
-                                break
-                        if sn_idx is None:
-                            sn_idx = len(parts)
-                        if sn_idx >= 2:
-                            prog = parts[0]
-                            sv = " ".join(parts[1:sn_idx])
-                    else:
-                        toks = [t for t in re.split(r"\s+", stem) if t]
-                        # locate token matching SN*
-                        si = None
-                        for i, t in enumerate(toks):
-                            if t.lower().startswith("sn"):
-                                si = i
-                                break
-                        if si is None and len(toks) >= 2:
-                            prog = toks[0]
-                            sv = " ".join(toks[1:])
-                        elif si is not None and si >= 2:
-                            prog = toks[0]
-                            sv = " ".join(toks[1:si])
-            if not prog and reg_prog:
-                prog = reg_prog
-            if not sv and reg_sv:
-                sv = reg_sv
-            if prog and sn not in program_by_sn:
-                program_by_sn[sn] = prog
-            if sv and sn not in sv_by_sn:
-                sv_by_sn[sn] = sv
-            if serial_component and sn not in data_by_sn:
-                data_by_sn[sn] = serial_component
-            term_label = norm(row.get("term_label") or row.get("term"))
-            if not term_label:
-                continue
-            value = extract_value(row)
-            if value is None:
-                value = ""
+    reg = load_registry()
+    meta_by_sn: Dict[str, Dict[str, str]] = {}
+    for sn, _rf, meta in reg:
+        meta_by_sn[sn] = meta or {}
 
-            data_group = norm(row.get("data_group"))
-            key = (term_label.lower(), data_group.lower())
-            if key not in term_map:
-                term_map[key] = {
-                    "term_label": term_label,
-                    "data_group": data_group,
-                    "units": "",
-                    "range_min": "",
-                    "range_max": "",
-                    "values": {},
-                }
-                terms_order.append(key)
-            entry = term_map[key]
-            units = extract_units(row)
-            if units and not entry["units"]:
-                entry["units"] = units
-            rng_min = norm(row.get("range_min"))
-            if rng_min and not entry["range_min"]:
-                entry["range_min"] = rng_min
-            rng_max = norm(row.get("range_max"))
-            if rng_max and not entry["range_max"]:
-                entry["range_max"] = rng_max
-            entry["values"][sn] = value
+    runs_seen = False
+    runs_root = EXPORTS / "run_data"
+    if runs_root.exists():
+        for run_dir in sorted(p for p in runs_root.iterdir() if p.is_dir()):
+            run_dt = _parse_run_datetime(run_dir)
+            if master_mtime and run_dt.timestamp() <= master_mtime:
+                # Skip runs that predate the current master; they have already
+                # been incorporated or were intentionally overridden/cleared.
+                continue
+            rows = load_results_json(run_dir)
+            if not rows:
+                continue
+            runs_seen = True
+            for row in rows:
+                sn = norm(row.get("serial_component") or row.get("serial_number"))
+                if not sn:
+                    continue
+                if sn not in serials:
+                    serials.append(sn)
+
+                meta = meta_by_sn.get(sn, {}) or {}
+                reg_prog = norm(meta.get("program_name"))
+                reg_sv = norm(meta.get("vehicle_number"))
+                reg_data = norm(meta.get("serial_component"))
+
+                # Capture metadata per SN if present (or derive from filename)
+                prog = norm(row.get("program_name") or row.get("program"))
+                sv = norm(row.get("vehicle_number") or row.get("space_vehicle"))
+                serial_component = norm(row.get("serial_component")) or reg_data
+
+                if not prog:
+                    pdf_file = norm(row.get("pdf_file"))
+                    stem = Path(pdf_file).stem if pdf_file else ""
+                    if stem:
+                        if "_" in stem:
+                            parts = [p.strip() for p in stem.split("_") if p.strip()]
+                            sn_idx = None
+                            for i, p in enumerate(parts):
+                                if re.search(r"\bSN\b", p, flags=re.IGNORECASE) or re.search(r"\bSN\W*", p, flags=re.IGNORECASE):
+                                    sn_idx = i
+                                    break
+                            if sn_idx is None:
+                                sn_idx = len(parts)
+                            if sn_idx >= 2:
+                                prog = parts[0]
+                                sv = " ".join(parts[1:sn_idx])
+                        else:
+                            toks = [t for t in re.split(r"\s+", stem) if t]
+                            si = None
+                            for i, t in enumerate(toks):
+                                if t.lower().startswith("sn"):
+                                    si = i
+                                    break
+                            if si is None and len(toks) >= 2:
+                                prog = toks[0]
+                                sv = " ".join(toks[1:])
+                            elif si is not None and si >= 2:
+                                prog = toks[0]
+                                sv = " ".join(toks[1:si])
+
+                if not prog and reg_prog:
+                    prog = reg_prog
+                if not sv and reg_sv:
+                    sv = reg_sv
+                if prog and not program_by_sn.get(sn):
+                    program_by_sn[sn] = prog
+                if sv and not sv_by_sn.get(sn):
+                    sv_by_sn[sn] = sv
+                if serial_component and not data_by_sn.get(sn):
+                    data_by_sn[sn] = serial_component
+
+                term_label = norm(row.get("term_label") or row.get("term"))
+                if not term_label:
+                    continue
+                value = extract_value(row)
+                if value is None:
+                    value = ""
+                elif value == "N/A":
+                    data_group_preview = norm(row.get("data_group"))
+                    print(f"[INFO] N/A recorded for {sn} :: {term_label} [{data_group_preview}]")
+
+                data_group = norm(row.get("data_group"))
+                key = (term_label.lower(), data_group.lower())
+                if key not in term_map:
+                    term_map[key] = {
+                        "term_label": term_label,
+                        "data_group": data_group,
+                        "units": "",
+                        "range_min": "",
+                        "range_max": "",
+                        "values": {},
+                    }
+                    terms_order.append(key)
+                entry = term_map[key]
+                units = extract_units(row)
+                if units and not entry["units"]:
+                    entry["units"] = units
+                rng_min = norm(row.get("range_min"))
+                if rng_min and not entry["range_min"]:
+                    entry["range_min"] = rng_min
+                rng_max = norm(row.get("range_max"))
+                if rng_max and not entry["range_max"]:
+                    entry["range_max"] = rng_max
+
+                current_val = norm(entry["values"].get(sn, ""))
+                # Preserve any existing value (user override or prior accepted value).
+                if current_val:
+                    continue
+                entry["values"][sn] = value
 
     term_rows: List[Dict[str, Any]] = []
     for key in terms_order:
@@ -313,6 +457,21 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
             "range_max": info.get("range_max", ""),
             "values": info.get("values", {}),
         })
+
+    # Ensure serials present in registry are preserved even if no new runs were ingested.
+    for sn, meta in meta_by_sn.items():
+        if sn not in serials:
+            serials.append(sn)
+        if not program_by_sn.get(sn):
+            program_by_sn[sn] = norm(meta.get("program_name"))
+        if not sv_by_sn.get(sn):
+            sv_by_sn[sn] = norm(meta.get("vehicle_number"))
+        if not data_by_sn.get(sn):
+            data_by_sn[sn] = norm(meta.get("serial_component"))
+
+    if not serials and not term_rows and not runs_seen and not rows_existing:
+        print("[WARN] No registry entries or run_data found. Nothing to compile.")
+        return [], [], {}, {}, {}
 
     return serials, term_rows, program_by_sn, sv_by_sn, data_by_sn
 

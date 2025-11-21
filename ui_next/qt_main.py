@@ -2051,8 +2051,8 @@ class MainWindow(QtWidgets.QMainWindow):
         proc_secondary = QtWidgets.QHBoxLayout()
         proc_secondary.setSpacing(8)
 
-        self.btn_stop = QtWidgets.QPushButton("\u23F9  Stop Scan")
-        self.btn_stop.setStyleSheet("""
+        self.btn_open_run_data = QtWidgets.QPushButton("\U0001F4C2  Open Run Data Folder")
+        self.btn_open_run_data.setStyleSheet("""
             QPushButton {
                 padding: 10px 16px;
                 border-radius: 6px;
@@ -2066,27 +2066,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-color: #9ca3af;
             }
         """)
-        self.btn_stop.clicked.connect(self._act_stop_scan)
+        self.btn_open_run_data.clicked.connect(lambda: self._safe_open(be.open_run_data_root))
 
-        self.btn_open_last = QtWidgets.QPushButton("\U0001F4C2  Open Last Run Folder")
-        self.btn_open_last.setStyleSheet("""
-            QPushButton {
-                padding: 10px 16px;
-                border-radius: 6px;
-                background: #ffffff;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
-        self.btn_open_last.clicked.connect(lambda: self._safe_open(be.open_last_run_folder))
-
-        proc_secondary.addWidget(self.btn_stop)
-        proc_secondary.addWidget(self.btn_open_last)
+        proc_secondary.addWidget(self.btn_open_run_data)
+        proc_secondary.addStretch(1)
         inputs_layout.addLayout(proc_secondary)
 
         # Table Extraction Section
@@ -2706,9 +2689,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if getattr(self, "_enrich_after_run", False):
             self._enrich_after_run = False
             try:
+                be.rebuild_registry_from_run_data()
+            except Exception as exc:
+                self._append_log(f"[WARN] Registry rebuild failed: {exc}")
+            try:
                 self._refresh_run_registry()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._append_log(f"[WARN] Registry refresh failed: {exc}")
         if getattr(self, "_refresh_plot_series_after_worker", False):
             self._refresh_plot_series_after_worker = False
             try:
@@ -2902,16 +2889,22 @@ class MainWindow(QtWidgets.QMainWindow):
             # Get all out-of-date files (new or pdf_newer or terms_newer)
             details = getattr(self, "_sync_details", None) or []
             rows = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
-            paths = [Path(d.get("pdf")) for d in rows if d.get("pdf")]
-            if not paths:
+            entries = [(Path(d.get("pdf")), d.get("serial_component", "")) for d in rows if d.get("pdf")]
+            if not entries:
                 QtWidgets.QMessageBox.information(self, "Nothing to extract", "No out-of-date files found. Run 'Sync Workspace Now' first.")
                 return
             try:
                 terms = Path(self.ed_terms.text()).expanduser()
             except Exception:
                 terms = be.DEFAULT_TERMS_XLSX
-            self._enrich_after_run = True
-            self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Extracting out-of-date files...", show_run_progress=True, refresh_plot_terms_after=True)
+            self._prompt_outdated_run_mode(
+                entries,
+                terms,
+                title="Out-of-Date Extraction",
+                description="Process all out-of-date EIDPs or limit the run to only the schema terms that are missing.",
+                full_status="Extracting out-of-date files...",
+                missing_status="Extracting missing terms for out-of-date files...",
+            )
 
         def force_extract_all():
             dlg.accept()
@@ -2929,6 +2922,121 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_cancel.clicked.connect(dlg.reject)
 
         dlg.exec()
+
+    def _prompt_outdated_run_mode(
+        self,
+        entries: list[tuple[Path, str]],
+        terms: Path,
+        *,
+        title: str,
+        description: str,
+        full_status: str,
+        missing_status: str,
+    ) -> bool:
+        if not entries:
+            QtWidgets.QMessageBox.information(self, "Nothing to run", "No data packages selected.")
+            return False
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(420, 220)
+        dlg.setStyleSheet("""
+            QDialog { background: #ffffff; }
+            QPushButton {
+                padding: 10px 16px;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+        """)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+        desc_lbl = QtWidgets.QLabel(description)
+        desc_lbl.setWordWrap(True)
+        desc_lbl.setStyleSheet("color: #4b5563; font-size: 13px;")
+        layout.addWidget(desc_lbl)
+
+        btn_missing = QtWidgets.QPushButton("\u26A1  Just Missing Terms")
+        btn_missing.setStyleSheet("""
+            QPushButton {
+                background: #0ea5e9;
+                color: #ffffff;
+                border: 1px solid #0ea5e9;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover { background: #0284c7; }
+        """)
+        btn_full = QtWidgets.QPushButton("\U0001F504  Re-extract All Terms")
+        btn_full.setStyleSheet("""
+            QPushButton {
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                text-align: left;
+                padding-left: 16px;
+            }
+            QPushButton:hover { background: #1d4ed8; }
+        """)
+        layout.addWidget(btn_missing)
+        layout.addWidget(btn_full)
+        layout.addStretch()
+        btn_cancel = QtWidgets.QPushButton("Cancel")
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #6b7280;
+                border: 1px solid #d1d5db;
+            }
+            QPushButton:hover { background: #f9fafb; }
+        """)
+        layout.addWidget(btn_cancel)
+
+        result = {"run": False}
+
+        def _run_missing():
+            serials = sorted({serial.strip() for _, serial in entries if serial and serial.strip()})
+            if not serials:
+                QtWidgets.QMessageBox.information(dlg, "Missing serials", "Serial numbers are required to target missing terms.")
+                return
+            try:
+                missing_count = be.count_missing_terms(serials, terms)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(dlg, "Missing terms", str(exc))
+                return
+            if missing_count <= 0:
+                QtWidgets.QMessageBox.information(dlg, "No Missing Terms", "All selected EIDPs already contain every schema term.")
+                return
+            self._enrich_after_run = True
+            self._start_worker(
+                lambda entries=entries, terms=terms: be.run_missing_terms_for_selected_pdfs(entries, terms),
+                status_msg=missing_status,
+                show_run_progress=True,
+                refresh_plot_terms_after=True,
+            )
+            result["run"] = True
+            dlg.accept()
+
+        def _run_full():
+            paths = [p for p, _ in entries]
+            if not paths:
+                QtWidgets.QMessageBox.information(dlg, "Nothing to run", "No valid PDF paths were found.")
+                return
+            self._enrich_after_run = True
+            self._start_worker(
+                lambda paths=paths, terms=terms: be.run_selected_pdfs(paths, terms),
+                status_msg=full_status,
+                show_run_progress=True,
+                refresh_plot_terms_after=True,
+            )
+            result["run"] = True
+            dlg.accept()
+
+        btn_missing.clicked.connect(_run_missing)
+        btn_full.clicked.connect(_run_full)
+        btn_cancel.clicked.connect(dlg.reject)
+        dlg.exec()
+        return result["run"]
 
     def _act_start_scan(self):
         terms = Path(self.ed_terms.text()).expanduser()
@@ -2949,6 +3057,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._worker.stop()
         except Exception:
             pass
+
+    def closeEvent(self, event: QtGui.QCloseEvent):  # type: ignore[override]
+        """Ensure background worker threads are stopped before closing the app."""
+        worker = getattr(self, "_worker", None)
+        if worker and worker.isRunning():
+            try:
+                self._append_log("[GUI] Stopping background task before exit...")
+            except Exception:
+                pass
+            try:
+                worker.stop()
+            except Exception:
+                pass
+            try:
+                worker.wait(3000)
+            except Exception:
+                pass
+            if worker.isRunning():
+                # Last-resort terminate to avoid Qt warning on shutdown.
+                try:
+                    worker.terminate()
+                    worker.wait(1000)
+                except Exception:
+                    pass
+        self._worker = None
+        try:
+            self._progress_dialog.abort()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def _act_compile_master(self):
         self._start_worker(be.compile_master, status_msg="Compiling master workbook...")
@@ -3432,7 +3570,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Select",
                 "Serial",
                 "Status Reason",
-                "Missing Schema Terms?",
+                "Missing Terms",
                 "PDF Path",
                 "Last Run",
                 "PDF Modified",
@@ -3544,7 +3682,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
             layout_all.addWidget(tbl_all, 1)
 
-            # Populate Out-of-Date table with checkboxes and schema-term indicator
+            # Pre-compute missing-term counts per serial for the current schema/master
+            try:
+                try:
+                    terms_path = Path(self.ed_terms.text()).expanduser()
+                except Exception:
+                    terms_path = be.DEFAULT_TERMS_XLSX
+                serials_for_counts = sorted(
+                    {d.get("serial_component", "") for d in rows_outdated if d.get("serial_component")}
+                )
+                missing_counts = (
+                    be.count_missing_terms_per_serial(serials_for_counts, terms_path) if serials_for_counts else {}
+                )
+            except Exception:
+                missing_counts = {}
+
+            # Populate Out-of-Date table with checkboxes and missing-term counts
             for r, d in enumerate(rows_outdated):
                 tbl.insertRow(r)
 
@@ -3585,10 +3738,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 reason_item = QtWidgets.QTableWidgetItem(reason)
                 tbl.setItem(r, 2, reason_item)
 
-                # Indicator: highlight EIDPs that are missing schema terms
-                missing_terms = "Yes" if reason == "terms_newer" else ""
-                missing_item = QtWidgets.QTableWidgetItem(missing_terms)
-                if missing_terms:
+                # Missing-term count per EIDP (blank when not applicable)
+                serial = d.get("serial_component", "") or ""
+                count_val = missing_counts.get(serial, 0)
+                missing_text = str(count_val) if count_val > 0 else ""
+                missing_item = QtWidgets.QTableWidgetItem(missing_text)
+                if count_val > 0:
                     missing_item.setForeground(QtGui.QBrush(QtGui.QColor("#b91c1c")))
                 tbl.setItem(r, 3, missing_item)
 
@@ -3674,17 +3829,17 @@ class MainWindow(QtWidgets.QMainWindow):
             ed_filter.textChanged.connect(_apply_all_filter)
 
             # Update Select All/None to work with checkbox widgets on the active tab
-            def _current_table_and_pdf_col():
-                # Determine which table is active and the index of the PDF path column
+            def _current_table_and_columns():
+                # Determine which table is active and the indices of key columns
                 current = tabs.currentWidget()
                 if current is tab_outdated:
-                    return tbl, cols.index("PDF Path")
+                    return tbl, cols.index("PDF Path"), cols.index("Serial")
                 if current is tab_all:
-                    return tbl_all, cols_all.index("PDF Path")
-                return None, -1
+                    return tbl_all, cols_all.index("PDF Path"), cols_all.index("Serial")
+                return None, -1, -1
 
             def _set_all_checkboxes(checked: bool):
-                tbl_active, _ = _current_table_and_pdf_col()
+                tbl_active, _, _ = _current_table_and_columns()
                 if not tbl_active:
                     return
                 for r in range(tbl_active.rowCount()):
@@ -3754,49 +3909,64 @@ class MainWindow(QtWidgets.QMainWindow):
             btns.addWidget(btn_close)
             v.addLayout(btns)
 
-            # Helper to collect checked paths from the active tab
-            def _collect_checked_paths() -> list[Path]:
-                tbl_active, pdf_col = _current_table_and_pdf_col()
-                paths: list[Path] = []
+            # Helper to collect checked entries (path + serial) from the active tab
+            def _collect_checked_entries() -> list[tuple[Path, str]]:
+                tbl_active, pdf_col, serial_col = _current_table_and_columns()
+                entries: list[tuple[Path, str]] = []
                 if not tbl_active or pdf_col < 0:
-                    return paths
+                    return entries
                 for r in range(tbl_active.rowCount()):
                     widget = tbl_active.cellWidget(r, 0)
                     if widget:
                         checkbox = widget.findChild(QtWidgets.QCheckBox)
                         if checkbox and checkbox.isChecked():
-                            item = tbl_active.item(r, pdf_col)
-                            p = item.text() if item else ""
-                            if p:
-                                paths.append(Path(p))
-                return paths
+                            path_item = tbl_active.item(r, pdf_col)
+                            serial_item = tbl_active.item(r, serial_col) if serial_col >= 0 else None
+                            p_text = path_item.text() if path_item else ""
+                            if p_text:
+                                entries.append((Path(p_text), serial_item.text() if serial_item else ""))
+                return entries
 
             # Update run functions to work with tabbed tables
             def _run_selected():
-                paths = _collect_checked_paths()
-                if not paths:
+                entries = _collect_checked_entries()
+                if not entries:
                     QtWidgets.QMessageBox.information(dlg, "Nothing selected", "Choose at least one EIDP to run.")
                     return
                 try:
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._enrich_after_run = True
-                self._start_worker(lambda: be.run_selected_pdfs(paths, terms), status_msg="Running selected EIDPs...", show_run_progress=True, refresh_plot_terms_after=True)
-                dlg.accept()
+                started = self._prompt_outdated_run_mode(
+                    entries,
+                    terms,
+                    title="Run Selected EIDPs",
+                    description="Choose whether to run only missing schema terms or re-extract every term for the selected data packages.",
+                    full_status="Running selected EIDPs...",
+                    missing_status="Extracting missing terms for selected EIDPs...",
+                )
+                if started:
+                    dlg.accept()
 
             def _run_all():
-                all_paths = [Path(d.get("pdf")) for d in rows_outdated if d.get("pdf")] if rows_outdated else []
-                if not all_paths:
+                entries = [(Path(d.get("pdf")), d.get("serial_component", "")) for d in rows_outdated if d.get("pdf")] if rows_outdated else []
+                if not entries:
                     QtWidgets.QMessageBox.information(dlg, "Nothing to run", "No out-of-date EIDPs found.")
                     return
                 try:
                     terms = Path(self.ed_terms.text()).expanduser()
                 except Exception:
                     terms = be.DEFAULT_TERMS_XLSX
-                self._enrich_after_run = True
-                self._start_worker(lambda: be.run_selected_pdfs(all_paths, terms), status_msg="Running all out-of-date EIDPs...", show_run_progress=True, refresh_plot_terms_after=True)
-                dlg.accept()
+                started = self._prompt_outdated_run_mode(
+                    entries,
+                    terms,
+                    title="Run All Out-of-Date EIDPs",
+                    description="Choose whether to re-run every term or only the missing schema terms for the out-of-date data packages.",
+                    full_status="Running all out-of-date EIDPs...",
+                    missing_status="Extracting missing terms for out-of-date EIDPs...",
+                )
+                if started:
+                    dlg.accept()
 
             btn_run.clicked.connect(_run_selected)
             btn_run_all.clicked.connect(_run_all)

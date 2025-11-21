@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import shutil
@@ -43,6 +44,9 @@ TERMS_SCHEMA_COLUMNS = [
 ]
 TERMS_MODE_CHOICES = ["smart", "full table"]
 TERMS_SMART_TYPE_CHOICES = ["", "auto", "number", "date", "time", "title"]
+MASTER_XLSX = ROOT / "Product_Data_File" / "master.xlsx"
+MASTER_CSV = ROOT / "Product_Data_File" / "master.csv"
+MASTER_BASE_COLUMNS = {"Term Label", "Data Group", "Units", "Min", "Max"}
 
 
 def parse_scanner_env(path: Path = SCANNER_ENV) -> Dict[str, str]:
@@ -428,6 +432,235 @@ def write_terms_rows(
     finally:
         wb.close()
 
+def _clean_master_cell(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if math.isnan(value):
+            return ""
+    return str(value).strip()
+
+def _read_master_table() -> tuple[list[str], list[dict[str, str]]]:
+    header: list[str] = []
+    rows: list[dict[str, str]] = []
+    if MASTER_XLSX.exists():
+        try:
+            import pandas as pd  # type: ignore
+            # Preserve textual sentinels such as 'N/A' instead of coercing them
+            # to NaN so downstream logic can distinguish between true blanks and
+            # explicit "not applicable" markers.
+            df = pd.read_excel(MASTER_XLSX, dtype=object, keep_default_na=False)
+            header = [str(col) for col in df.columns]
+            raw_rows = df.fillna("").to_dict(orient="records")
+            for record in raw_rows:
+                cleaned = {str(k): _clean_master_cell(v) for k, v in record.items()}
+                rows.append(cleaned)
+            return header, rows
+        except Exception:
+            try:
+                from openpyxl import load_workbook  # type: ignore
+                wb = load_workbook(str(MASTER_XLSX), data_only=True)
+                ws = wb.active
+                first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+                header = [(_clean_master_cell(val) or f"column_{idx}") for idx, val in enumerate(first_row)]
+                for values in ws.iter_rows(min_row=2, values_only=True):
+                    record: dict[str, str] = {}
+                    for idx, val in enumerate(values):
+                        if idx >= len(header):
+                            continue
+                        record[header[idx]] = _clean_master_cell(val)
+                    rows.append(record)
+                wb.close()
+                return header, rows
+            except Exception:
+                pass
+    if MASTER_CSV.exists():
+        try:
+            with MASTER_CSV.open("r", newline="", encoding="utf-8") as f:
+                reader = _csv.DictReader(f)
+                header = reader.fieldnames or []
+                for row in reader:
+                    cleaned = {str(k): _clean_master_cell(v) for k, v in row.items()}
+                    rows.append(cleaned)
+            return header, rows
+        except Exception:
+            pass
+    return header, rows
+
+def _schema_value(row: Mapping[str, str], key: str) -> str:
+    for variant in (key, key.lower(), key.upper()):
+        if variant in row:
+            val = row.get(variant)
+            if val is None:
+                continue
+            return str(val).strip()
+    return ""
+
+def _compute_missing_term_rows(
+    serials: list[str],
+    terms_path: Optional[Path] = None,
+) -> tuple[list[str], list[dict[str, str]]]:
+    target = Path(terms_path) if terms_path else DEFAULT_TERMS_XLSX
+    headers, schema_rows = read_terms_rows(target)
+    normalized_serials = [s.strip() for s in serials if s and s.strip()]
+    if not normalized_serials:
+        return headers, []
+    master_header, master_rows = _read_master_table()
+    if not master_header or not master_rows:
+        # No master yet: treat all schema rows as missing for the selected serials.
+        return headers, list(schema_rows)
+    available_serials = {col for col in master_header if col not in MASTER_BASE_COLUMNS}
+    # Lookup of rows present in master keyed by (term_label, data_group)
+    term_lookup: dict[tuple[str, str], dict[str, str]] = {}
+    for row in master_rows:
+        term_label = row.get("Term Label", "").strip()
+        if not term_label:
+            continue
+        if term_label.lower() in ("program", "space vehicle", "data"):
+            continue
+        data_group = row.get("Data Group", "").strip()
+        term_lookup[(term_label.lower(), data_group.lower())] = row
+    missing_rows: list[dict[str, str]] = []
+    for schema_row in schema_rows:
+        term_label = _schema_value(schema_row, "Term Label")
+        if not term_label:
+            continue
+        data_group = _schema_value(schema_row, "Data Group")
+        key = (term_label.lower(), data_group.lower())
+        master_row = term_lookup.get(key)
+        needs_run = False
+        for serial in normalized_serials:
+            # If the serial column is absent or the row itself doesn't exist in
+            # master, this schema term has never been recorded for that EIDP.
+            if serial not in available_serials or master_row is None:
+                needs_run = True
+                break
+            value = master_row.get(serial, "")
+            text = str(value or "").strip()
+            # Blank cells are missing; explicit 'N/A' is treated as already-attempted.
+            if not text:
+                needs_run = True
+                break
+            if text.upper() == "N/A":
+                # Already attempted; do not treat as missing for this serial.
+                continue
+        if needs_run:
+            missing_rows.append(schema_row)
+    return headers, missing_rows
+
+def count_missing_terms(serials: list[str], terms_path: Optional[Path] = None) -> int:
+    _, rows = _compute_missing_term_rows(serials, terms_path)
+    return len(rows)
+
+def count_missing_terms_per_serial(
+    serials: list[str],
+    terms_path: Optional[Path] = None,
+) -> dict[str, int]:
+    """Return mapping {serial: missing_term_count} based on master.xlsx.
+
+    A term is counted as missing for a given serial when:
+      - the (Term Label, Data Group) pair doesn't exist in master at all, or
+      - the row exists but the cell for that serial is blank.
+    Cells containing 'N/A' are treated as already-attempted and not missing.
+    """
+    target = Path(terms_path) if terms_path else DEFAULT_TERMS_XLSX
+    _, schema_rows = read_terms_rows(target)
+    normalized_serials = [s.strip() for s in serials if s and str(s).strip()]
+    if not normalized_serials:
+        return {}
+    counts: dict[str, int] = {s: 0 for s in normalized_serials}
+    master_header, master_rows = _read_master_table()
+    # If no master is present yet, treat all schema terms as missing for each serial.
+    if not master_header or not master_rows:
+        total_terms = 0
+        for schema_row in schema_rows:
+            label = _schema_value(schema_row, "Term Label")
+            if label:
+                total_terms += 1
+        return {s: total_terms for s in normalized_serials}
+
+    available_serials = {col for col in master_header if col not in MASTER_BASE_COLUMNS}
+    # Build lookup from (term_label, data_group) -> master row (existing rows only)
+    term_lookup: dict[tuple[str, str], dict[str, str]] = {}
+    for row in master_rows:
+        term_label = str(row.get("Term Label", "") or "").strip()
+        if not term_label:
+            continue
+        # Skip metadata rows
+        if term_label.lower() in ("program", "space vehicle", "data"):
+            continue
+        data_group = str(row.get("Data Group", "") or "").strip()
+        term_lookup[(term_label.lower(), data_group.lower())] = row
+
+    for schema_row in schema_rows:
+        term_label = _schema_value(schema_row, "Term Label")
+        if not term_label:
+            continue
+        data_group = _schema_value(schema_row, "Data Group")
+        key = (term_label.lower(), data_group.lower())
+        master_row = term_lookup.get(key)
+        for serial in normalized_serials:
+            # If serial column is missing or row absent, this term is missing.
+            if serial not in available_serials or master_row is None:
+                counts[serial] = counts.get(serial, 0) + 1
+                continue
+            text = str(master_row.get(serial, "") or "").strip()
+            # Treat explicit N/A as "attempted" (not missing).
+            if not text:
+                counts[serial] = counts.get(serial, 0) + 1
+            elif text.upper() == "N/A":
+                # Already attempted; do not treat as missing.
+                continue
+    return counts
+
+def run_missing_terms_for_selected_pdfs(
+    selected: list[tuple[Path, str]],
+    terms: Optional[Path] = None,
+) -> subprocess.Popen:
+    if not selected:
+        raise RuntimeError("No data packages selected.")
+    terms_path = Path(terms) if terms else DEFAULT_TERMS_XLSX
+    serials = sorted({str(serial).strip() for _, serial in selected if str(serial).strip()})
+    if not serials:
+        raise RuntimeError("Selected data packages do not include serial identifiers.")
+    # Quick pre-check using the master workbook so we can fail fast
+    # if every selected EIDP already has values for all schema terms.
+    try:
+        total_missing = count_missing_terms(serials, terms_path)
+    except Exception as exc:
+        raise RuntimeError(f"Unable to inspect master workbook for missing terms: {exc}") from exc
+    if total_missing <= 0:
+        raise RuntimeError("No missing terms found for the selected data packages.")
+    # Persist the selection for the batch helper script.
+    selection_path = ROOT / "user_inputs" / "missing_terms_selection.json"
+    try:
+        selection_path.parent.mkdir(parents=True, exist_ok=True)
+        payload: list[dict[str, str]] = []
+        for pdf_path, serial in selected:
+            try:
+                p = Path(pdf_path)
+            except Exception:
+                continue
+            s = str(serial).strip()
+            if not s:
+                continue
+            payload.append({"pdf": str(p), "serial": s})
+        if not payload:
+            raise RuntimeError("Selected data packages do not include any valid PDF/serial pairs.")
+        selection_path.write_text(json.dumps(payload), encoding="utf-8")
+    except Exception as exc:
+        raise RuntimeError(f"Unable to prepare missing-terms selection: {exc}") from exc
+    # Delegate the per-EIDP, missing-terms-only extraction to a small helper script
+    # so that the GUI can track a single process while each EIDP is processed with
+    # its own tailored term list.
+    return run_script(
+        "scripts/run_missing_terms_per_eidp.py",
+        "--terms",
+        str(terms_path),
+        "--selection-json",
+        str(selection_path),
+    )
+
 
 # --- Workspace sync helpers ---
 
@@ -769,26 +1002,31 @@ def compute_workspace_sync(repo_root: Optional[Path] = None, terms_path: Optiona
     Classifies PDFs in repo_root (recursively) as new/out-of-date/up-to-date by
     comparing:
       - run_registry run_date vs PDF modification time, and
-      - schema-defined (Term Label, Data Group) pairs vs the terms actually
-        present in the latest scan_results.json for each serial.
+      - schema-defined (Term Label, Data Group) pairs vs the values recorded
+        in the master workbook for each serial.
 
-    A PDF/serial is considered out-of-sync for "terms" only when the schema
-    defines at least one (Term Label, Data Group) pair that has never been
-    recorded for that serial in its run outputs. Merely re-saving the schema
-    without adding new terms does not mark items as out-of-sync.
+    A PDF/serial is considered out-of-sync for "terms" when the current schema
+    defines at least one term whose value is still missing (blank) in the
+    master workbook for that EIDP. Merely re-saving the schema without adding
+    new terms does not mark items as out-of-sync.
     """
     root = Path(repo_root) if repo_root else DEFAULT_PDF_DIR
     terms = Path(terms_path) if terms_path else DEFAULT_TERMS_XLSX
     # Ensure registry reflects run_data contents before comparing
     reg = ensure_run_registry_consistent()
     t_mtime = datetime.fromtimestamp(terms.stat().st_mtime) if terms.exists() else None
-    # Schema term keys and per-serial terms observed in run outputs
+    # Schema term keys (used only as a guard; actual missing-term detection is
+    # performed against master.xlsx via count_missing_terms_per_serial).
     schema_keys = _load_schema_term_keys(terms)
-    run_terms_map = _load_run_terms_map(reg) if schema_keys else {}
 
     pdfs = [p for p in root.rglob("*.pdf") if p.is_file()]
     details: list[dict[str, str]] = []
     new_count = outdated_pdf = outdated_terms = up_to_date = 0
+    # Cache of per-serial missing-term counts so we only evaluate against the
+    # master workbook once per serial even if multiple PDFs map to the same
+    # EIDP.
+    missing_counts_cache: dict[str, int] = {}
+
     for p in sorted(pdfs):
         try:
             prog, veh, serial = _derive_identity_from_name(p)
@@ -807,20 +1045,20 @@ def compute_workspace_sync(repo_root: Optional[Path] = None, terms_path: Optiona
                     reason = "pdf_newer"
                     outdated_pdf += 1
                 else:
-                    # If we have a readable schema, compare schema term keys to the
-                    # keys present in this serial's scan_results.json. Missing keys
-                    # mean the schema has terms that have never been extracted for
-                    # this EIDP yet.
+                    # If we have a readable schema and master workbook, ask the
+                    # master whether this EIDP still has missing values for any
+                    # schema-defined terms. This lets incremental or "missing
+                    # terms only" scans bring EIDPs back to an up-to-date state
+                    # without requiring full re-extraction.
                     needs_terms = False
                     if schema_keys:
-                        have_keys = run_terms_map.get(serial)
-                        if not have_keys:
-                            # No run outputs or unreadable results for this serial
-                            needs_terms = True
-                        else:
-                            missing = schema_keys.difference(have_keys)
-                            if missing:
-                                needs_terms = True
+                        if serial not in missing_counts_cache:
+                            try:
+                                per_serial = count_missing_terms_per_serial([serial], terms)
+                            except Exception:
+                                per_serial = {}
+                            missing_counts_cache[serial] = int(per_serial.get(serial, 0) or 0)
+                        needs_terms = missing_counts_cache.get(serial, 0) > 0
                     if needs_terms:
                         reason = "terms_newer"
                         outdated_terms += 1
@@ -882,13 +1120,84 @@ def run_selected_pdfs(paths: list[Path], terms: Optional[Path] = None) -> subpro
     return run_scanner(terms, stage)
 
 
-def rebuild_registry_from_run_data() -> dict[str, dict[str, str]]:
-    """Rebuild or update run_registry.csv by scanning run_data folders.
+def _gather_serials_from_run(run_dir: Path) -> dict[str, tuple[str, str]]:
+    """Return mapping {serial: (program, vehicle)} discovered in a run folder."""
+    found: dict[str, tuple[str, str]] = {}
 
-    This leverages ensure_run_registry_consistent(), which walks run_data and
-    merges/updates entries based on discovered outputs. Returns the final map.
-    """
-    return ensure_run_registry_consistent()
+    def _record(row: Mapping[str, object]) -> None:
+        pdf_info = row.get("pdf_info") if isinstance(row, Mapping) else {}
+        if not isinstance(pdf_info, Mapping):
+            return
+        serial = str(pdf_info.get("serial_component") or pdf_info.get("serial_number") or "").strip()
+        if not serial or serial in found:
+            return
+        program = str(pdf_info.get("program_name") or "").strip()
+        vehicle = str(pdf_info.get("vehicle_number") or "").strip()
+        found[serial] = (program, vehicle)
+
+    agg = run_dir / "scan_results.json"
+    if agg.exists():
+        try:
+            data = json.loads(agg.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                for row in data:
+                    if isinstance(row, Mapping):
+                        _record(row)
+        except Exception:
+            pass
+    if not found:
+        for child in run_dir.glob("scan_results_*.json"):
+            if child.name.lower() == "scan_results.json":
+                continue
+            try:
+                data = json.loads(child.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            rows = data if isinstance(data, list) else ([data] if isinstance(data, Mapping) else [])
+            for row in rows:
+                if isinstance(row, Mapping):
+                    _record(row)
+            if found:
+                break
+    return found
+
+
+def rebuild_registry_from_run_data() -> dict[str, dict[str, str]]:
+    """Rebuild run_registry.csv by scanning run_data folders."""
+    rows: dict[str, dict[str, str]] = {}
+    if not RUNS_DIR.exists():
+        _write_run_registry_map(rows)
+        return rows
+    try:
+        existing = _read_run_registry_map()
+    except Exception:
+        existing = {}
+    for run_dir in sorted(RUNS_DIR.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        try:
+            run_dt = datetime.strptime(run_dir.name, "%Y%m%d_%H%M%S")
+        except Exception:
+            run_dt = datetime.fromtimestamp(run_dir.stat().st_mtime)
+        display_dt = run_dt.strftime("%Y-%m-%d %H:%M:%S")
+        serial_meta = _gather_serials_from_run(run_dir)
+        for serial, (program, vehicle) in serial_meta.items():
+            prev = rows.get(serial) or existing.get(serial)
+            if prev:
+                prev_dt = _parse_dt(prev.get("run_date", ""))
+                if prev_dt and prev_dt >= run_dt:
+                    rows[serial] = prev
+                    continue
+            rel_run = str(run_dir.relative_to(ROOT))
+            rows[serial] = {
+                "serial_component": serial,
+                "program_name": program,
+                "vehicle_number": vehicle,
+                "run_date": display_dt,
+                "run_folder": rel_run,
+            }
+    _write_run_registry_map(rows)
+    return rows
 
 
 def open_last_run_folder() -> None:
@@ -898,6 +1207,10 @@ def open_last_run_folder() -> None:
     if not latest:
         raise FileNotFoundError("No run folders found")
     open_path(latest)
+
+def open_run_data_root() -> None:
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    open_path(RUNS_DIR)
 
 
 def open_run_registry() -> None:
