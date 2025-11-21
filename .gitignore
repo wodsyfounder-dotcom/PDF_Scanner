@@ -1,6 +1,6 @@
-# Track everything except root-level vendored site-packages and venv
+# Ignore only environment/build artifacts so data files are tracked
 /Lib/
 /.venv/
 __pycache__/
-*.pdf
-/Product_Data_File/
+**/__pycache__/
+*.pyc

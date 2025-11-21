@@ -1,0 +1,22 @@
+pdf_file,Program Name,Vehicle Number,Serial Component,Term Label,Data Group,Search Term,found,page,Extracted Value,units,Units Hint,Range Min,Range Max,Text Source,Smart Score,Smart Snap Type,Smart Conflict,Smart Secondary Found,Group After,Group Before,Error Reason
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Program Name,Document Profile,Program Name,True,1,Hyperion Dragonfly Propulsion Demo,,N|A,,,pdf,,title,,,Field,ignition_delay,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Serial Number,Document Profile,Serial Number,True,1,SN42-AX,,N|A,,,pdf,,title,,,Field,ignition_delay,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Date Compiled,Document Profile,Date Compiled,True,1,2025-01-17,,,,,pdf,,date,,,Field,ignition_delay,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Source Bundle Path,Document Profile,Source Bundle Path,True,1,/Data Packages/Hyperion_SV3_SN42_RevE,,N|A,,,pdf,,title,,,Field,thrust_nominal,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Chamber Pressure Over,Functional Acceptance,Chamber Pressure Over,True,2,8,,psia,7.0,8.1,pdf,,number,,,Source Bundle,thrust_nominal,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Chamber Pressure Units,Functional Acceptance,Chamber Pressure Units,True,2,psia,,N|A,,,pdf,,title,,,Source Bundle,thrust_nominal,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Harness Resistance,Functional Acceptance,Harness Resistance,True,2,6.1 (range violation),,Ohm,4.8,5.3,ocr,,number,,,Thermal Soak Low,TC-01,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Harness Resistance Quality,Functional Acceptance,Harness Resistance Quality,True,2,resistance,,N|A,,,pdf,,title,,,Source Bundle,thrust_nominal,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thrust Nominal Value,Performance KPI,Thrust Nominal Value,True,2,5.32,,,4.8,5.5,pdf,,number,,,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thrust Nominal Target,Performance KPI,Thrust Nominal Target,False,,,,,4.8,5.5,,,number,,,thermal_margin,Thermal Soak Low,Smart snap: no matching row/value
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thrust Nominal Confidence,Performance KPI,Thrust Nominal Confidence,True,2,0.97,,,0.0,1.0,pdf,4.004066184448396,number,,1.0,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Power Draw Peak,Performance KPI,Power Draw Peak,True,2,131,,,130.0,155.0,pdf,4.013930536498681,number,,1.0,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Power Draw Peak Source,Performance KPI,Power Draw Peak Source,True,2,Table 4,,N|A,,,pdf,,title,,,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Power Draw Idle Source,Performance KPI,Power Draw Idle Source,True,2,Table 4,,N|A,,,pdf,,title,,,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thermal Margin Low,Performance KPI,Thermal Margin Low,True,2,8,,N|A,,,pdf,2.027519322229193,number,,1.0,leak_check,Thermal Soak Low,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thermal Soak High Status,Environmental,Thermal Soak High Status,False,,,,N|A,,,,,title,,,thermal_margin,Thermal Soak Low,Smart snap: no matching row/value
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thermal Soak High Duration,Environmental,Thermal Soak High Duration,True,3,1.5,,N|A,,,pdf,,title,,,thermal_margin,TC-01,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thermal Soak High Duration,Environmental,Thermal Soak High Duration,True,3,1.5,,N|A,,,pdf,,number,,,thermal_margin,TC-01,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Random Vib Z Amplitude,Environmental,Random Vib Z Amplitude,True,3,12.0,,grms,12.0,12.0,pdf,,number,,,thermal_margin,TC-01,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,TC-02 Post Trim,Calibration,TC-02 Post Trim,True,3,0.9989,,TC-01,0.99,1.01,pdf,,number,,,Sine Sweep,Severity,
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,LVDT-2 Status,Calibration,LVDT-2 Status,True,3,INCOMPLETE,,N|A,,,pdf,,title,,,Sine Sweep,Severity,

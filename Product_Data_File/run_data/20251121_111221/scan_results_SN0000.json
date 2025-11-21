@@ -1,0 +1,72 @@
+[
+  {
+    "pdf_info": {
+      "pdf_file": "FakeProgram_SV1_SN0000.pdf",
+      "program_name": "FakeProgram",
+      "vehicle_number": "SV1",
+      "serial_component": "SN0000"
+    },
+    "user_inputs": {
+      "term": "LVDT-2 Pre-Trim",
+      "term_label": "LVDT-2 Pre-Trim",
+      "data_group": "Calibration",
+      "pages_raw": "1-4",
+      "range_min": null,
+      "range_max": null,
+      "units_hint": null,
+      "return_type": "number",
+      "group_after": "Sine Sweep",
+      "group_before": "Severity",
+      "value_format": null,
+      "mode": "smart",
+      "smart_snap_type": "number",
+      "smart_position": 1,
+      "secondary_term": "Pre-Trim",
+      "alt_search": null
+    },
+    "match_info": {
+      "found": true,
+      "page": 3,
+      "extracted_value": "1.0040",
+      "units": null,
+      "text_source": "pdf",
+      "error_reason": null
+    },
+    "smart_info": {
+      "smart_score": null,
+      "smart_score_breakdown": null,
+      "smart_selection_method": "smart_position",
+      "smart_conflict": null,
+      "smart_secondary_found": null
+    },
+    "debug_info": {
+      "smart_snap_context": "LVDT-2 1.0040 – ±0.0050 INCOMPLETE Missing post-trim data",
+      "search_term": "LVDT-2",
+      "xy_fuzz": 0.0,
+      "ocr_row_eps": 15.0,
+      "debug_ordered_boxes": null,
+      "debug_fields_for_pos": null,
+      "debug_smart_position_requested": null,
+      "debug_smart_position_extracted": null,
+      "debug_label_used": null,
+      "debug_label_normalized": null,
+      "debug_anchor_span": null,
+      "debug_extracted_term": "LVDT-2",
+      "debug_group_after_page": 3,
+      "debug_group_after_text": "Sine Sweep 5–500 Hz 0.5 g Not Recorded – V-041",
+      "debug_group_before_page": 3,
+      "debug_group_before_text": "ID Severity Term Description Containment Status",
+      "debug_group_region_applied": true
+    }
+  },
+  {
+    "_kind": "match_summary",
+    "description": "Smart Snap scoring: row smart_score is the best fuzzy match to the row anchor; numeric candidate ranking adds: +2.0 if value is between row min/max, +0.4 if units match Units Hint, up to +0.4 for values within configured Range, +0.70 * secondary_header_alignment for X alignment with the Secondary Term header, plus smaller adjustments based on distance to Value/Min/Max headers and distance from the label.",
+    "secondary_header_weight": 0.7,
+    "secondary_vertical_weight": 0.0,
+    "units_hint_weight": 0.4,
+    "range_weight_full": 0.4,
+    "xy_fuzz": 0.0,
+    "ocr_row_eps": 15.0
+  }
+]

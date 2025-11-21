@@ -1,0 +1,2 @@
+pdf_file,Program Name,Vehicle Number,Serial Component,Term Label,Data Group,Search Term,found,page,Extracted Value,units,Units Hint,Range Min,Range Max,Text Source,Smart Score,Smart Snap Type,Smart Conflict,Smart Secondary Found,Group After,Group Before,Error Reason
+FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,Thrust Nominal Confidence,Performance KPI,Thrust Nominal Confidence,True,2,0.97,,,0.0,1.0,pdf,4.004066184448396,number,,1.0,leak_check,Thermal Soak Low,
