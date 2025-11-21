@@ -468,22 +468,22 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
 
                 data_group = norm(row.get("data_group"))
                 key = (term_label.lower(), data_group.lower())
-        if key not in term_map:
-            term_map[key] = {
-                "term_label": term_label,
-                "data_group": data_group,
-                "units": "",
+                if key not in term_map:
+                    term_map[key] = {
+                        "term_label": term_label,
+                        "data_group": data_group,
+                        "units": "",
                         "range_min": "",
                         "range_max": "",
                         "values": {},
                     }
                     terms_order.append(key)
-        entry = term_map[key]
-        units = extract_units(row)
-        if not units and key in schema_units:
-            units = schema_units.get(key, "")
-        if units and not entry["units"]:
-            entry["units"] = units
+                entry = term_map[key]
+                units = extract_units(row)
+                if not units and key in schema_units:
+                    units = schema_units.get(key, "")
+                if units and not entry["units"]:
+                    entry["units"] = units
                 rng_min = norm(row.get("range_min"))
                 if rng_min and not entry["range_min"]:
                     entry["range_min"] = rng_min
@@ -493,9 +493,8 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
 
                 current_val = norm(entry["values"].get(sn, ""))
                 # Preserve any existing value (user override or prior accepted value).
-                if current_val:
-                    continue
-                entry["values"][sn] = value
+                if not current_val:
+                    entry["values"][sn] = value
 
     term_rows: List[Dict[str, Any]] = []
     for key in terms_order:
