@@ -132,11 +132,25 @@ def read_proposed_plots() -> List[Dict[str, Any]]:
         if not isinstance(series, list):
             series = []
         series_names = [str(s or "").strip() for s in series if str(s or "").strip()]
+        def _bool(val: object, default: bool = True) -> bool:
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                txt = val.strip().lower()
+                if txt in ("1", "true", "yes", "y", "on"):
+                    return True
+                if txt in ("0", "false", "no", "n", "off"):
+                    return False
+            if isinstance(val, (int, float)):
+                return val != 0
+            return default
         cleaned.append({
             "name": name or "Plot",
             "series": series_names,
             "y_axis": y_axis,
             "x_axis": x_axis,
+            "include_min": _bool(entry.get("include_min"), True),
+            "include_max": _bool(entry.get("include_max"), True),
         })
     return cleaned
 
@@ -166,6 +180,8 @@ class PlotSpec:
     x_axis: str  # SN | Program | Space Vehicle
     series: List[SeriesSpec] = field(default_factory=list)
     y_axis: Optional[str] = None
+    include_min: bool = True
+    include_max: bool = True
 
 
 def slugify(name: str) -> str:
@@ -200,7 +216,12 @@ def build_plot_specs_from_proposals(rows: List[Dict[str, Any]], proposals: List[
         series_names = entry.get("series") or []
         if not series_names:
             continue
-        plot = PlotSpec(name=str(title).strip() or "Plot", x_axis=str(entry.get("x_axis") or "SN").strip() or "SN")
+        plot = PlotSpec(
+            name=str(title).strip() or "Plot",
+            x_axis=str(entry.get("x_axis") or "SN").strip() or "SN",
+            include_min=bool(entry.get("include_min", True)),
+            include_max=bool(entry.get("include_max", True)),
+        )
         y_axis = str(entry.get("y_axis") or "").strip()
         if y_axis:
             plot.y_axis = y_axis
@@ -373,9 +394,9 @@ def main() -> None:
             color = cmap(i % 10)
             ax.plot(xs, ys, marker="o", linestyle="-", label=label, color=color)
             # Bounds lines per series if provided
-            if s.bounds_min is not None and not math.isnan(s.bounds_min):
+            if p.include_min and s.bounds_min is not None and not math.isnan(s.bounds_min):
                 ax.axhline(s.bounds_min, color=color, linestyle="--", linewidth=1, alpha=0.6)
-            if s.bounds_max is not None and not math.isnan(s.bounds_max):
+            if p.include_max and s.bounds_max is not None and not math.isnan(s.bounds_max):
                 ax.axhline(s.bounds_max, color=color, linestyle=":", linewidth=1, alpha=0.6)
 
         ax.set_title(p.name)

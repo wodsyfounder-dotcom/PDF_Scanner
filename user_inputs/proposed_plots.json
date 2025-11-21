@@ -2,6 +2,11 @@
   {
     "name": "Isp",
     "series": [
+      "Chamber Pressure Over - Functional Acceptance",
+      "Chamber Pressure Units - Functional Acceptance",
+      "Date Compiled - Document Profile",
+      "Harness Resistance - Functional Acceptance",
+      "Harness Resistance Quality - Functional Acceptance",
       "LVDT-2 Status - Calibration"
     ],
     "y_axis": "",

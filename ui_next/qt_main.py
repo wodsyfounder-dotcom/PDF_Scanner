@@ -5,6 +5,7 @@ import shutil
 import sys
 import threading
 from pathlib import Path
+from typing import Callable
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -932,64 +933,118 @@ class SeriesDropdown(QtWidgets.QWidget):
     def __init__(self, options: list[dict], selected: list[str] | None = None, parent=None):
         super().__init__(parent)
         self._options = options or []
-        self._actions: dict[str, QtGui.QAction] = {}
+        self._items: dict[str, QtWidgets.QListWidgetItem] = {}
 
-        layout = QtWidgets.QHBoxLayout(self)
+        layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(8)
+
         self.button = QtWidgets.QToolButton()
         self.button.setText("Select Series")
-        self.button.setMinimumWidth(140)
-        self.button.setMinimumHeight(32)
+        self.button.setMinimumWidth(160)
+        self.button.setMinimumHeight(38)
         self.button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.button.setStyleSheet(
+            "QToolButton { color: #0b1526; font-weight: 700; }"
+            "QToolButton:hover { color: #0b1526; }"
+        )
+
+        # QMenu backed by a QListWidget so the menu stays open while checking multiple entries
         self.menu = QtWidgets.QMenu(self)
+        self.menu.setMinimumWidth(360)
+        self.menu.setStyleSheet("QMenu { padding: 8px; }")
+        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.setStyleSheet(
+            "QListWidget { background: #ffffff; color: #0b1526; }"
+            "QListWidget::item { color: #0b1526; }"
+            "QListWidget::indicator { width: 16px; height: 16px; border: 1px solid #0b1526; background: #ffffff; }"
+            "QListWidget::indicator:checked { background: #0b1526; }"
+        )
+        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
+        self.list_widget.setUniformItemSizes(True)
+        self.list_widget.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.list_widget.itemChanged.connect(self._on_item_changed)
+        container = QtWidgets.QWidget()
+        container_layout = QtWidgets.QVBoxLayout(container)
+        container_layout.setContentsMargins(4, 4, 4, 4)
+        container_layout.addWidget(self.list_widget)
+        container.setMinimumSize(340, 280)
+        self._list_action = QtWidgets.QWidgetAction(self.menu)
+        self._list_action.setDefaultWidget(container)
+        self.menu.addAction(self._list_action)
         self.button.setMenu(self.menu)
+        button_row.addWidget(self.button)
+        button_row.addStretch(1)
 
         self.summary = QtWidgets.QLabel("No series selected")
-        self.summary.setStyleSheet("color: #5b6b7a;")
+        self.summary.setObjectName("seriesSummary")
+        self.summary.setStyleSheet(
+            "color: #0b1526; font-weight: 700; background: #edf2ff;"
+            " border: 1px solid #c3d0f3; border-radius: 8px; padding: 8px 10px;"
+        )
         self.summary.setMinimumWidth(260)
+        self.summary.setMinimumHeight(44)
+        self.summary.setWordWrap(True)
+        self.summary.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.summary.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
 
-        layout.addWidget(self.button)
-        layout.addWidget(self.summary, 1)
+        layout.addLayout(button_row)
+        layout.addWidget(self.summary)
 
         self.set_options(self._options, selected or [])
 
     def set_options(self, options: list[dict], selected: list[str] | None = None) -> None:
         self._options = options or []
         existing = set(selected or self.selected_series())
-        self.menu.clear()
-        self._actions = {}
+        self._items = {}
+        self.list_widget.blockSignals(True)
+        self.list_widget.clear()
         for opt in self._options:
             name = opt.get("name") or ""
             if not name:
                 continue
-            act = QtGui.QAction(name, self.menu)
-            act.setCheckable(True)
-            act.setChecked(name in existing)
-            act.toggled.connect(self._on_action_toggled)
-            self.menu.addAction(act)
-            self._actions[name] = act
+            item = QtWidgets.QListWidgetItem(name)
+            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                QtCore.Qt.CheckState.Checked if name in existing else QtCore.Qt.CheckState.Unchecked
+            )
+            self.list_widget.addItem(item)
+            self._items[name] = item
+        self.list_widget.blockSignals(False)
         self._update_summary()
 
     def selected_series(self) -> list[str]:
-        return [name for name, act in self._actions.items() if act.isChecked()]
+        return [
+            name
+            for name, item in self._items.items()
+            if item.checkState() == QtCore.Qt.CheckState.Checked
+        ]
 
     def set_selected(self, names: list[str]) -> None:
         target = set(names or [])
-        for name, act in self._actions.items():
-            act.blockSignals(True)
-            act.setChecked(name in target)
-            act.blockSignals(False)
+        self.list_widget.blockSignals(True)
+        for name, item in self._items.items():
+            item.setCheckState(
+                QtCore.Qt.CheckState.Checked if name in target else QtCore.Qt.CheckState.Unchecked
+            )
+        self.list_widget.blockSignals(False)
         self._update_summary()
 
-    def _on_action_toggled(self, _: bool) -> None:
+    def _on_item_changed(self, _: QtWidgets.QListWidgetItem) -> None:
         self._update_summary()
         self.changed.emit()
 
     def _update_summary(self) -> None:
         sel = self.selected_series()
-        self.summary.setText(", ".join(sel) if sel else "No series selected")
+        if sel:
+            count = len(sel)
+            self.summary.setText(f"Selected ({count}): " + ", ".join(sel))
+        else:
+            self.summary.setText("No series selected")
 
 
 class PlotRowWidget(QtWidgets.QWidget):
@@ -997,45 +1052,85 @@ class PlotRowWidget(QtWidgets.QWidget):
 
     changed = QtCore.Signal()
 
-    def __init__(self, series_options: list[dict], data: dict | None = None, parent=None):
+    def __init__(
+        self,
+        series_options: list[dict],
+        data: dict | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         data = data or {}
         self._series_options = series_options or []
         self._series_axis_map: dict[str, str] = {}
         self._manual_y_axis = bool(str(data.get("y_axis") or "").strip())
         self._x_axis = str(data.get("x_axis") or "SN").strip() or "SN"
+        include_min = bool(data.get("include_min", True))
+        include_max = bool(data.get("include_max", True))
+        self._select_cb: Callable[[], None] | None = None
+        self.setObjectName("plotRowCard")
+        self.setProperty("selected", False)
+        self.setMinimumHeight(150)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
 
-        layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setHorizontalSpacing(8)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        fields_row = QtWidgets.QHBoxLayout()
+        fields_row.setContentsMargins(0, 0, 0, 0)
+        fields_row.setSpacing(12)
 
         self.name_edit = QtWidgets.QLineEdit(str(data.get("name") or ""))
         self.name_edit.setPlaceholderText("Plot name")
-        self.name_edit.setMinimumWidth(260)
-        self.name_edit.setMinimumHeight(34)
+        self.name_edit.setMinimumWidth(280)
+        self.name_edit.setMinimumHeight(46)
         self.name_edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         self.name_edit.textChanged.connect(self.changed.emit)
-        layout.addWidget(self.name_edit, 0, 0)
+        name_box = self._wrap_field("Plot title", self.name_edit)
 
         self.y_axis_edit = QtWidgets.QLineEdit(str(data.get("y_axis") or ""))
         self.y_axis_edit.setPlaceholderText("Y axis label")
-        self.y_axis_edit.setMinimumWidth(220)
-        self.y_axis_edit.setMinimumHeight(34)
+        self.y_axis_edit.setMinimumWidth(240)
+        self.y_axis_edit.setMinimumHeight(46)
         self.y_axis_edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         self.y_axis_edit.textEdited.connect(self._handle_y_axis_edited)
-        layout.addWidget(self.y_axis_edit, 0, 1)
+        y_box = self._wrap_field("Y-axis label", self.y_axis_edit)
 
         self.series_dropdown = SeriesDropdown(self._series_options, list(data.get("series") or []))
         self.series_dropdown.changed.connect(self._on_series_toggled)
-        layout.addWidget(self.series_dropdown, 0, 2)
+        series_box = self._wrap_field("Series", self.series_dropdown)
 
-        layout.setColumnStretch(0, 3)
-        layout.setColumnStretch(1, 3)
-        layout.setColumnStretch(2, 4)
+        fields_row.addWidget(name_box, 34)
+        fields_row.addWidget(y_box, 26)
+        fields_row.addWidget(series_box, 38)
+        layout.addLayout(fields_row)
 
         self.update_series_options(self._series_options, initial_selection=list(data.get("series") or []))
         if not self._manual_y_axis:
             self._auto_update_y_axis()
+
+        # Make clicks/focus anywhere in the row select the row in the list
+        self._register_focus_widget(self)
+        self._register_focus_widget(self.name_edit)
+        self._register_focus_widget(self.y_axis_edit)
+        self._register_focus_widget(self.series_dropdown.button)
+        self._register_focus_widget(self.series_dropdown.summary)
+
+        toggles = QtWidgets.QHBoxLayout()
+        toggles.setContentsMargins(0, 0, 0, 0)
+        toggles.setSpacing(14)
+        self.chk_include_min = QtWidgets.QCheckBox("Include min line")
+        self.chk_include_min.setChecked(include_min)
+        self.chk_include_min.setStyleSheet("color: #0b1526; font-weight: 700;")
+        self.chk_include_min.stateChanged.connect(self.changed.emit)
+        self.chk_include_max = QtWidgets.QCheckBox("Include max line")
+        self.chk_include_max.setChecked(include_max)
+        self.chk_include_max.setStyleSheet("color: #0b1526; font-weight: 700;")
+        self.chk_include_max.stateChanged.connect(self.changed.emit)
+        toggles.addWidget(self.chk_include_min)
+        toggles.addWidget(self.chk_include_max)
+        toggles.addStretch(1)
+        layout.addLayout(toggles)
 
     def _handle_y_axis_edited(self, text: str) -> None:
         self._manual_y_axis = bool(text.strip())
@@ -1101,7 +1196,42 @@ class PlotRowWidget(QtWidgets.QWidget):
             "series": self.selected_series(),
             "y_axis": self.y_axis_edit.text().strip(),
             "x_axis": self._x_axis,
+            "include_min": self.chk_include_min.isChecked(),
+            "include_max": self.chk_include_max.isChecked(),
         }
+
+    def set_select_callback(self, cb: Callable[[], None]) -> None:
+        self._select_cb = cb
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def _emit_select(self) -> None:
+        if self._select_cb:
+            self._select_cb()
+
+    def _register_focus_widget(self, widget: QtWidgets.QWidget) -> None:
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if event.type() == QtCore.QEvent.Type.MouseButtonPress or event.type() == QtCore.QEvent.Type.FocusIn:
+            self._emit_select()
+        return super().eventFilter(obj, event)
+
+    def _wrap_field(self, label: str, widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
+        container = QtWidgets.QWidget()
+        vbox = QtWidgets.QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(6)
+        lbl = QtWidgets.QLabel(label)
+        lbl.setObjectName("plotFieldLabel")
+        lbl.setStyleSheet("color: #0b1526; font-weight: 700;")
+        vbox.addWidget(lbl)
+        vbox.addWidget(widget)
+        return container
 
 
 class ProposedPlotsDialog(QtWidgets.QDialog):
@@ -1114,41 +1244,97 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
         self.setObjectName("proposedPlotsDialog")
         self.setStyleSheet("""
             #proposedPlotsDialog {
-                background-color: #f8fafc;
-                color: #0f172a;
+                background-color: #f4f6fb;
+                color: #0b1526;
             }
             #proposedPlotsDialog QLabel {
-                color: #0f172a;
+                color: #0b1526;
+            }
+            #proposedPlotsDialog QLabel#proposedIntro {
+                color: #091020;
+                font-weight: 600;
             }
             #proposedPlotsDialog QListWidget {
                 background-color: #ffffff;
-                border: 1px solid #d4d4d8;
-                color: #0f172a;
+                border: 1px solid #cbd5e1;
+                border-radius: 12px;
+                color: #0b1526;
+                padding: 10px;
+            }
+            #proposedPlotsDialog QListWidget::item {
+                margin: 12px 6px;
+            }
+            #proposedPlotsDialog QListWidget::item:selected {
+                background: #e5edff;
+                color: #0b1526;
             }
             #proposedPlotsDialog QPushButton {
                 background-color: #ffffff;
-                color: #0f172a;
-                border: 1px solid #cbd5f5;
-                border-radius: 6px;
-                padding: 8px 14px;
+                color: #0b1526;
+                border: 1px solid #94a3b8;
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-weight: 600;
             }
             #proposedPlotsDialog QPushButton:hover {
-                background-color: #f1f5f9;
+                background-color: #f0f4ff;
+                border-color: #6b7280;
+            }
+            #plotRowCard {
+                background: #ffffff;
+                border: 1px solid #b8c4d8;
+                border-radius: 14px;
+                padding: 12px 14px;
+            }
+            #plotRowCard[selected="true"] {
+                border: 2px solid #2563eb;
+                background: #e5edff;
+            }
+            #plotRowCard QLineEdit {
+                background: #ffffff;
+                border-radius: 8px;
+                border: 1px solid #94a3b8;
+                padding: 12px 14px;
+                font-weight: 600;
+                color: #0b1526;
+            }
+            #plotRowCard QLineEdit:focus {
+                border: 2px solid #2563eb;
+                background: #ffffff;
+            }
+            #plotRowCard QLineEdit::placeholder {
+                color: #475569;
+                font-weight: 500;
+            }
+            #plotRowCard QLabel {
+                color: #0b1526;
+            }
+            #plotFieldLabel {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+            }
+            #seriesSummary {
+                color: #0b1526;
             }
         """)
         self._series_options = series_options or []
         self._plots: list[dict] = [dict(p) for p in plots] if plots else []
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 12)
+        layout.setSpacing(12)
         intro = QtWidgets.QLabel(
             "Add plots, choose the plot series from the dropdown, and optionally override the Y-axis label."
         )
+        intro.setObjectName("proposedIntro")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
         self.list_widget = QtWidgets.QListWidget()
-        self.list_widget.setSpacing(6)
+        self.list_widget.setSpacing(12)
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.list_widget.itemSelectionChanged.connect(self._update_selection_styles)
         layout.addWidget(self.list_widget, 1)
 
         controls = QtWidgets.QHBoxLayout()
@@ -1172,6 +1358,9 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
         if self._plots:
             for plot in self._plots:
                 self._append_row(plot)
+            if self.list_widget.count():
+                self.list_widget.setCurrentRow(0)
+                self._update_selection_styles()
         else:
             self._add_plot()
 
@@ -1179,16 +1368,37 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
         item = QtWidgets.QListWidgetItem()
         widget = PlotRowWidget(self._series_options, data=data)
         widget.changed.connect(self._sync_item_size)
+        widget.set_select_callback(lambda it=item: self._select_item(it))
         item.setSizeHint(widget.sizeHint())
         self.list_widget.addItem(item)
         self.list_widget.setItemWidget(item, widget)
         return widget
 
+    def _select_item(self, item: QtWidgets.QListWidgetItem) -> None:
+        """Select an item when the row's child gains focus or is clicked."""
+        self.list_widget.setCurrentItem(item)
+        self._update_selection_styles()
+
+    def _update_selection_styles(self) -> None:
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            widget = self.list_widget.itemWidget(item)
+            if isinstance(widget, PlotRowWidget):
+                widget.set_selected(item.isSelected())
+
     def _add_plot(self):
         name = self._generate_plot_name()
-        widget = self._append_row({"name": name, "series": [], "y_axis": "", "x_axis": "SN"})
+        widget = self._append_row({
+            "name": name,
+            "series": [],
+            "y_axis": "",
+            "x_axis": "SN",
+            "include_min": True,
+            "include_max": True,
+        })
         widget.name_edit.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
         self.list_widget.setCurrentRow(self.list_widget.count() - 1)
+        self._update_selection_styles()
 
     def _remove_selected(self):
         row = self.list_widget.currentRow()
@@ -1202,6 +1412,9 @@ class ProposedPlotsDialog(QtWidgets.QDialog):
             del item
         if self.list_widget.count() == 0:
             self._add_plot()
+        else:
+            self.list_widget.setCurrentRow(min(row, self.list_widget.count() - 1))
+            self._update_selection_styles()
 
     def _generate_plot_name(self) -> str:
         existing = set()
@@ -4217,9 +4430,8 @@ class MainWindow(QtWidgets.QMainWindow):
         lines: list[str] = []
         for entry in self._proposed_plots_cache:
             name = entry.get("name") or "Plot"
-            series = entry.get("series") or []
-            summary = ", ".join(series) if series else "No series selected"
-            lines.append(f"{name}: {summary}")
+            axis = entry.get("y_axis") or "Auto (from units)"
+            lines.append(f"{name} - Y: {axis}")
         self.lbl_proposed_summary.setText("\n".join(lines))
 
     def _open_proposed_plots_dialog(self):

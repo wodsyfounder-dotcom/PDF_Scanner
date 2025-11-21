@@ -35,6 +35,8 @@ REG_XLSX = EXPORTS / "run_registry.xlsx"
 REG_CSV = EXPORTS / "run_registry.csv"
 OUT_XLSX = EXPORTS / "master.xlsx"
 OUT_CSV = EXPORTS / "master.csv"
+TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
+TERMS_SHEET = "Template"
 
 
 def norm(value: Any) -> str:
@@ -110,6 +112,54 @@ def _read_existing_master() -> Tuple[List[str], List[Dict[str, str]], Optional[f
             pass
 
     return [], [], mtime
+
+
+def _load_schema_units(path: Path = TERMS_XLSX) -> Dict[Tuple[str, str], str]:
+    """Return {(term_label, data_group): units} from the Smart-Snap schema."""
+    mapping: Dict[Tuple[str, str], str] = {}
+    if not path.exists():
+        return mapping
+    try:
+        import pandas as _pd  # type: ignore
+
+        df = _pd.read_excel(path, sheet_name=TERMS_SHEET)
+        df = df.fillna("")
+        for _, row in df.iterrows():
+            term = str(row.get("Term Label") or "").strip()
+            if not term:
+                continue
+            group = str(row.get("Data Group") or "").strip()
+            units = str(row.get("Units") or "").strip()
+            if not units:
+                continue
+            mapping[(term.lower(), group.lower())] = units
+        return mapping
+    except Exception:
+        try:
+            from openpyxl import load_workbook  # type: ignore
+
+            wb = load_workbook(str(path), data_only=True)
+            ws = wb[TERMS_SHEET] if TERMS_SHEET in wb.sheetnames else wb.active
+            header = [str(v or "").strip() for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+            lookup: Dict[str, int] = {name: idx for idx, name in enumerate(header)}
+            def val(row_vals, name: str) -> str:
+                idx = lookup.get(name)
+                if idx is None or idx >= len(row_vals):
+                    return ""
+                return str(row_vals[idx] or "").strip()
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                term = val(row, "Term Label")
+                if not term:
+                    continue
+                group = val(row, "Data Group")
+                units = val(row, "Units")
+                if not units:
+                    continue
+                mapping[(term.lower(), group.lower())] = units
+            wb.close()
+        except Exception:
+            return mapping
+    return mapping
 
 
 def _parse_run_datetime(run_dir: Path) -> datetime:
@@ -222,6 +272,7 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
     canonical (user-entered or previously accepted values).
     """
     base_columns = ["Term Label", "Data Group", "Units", "Min", "Max"]
+    schema_units = _load_schema_units()
 
     # --- Seed from existing master (if present) so user edits persist
     header_existing, rows_existing, master_mtime = _read_existing_master()
@@ -417,20 +468,22 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
 
                 data_group = norm(row.get("data_group"))
                 key = (term_label.lower(), data_group.lower())
-                if key not in term_map:
-                    term_map[key] = {
-                        "term_label": term_label,
-                        "data_group": data_group,
-                        "units": "",
+        if key not in term_map:
+            term_map[key] = {
+                "term_label": term_label,
+                "data_group": data_group,
+                "units": "",
                         "range_min": "",
                         "range_max": "",
                         "values": {},
                     }
                     terms_order.append(key)
-                entry = term_map[key]
-                units = extract_units(row)
-                if units and not entry["units"]:
-                    entry["units"] = units
+        entry = term_map[key]
+        units = extract_units(row)
+        if not units and key in schema_units:
+            units = schema_units.get(key, "")
+        if units and not entry["units"]:
+            entry["units"] = units
                 rng_min = norm(row.get("range_min"))
                 if rng_min and not entry["range_min"]:
                     entry["range_min"] = rng_min

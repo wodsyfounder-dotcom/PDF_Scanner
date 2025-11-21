@@ -1438,6 +1438,19 @@ def read_proposed_plots() -> list[dict]:
     if not isinstance(data, list):
         return []
     cleaned: list[dict] = []
+    def _bool(val: object, default: bool = True) -> bool:
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            txt = val.strip().lower()
+            if txt in ("1", "true", "yes", "y", "on"):
+                return True
+            if txt in ("0", "false", "no", "n", "off"):
+                return False
+        if isinstance(val, (int, float)):
+            return val != 0
+        return default
+
     for entry in data:
         if not isinstance(entry, dict):
             continue
@@ -1455,6 +1468,8 @@ def read_proposed_plots() -> list[dict]:
             "series": series_names,
             "y_axis": y_axis,
             "x_axis": x_axis,
+            "include_min": _bool(entry.get("include_min"), True),
+            "include_max": _bool(entry.get("include_max"), True),
         })
     return cleaned
 
@@ -1480,5 +1495,7 @@ def write_proposed_plots(plots: list[dict]) -> None:
             "series": series_names,
             "y_axis": y_axis,
             "x_axis": x_axis,
+            "include_min": bool(entry.get("include_min", True)),
+            "include_max": bool(entry.get("include_max", True)),
         })
     DEFAULT_PROPOSED_PLOTS_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
