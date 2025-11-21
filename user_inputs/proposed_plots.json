@@ -2,7 +2,7 @@
   {
     "name": "Isp",
     "series": [
-      "Pre Test Functional - Specific Impulse"
+      "LVDT-2 Status - Calibration"
     ],
     "y_axis": "",
     "x_axis": "SN"

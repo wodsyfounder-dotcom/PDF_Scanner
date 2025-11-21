@@ -1253,6 +1253,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1280, 860)
 
         be.ensure_scaffold()
+        # Initialize core OCR settings and language defaults for this session
+        try:
+            env = be.parse_scanner_env()
+            env["OCR_ROW_EPS"] = "15"
+            env["OCR_DPI"] = "500"
+            env.setdefault("EASYOCR_LANGS", "en")
+            be.save_scanner_env(env)
+        except Exception:
+            pass
         self._refresh_plot_series_after_worker = False
         self._auto_update_plot_terms_on_success = False
         self._plot_terms_pending = False
@@ -1577,6 +1586,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._enrich_after_run: bool = False
         self._registry_cache: tuple[list[str], list[list[str]]] | None = None
         self._scan_refresh()
+        # Initial workspace sync on startup (quiet, no master-compile/notifications)
+        try:
+            self._sync_workspace(auto=True)
+        except Exception:
+            pass
         # Periodic auto-sync every few minutes (no popup, no compile)
         try:
             self._sync_timer = QtCore.QTimer(self)
@@ -1766,12 +1780,13 @@ class MainWindow(QtWidgets.QMainWindow):
         ytol_info.setToolTip("Vertical tolerance (pixels) for grouping OCR boxes into a single text line (higher = more lenient)")
         ytol_header.addWidget(ytol_info)
         ytol_header.addStretch()
-        self.lbl_ocr_row_tol = QtWidgets.QLabel("8")
+        self.lbl_ocr_row_tol = QtWidgets.QLabel("15")
         self.lbl_ocr_row_tol.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
         ytol_header.addWidget(self.lbl_ocr_row_tol)
         ytol_layout.addLayout(ytol_header)
         self.sld_ocr_row_tol = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.sld_ocr_row_tol.setRange(2, 40)
+        self.sld_ocr_row_tol.setValue(15)
         self.sld_ocr_row_tol.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -1806,13 +1821,14 @@ class MainWindow(QtWidgets.QMainWindow):
         dpi_info.setToolTip("Higher DPI may improve OCR accuracy at the cost of speed")
         dpi_header.addWidget(dpi_info)
         dpi_header.addStretch()
-        self.lbl_dpi_val = QtWidgets.QLabel("763")
+        self.lbl_dpi_val = QtWidgets.QLabel("500")
         self.lbl_dpi_val.setStyleSheet("color: #111827; font-size: 14px; font-weight: 600;")
         dpi_header.addWidget(self.lbl_dpi_val)
         dpi_layout.addLayout(dpi_header)
         self.sld_ocr_dpi = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.sld_ocr_dpi.setRange(500, 1000)
-        self.sld_ocr_dpi.setSingleStep(25)
+        self.sld_ocr_dpi.setRange(100, 1000)
+        self.sld_ocr_dpi.setSingleStep(100)
+        self.sld_ocr_dpi.setValue(500)
         self.sld_ocr_dpi.setStyleSheet("""
             QSlider::groove:horizontal {
                 height: 6px;
@@ -1866,61 +1882,11 @@ class MainWindow(QtWidgets.QMainWindow):
         debug_layout.addWidget(self.chk_logging)
         ls.addWidget(debug_container)
 
-        # OCR Language
-        lang_container = QtWidgets.QWidget()
-        lang_layout = QtWidgets.QVBoxLayout(lang_container)
-        lang_layout.setContentsMargins(0, 0, 0, 0)
-        lang_layout.setSpacing(6)
-        lang_label = QtWidgets.QLabel("OCR Language")
-        lang_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
-        lang_layout.addWidget(lang_label)
-        # Language display mapping (user-friendly names)
-        self._lang_display_to_code = {
-            "English": "en",
-            "French": "fr",
-            "German": "de",
-            "Spanish": "es",
-        }
-        self._lang_code_to_display = {v: k for k, v in self._lang_display_to_code.items()}
-        self.cmb_lang = QtWidgets.QComboBox()
-        self.cmb_lang.setStyleSheet("""
-            QComboBox {
-                background: #ffffff;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #374151;
-                font-size: 13px;
-                min-height: 20px;
-            }
-            QComboBox:hover {
-                border-color: #9ca3af;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-            QComboBox QAbstractItemView {
-                color: #374151;
-                background: #ffffff;
-                selection-background-color: #dbeafe;
-                border: 1px solid #d1d5db;
-                padding: 4px;
-            }
-        """)
-        self.cmb_lang.addItems(list(self._lang_display_to_code.keys()))
-        self.cmb_lang.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-        # Enable scrollbar for dropdown if needed
-        self.cmb_lang.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        lang_layout.addWidget(self.cmb_lang)
-        ls.addWidget(lang_container)
-
         # Persist on change
         self.cmb_ocr_mode.currentTextChanged.connect(self._persist_settings_from_panel)
         self.sld_ocr_row_tol.valueChanged.connect(self._on_ocr_row_tol_slider)
         self.sld_ocr_dpi.valueChanged.connect(self._on_dpi_slider)
         self.chk_logging.stateChanged.connect(self._persist_settings_from_panel)
-        self.cmb_lang.currentTextChanged.connect(self._persist_settings_from_panel)
 
         grid.addWidget(grp_env, 0, 0, 1, 2)
         grid.addWidget(grp_set, 1, 0, 1, 2)
@@ -3343,6 +3309,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Guard against duplicate dialogs
         if getattr(self, "_dlg_open_outdated", False):
             return
+        # Always refresh workspace sync (and master workbook on manual invocations)
+        try:
+            # Treat button-driven opens as manual syncs so the registry/master
+            # stay current. Callers can pass auto=True to suppress manual extras.
+            self._sync_workspace(auto=auto)
+        except Exception:
+            pass
         self._dlg_open_outdated = True
         try:
             details = getattr(self, "_sync_details", None) or []
@@ -3363,12 +3336,16 @@ class MainWindow(QtWidgets.QMainWindow):
             v.setSpacing(16)
 
             # Title and description
-            title = QtWidgets.QLabel("Select documents to process")
+            title = QtWidgets.QLabel("Workspace Data Packages")
             title.setStyleSheet("font-size: 16px; font-weight: 600; color: #111827;")
             v.addWidget(title)
 
-            desc = QtWidgets.QLabel("Check the boxes to select which documents to extract and update")
-            desc.setStyleSheet("font-size: 13px; color: #6b7280;")
+            desc = QtWidgets.QLabel(
+                "Review EIDAT data packages and select which EIDPs to (re)process.\n"
+                "Out-of-date items include new PDFs, modified PDFs, or EIDPs missing terms that were added to the schema."
+            )
+            desc.setStyleSheet("font-size: 13px; color: #4b5563;")
+            desc.setWordWrap(True)
             v.addWidget(desc)
 
             # Toolbar with Select All/None buttons
@@ -3451,13 +3428,24 @@ class MainWindow(QtWidgets.QMainWindow):
             v.addWidget(tabs, 1)
 
             # Table with checkboxes (Out-of-Date)
-            cols = ["Select", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
+            cols = [
+                "Select",
+                "Serial",
+                "Status Reason",
+                "Missing Schema Terms?",
+                "PDF Path",
+                "Last Run",
+                "PDF Modified",
+                "Schema Version Time",
+            ]
             tbl = QtWidgets.QTableWidget(0, len(cols))
             tbl.setHorizontalHeaderLabels(cols)
             tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
             tbl.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
             tbl.setAlternatingRowColors(True)
             tbl.verticalHeader().setVisible(False)
+            # Tables in this popup are read-only; selection controls which EIDPs to run.
+            tbl.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
 
             # Consistent styling matching Terms Editor
             tbl.setStyleSheet("""
@@ -3517,21 +3505,46 @@ class MainWindow(QtWidgets.QMainWindow):
             layout_outdated.setContentsMargins(0, 0, 0, 0)
             layout_outdated.addWidget(tbl)
 
-            # Table for all EIDPs (grouped by program)
-            cols_all = ["Select", "Program", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
+            # Table for all EIDPs (grouped by program) with a database-style layout
+            cols_all = [
+                "Select",
+                "Program",
+                "Serial",
+                "Status",
+                "PDF Path",
+                "Last Run",
+                "PDF Modified",
+                "Schema Version Time",
+            ]
             tbl_all = QtWidgets.QTableWidget(0, len(cols_all))
             tbl_all.setHorizontalHeaderLabels(cols_all)
             tbl_all.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
             tbl_all.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
             tbl_all.setAlternatingRowColors(True)
             tbl_all.verticalHeader().setVisible(False)
+            tbl_all.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
             tbl_all.setStyleSheet(tbl.styleSheet())
 
+            # All EIDPs tab header with program filter/search
             layout_all = QtWidgets.QVBoxLayout(tab_all)
-            layout_all.setContentsMargins(0, 0, 0, 0)
-            layout_all.addWidget(tbl_all)
+            layout_all.setContentsMargins(8, 8, 8, 8)
 
-            # Populate Out-of-Date table with checkboxes
+            filter_row = QtWidgets.QHBoxLayout()
+            filter_row.setSpacing(8)
+            lbl_filter = QtWidgets.QLabel("Filter by Program / Serial:")
+            lbl_filter.setStyleSheet("font-size: 12px; color: #4b5563;")
+            ed_filter = QtWidgets.QLineEdit()
+            ed_filter.setPlaceholderText("Type program name, serial, or path text...")
+            ed_filter.setStyleSheet(
+                "QLineEdit { padding: 6px 10px; border-radius: 4px; border: 1px solid #d1d5db; font-size: 12px; }"
+            )
+            filter_row.addWidget(lbl_filter)
+            filter_row.addWidget(ed_filter, 1)
+            layout_all.addLayout(filter_row)
+
+            layout_all.addWidget(tbl_all, 1)
+
+            # Populate Out-of-Date table with checkboxes and schema-term indicator
             for r, d in enumerate(rows_outdated):
                 tbl.insertRow(r)
 
@@ -3568,13 +3581,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 # Add data to other columns
                 tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(d.get("serial_component", "")))
-                tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(d.get("reason", "")))
-                tbl.setItem(r, 3, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
-                tbl.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
-                tbl.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
-                tbl.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
+                reason = d.get("reason", "")
+                reason_item = QtWidgets.QTableWidgetItem(reason)
+                tbl.setItem(r, 2, reason_item)
 
-            # Populate All-EIDP table with checkboxes (initially unchecked)
+                # Indicator: highlight EIDPs that are missing schema terms
+                missing_terms = "Yes" if reason == "terms_newer" else ""
+                missing_item = QtWidgets.QTableWidgetItem(missing_terms)
+                if missing_terms:
+                    missing_item.setForeground(QtGui.QBrush(QtGui.QColor("#b91c1c")))
+                tbl.setItem(r, 3, missing_item)
+
+                tbl.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
+                tbl.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
+                tbl.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
+                tbl.setItem(r, 7, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
+
+            # Populate All-EIDP table with checkboxes (initially unchecked) and a database-style layout
             for r, d in enumerate(rows_all):
                 tbl_all.insertRow(r)
 
@@ -3610,7 +3633,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 program = d.get("program_name", "") or "(Unknown Program)"
                 tbl_all.setItem(r, 1, QtWidgets.QTableWidgetItem(program))
                 tbl_all.setItem(r, 2, QtWidgets.QTableWidgetItem(d.get("serial_component", "")))
-                tbl_all.setItem(r, 3, QtWidgets.QTableWidgetItem(d.get("reason", "")))
+
+                status = d.get("reason", "")
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if status in ("new", "pdf_newer", "terms_newer"):
+                    status_item.setForeground(QtGui.QBrush(QtGui.QColor("#b45309")))
+                tbl_all.setItem(r, 3, status_item)
+
                 tbl_all.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
                 tbl_all.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
                 tbl_all.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
@@ -3624,14 +3653,34 @@ class MainWindow(QtWidgets.QMainWindow):
             tbl_all.setSortingEnabled(True)
             tbl_all.sortItems(1)
 
+            # Simple text filter for the "All Data Packages" tab
+            def _apply_all_filter(text: str):
+                text = text.strip().lower()
+                for row in range(tbl_all.rowCount()):
+                    # Combine Program, Serial, and PDF path into a searchable string
+                    program_item = tbl_all.item(row, 1)
+                    serial_item = tbl_all.item(row, 2)
+                    pdf_item = tbl_all.item(row, 4)
+                    combined = " ".join(
+                        [
+                            (program_item.text() if program_item else ""),
+                            (serial_item.text() if serial_item else ""),
+                            (pdf_item.text() if pdf_item else ""),
+                        ]
+                    ).lower()
+                    match = (text in combined) if text else True
+                    tbl_all.setRowHidden(row, not match)
+
+            ed_filter.textChanged.connect(_apply_all_filter)
+
             # Update Select All/None to work with checkbox widgets on the active tab
             def _current_table_and_pdf_col():
-                # Determine which table is active and the index of the PDF column
+                # Determine which table is active and the index of the PDF path column
                 current = tabs.currentWidget()
                 if current is tab_outdated:
-                    return tbl, cols.index("PDF")
+                    return tbl, cols.index("PDF Path")
                 if current is tab_all:
-                    return tbl_all, cols_all.index("PDF")
+                    return tbl_all, cols_all.index("PDF Path")
                 return None, -1
 
             def _set_all_checkboxes(checked: bool):
@@ -3780,7 +3829,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.cmb_ocr_mode.addItem(display)
                 self.cmb_ocr_mode.setCurrentText(display)
             # OCR row Y tolerance (pixels)
-            row_eps = env.get("OCR_ROW_EPS", "8")
+            row_eps = env.get("OCR_ROW_EPS", "15")
             try:
                 eps_val = float(row_eps)
                 eps_int = int(max(2, min(40, round(eps_val))))
@@ -3790,10 +3839,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.lbl_ocr_row_tol.setText(str(eps_int))
             except Exception:
                 pass
-            # OCR DPI (500-1000)
+            # OCR DPI (100-1000)
             try:
                 dpi = int(env.get("OCR_DPI", "500"))
-                dpi = max(500, min(1000, dpi))
+                dpi = max(100, min(1000, dpi))
                 self.sld_ocr_dpi.blockSignals(True)
                 self.sld_ocr_dpi.setValue(dpi)
                 self.sld_ocr_dpi.blockSignals(False)
@@ -3804,17 +3853,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.chk_logging.blockSignals(True)
             self.chk_logging.setChecked(enable_logging)
             self.chk_logging.blockSignals(False)
-            lang_code = env.get("EASYOCR_LANGS", env.get("OCR_LANGS", "en")).split(",")[0].strip() or "en"
-            # Map code -> display name
-            display_lang = (
-                self._lang_code_to_display.get(lang_code, lang_code)
-                if hasattr(self, "_lang_code_to_display")
-                else lang_code
-            )
-            # Ensure present and set
-            if display_lang not in [self.cmb_lang.itemText(i) for i in range(self.cmb_lang.count())]:
-                self.cmb_lang.addItem(display_lang)
-            self.cmb_lang.setCurrentText(display_lang)
         except Exception:
             pass
 
@@ -4132,6 +4170,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_dpi_slider(self, value: int):
         try:
+            snapped = max(100, min(1000, int(round(value / 100.0) * 100)))
+            if snapped != value:
+                self.sld_ocr_dpi.blockSignals(True)
+                self.sld_ocr_dpi.setValue(snapped)
+                self.sld_ocr_dpi.blockSignals(False)
+                value = snapped
             self.lbl_dpi_val.setText(str(value))
         except Exception:
             pass
@@ -4146,13 +4190,8 @@ class MainWindow(QtWidgets.QMainWindow):
             env["OCR_DPI"] = str(int(self.sld_ocr_dpi.value()))
             # QUIET is inverse of logging toggle
             env["QUIET"] = "0" if self.chk_logging.isChecked() else "1"
-            # Map display name -> language code for env
-            disp_lang = self.cmb_lang.currentText().strip()
-            env["EASYOCR_LANGS"] = (
-                self._lang_display_to_code.get(disp_lang, disp_lang)
-                if hasattr(self, "_lang_display_to_code")
-                else disp_lang
-            )
+            # OCR language is fixed to English
+            env["EASYOCR_LANGS"] = "en"
             be.save_scanner_env(env)
             self.status_bar.showMessage("Settings saved", 2000)
         except Exception:

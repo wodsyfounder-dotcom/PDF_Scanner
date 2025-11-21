@@ -175,13 +175,31 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
         return ""
 
     def extract_value(entry: Dict[str, Any]) -> Optional[str]:
+        """Return a normalized value for a term.
+
+        If the extractor explicitly failed to find a value (found == False or
+        an error_reason is present), return 'N/A' so the master workbook
+        distinguishes between "not present in this EIDP" and "not yet run".
+        """
+        # Prefer any concrete extracted value
         for key in ("extracted_value", "number", "text", "string", "value"):
             if key in entry:
                 val = entry.get(key)
                 if val is None:
                     continue
                 text = norm(val)
-                return text
+                if text != "":
+                    return text
+        # No concrete value: if the extractor ran but found nothing, mark N/A
+        try:
+            found_flag = entry.get("found", None)
+        except Exception:
+            found_flag = None
+        if found_flag is False:
+            return "N/A"
+        err = norm(entry.get("error_reason"))
+        if err:
+            return "N/A"
         return None
 
     for sn, (rf, registry_meta) in last_for_sn.items():

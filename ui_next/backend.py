@@ -447,6 +447,131 @@ def _parse_dt(s: str) -> Optional[datetime]:
     return None
 
 
+def _load_schema_term_keys(terms_path: Path) -> set[tuple[str, str]]:
+    """Return set of (term_label, data_group) keys defined in the schema.
+
+    Keys are lowercased to allow case-insensitive comparison. If the schema
+    cannot be read, an empty set is returned and sync falls back to registry
+    and file timestamps only.
+    """
+    keys: set[tuple[str, str]] = set()
+    try:
+        if not terms_path.exists():
+            return keys
+        suffix = terms_path.suffix.lower()
+        # Excel-based schema (preferred)
+        if suffix in (".xlsx", ".xlsm", ".xls"):
+            try:
+                import pandas as _pd  # type: ignore
+                try:
+                    df = _pd.read_excel(terms_path, sheet_name=TERMS_TEMPLATE_SHEET)
+                except Exception:
+                    df = _pd.read_excel(terms_path)
+                for _, row in df.iterrows():
+                    label = str(row.get("Term Label") or "").strip()
+                    group = str(row.get("Data Group") or "").strip()
+                    if not label and not group:
+                        continue
+                    keys.add((label.lower(), group.lower()))
+                return keys
+            except Exception:
+                # Fall back to openpyxl if pandas or Excel stack isn't available
+                try:
+                    import openpyxl as _ox  # type: ignore
+                    wb = _ox.load_workbook(str(terms_path), read_only=True, data_only=True)
+                    ws = wb[TERMS_TEMPLATE_SHEET] if TERMS_TEMPLATE_SHEET in wb.sheetnames else wb.active
+                    rows = list(ws.iter_rows(values_only=True))
+                    if not rows:
+                        return keys
+                    headers = [str(v) if v is not None else "" for v in rows[0]]
+                    try:
+                        label_idx = headers.index("Term Label")
+                    except ValueError:
+                        label_idx = None
+                    try:
+                        group_idx = headers.index("Data Group")
+                    except ValueError:
+                        group_idx = None
+                    if label_idx is None and group_idx is None:
+                        return keys
+                    for r in rows[1:]:
+                        label = ""
+                        group = ""
+                        if label_idx is not None and label_idx < len(r) and r[label_idx] is not None:
+                            label = str(r[label_idx]).strip()
+                        if group_idx is not None and group_idx < len(r) and r[group_idx] is not None:
+                            group = str(r[group_idx]).strip()
+                        if not label and not group:
+                            continue
+                        keys.add((label.lower(), group.lower()))
+                    return keys
+                except Exception:
+                    return keys
+        # CSV schema (or other text-based formats)
+        try:
+            with terms_path.open("r", encoding="utf-8", newline="") as f:
+                r = _csv.DictReader(f)
+                for row in r:
+                    label = str(
+                        row.get("Term Label")
+                        or row.get("term_label")
+                        or row.get("Term")
+                        or row.get("term")
+                        or ""
+                    ).strip()
+                    group = str(row.get("Data Group") or row.get("data_group") or "").strip()
+                    if not label and not group:
+                        continue
+                    keys.add((label.lower(), group.lower()))
+        except Exception:
+            return keys
+    except Exception:
+        return set()
+    return keys
+
+
+def _load_run_terms_map(reg_map: dict[str, dict[str, str]]) -> dict[str, set[tuple[str, str]]]:
+    """Return mapping {serial_component: {(term_label, data_group), ...}} from scan_results.json.
+
+    Only considers rows for the specific serial in each registry entry. Missing or
+    unreadable run folders / results are silently ignored (callers can treat those
+    serials as "not yet run" or out-of-sync).
+    """
+    out: dict[str, set[tuple[str, str]]] = {}
+    for serial, info in reg_map.items():
+        try:
+            run_dir = Path(info.get("run_folder", ""))
+        except Exception:
+            continue
+        if not run_dir or not run_dir.exists():
+            continue
+        path = run_dir / "scan_results.json"
+        if not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(data, list):
+            continue
+        keys: set[tuple[str, str]] = set()
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            row_id = (str(row.get("serial_component") or row.get("serial_number") or "")).strip()
+            if row_id and row_id != serial:
+                continue
+            term_label = str(row.get("term_label") or row.get("term") or "").strip()
+            if not term_label:
+                continue
+            data_group = str(row.get("data_group") or "").strip()
+            keys.add((term_label.lower(), data_group.lower()))
+        if keys:
+            out[serial] = keys
+    return out
+
+
 def _read_run_registry_map() -> dict[str, dict[str, str]]:
     """Return mapping {serial_component: {run_date, run_folder, program_name, vehicle_number}}.
 
@@ -642,13 +767,24 @@ def compute_workspace_sync(repo_root: Optional[Path] = None, terms_path: Optiona
     """Compute workspace sync status.
 
     Classifies PDFs in repo_root (recursively) as new/out-of-date/up-to-date by
-    comparing run_registry run_date and the mtime of the PDF and terms.
+    comparing:
+      - run_registry run_date vs PDF modification time, and
+      - schema-defined (Term Label, Data Group) pairs vs the terms actually
+        present in the latest scan_results.json for each serial.
+
+    A PDF/serial is considered out-of-sync for "terms" only when the schema
+    defines at least one (Term Label, Data Group) pair that has never been
+    recorded for that serial in its run outputs. Merely re-saving the schema
+    without adding new terms does not mark items as out-of-sync.
     """
     root = Path(repo_root) if repo_root else DEFAULT_PDF_DIR
     terms = Path(terms_path) if terms_path else DEFAULT_TERMS_XLSX
     # Ensure registry reflects run_data contents before comparing
     reg = ensure_run_registry_consistent()
     t_mtime = datetime.fromtimestamp(terms.stat().st_mtime) if terms.exists() else None
+    # Schema term keys and per-serial terms observed in run outputs
+    schema_keys = _load_schema_term_keys(terms)
+    run_terms_map = _load_run_terms_map(reg) if schema_keys else {}
 
     pdfs = [p for p in root.rglob("*.pdf") if p.is_file()]
     details: list[dict[str, str]] = []
@@ -659,19 +795,38 @@ def compute_workspace_sync(repo_root: Optional[Path] = None, terms_path: Optiona
             info = reg.get(serial)
             run_dt = _parse_dt(info.get("run_date", "") if info else "")
             pdf_dt = datetime.fromtimestamp(p.stat().st_mtime)
+
             reason = "up_to_date"
-            if not run_dt:
+            # No registry entry or unusable run date -> treat as "not yet run"
+            if not info or not run_dt:
                 reason = "new"
                 new_count += 1
             else:
+                # Registry knows about this serial; check PDF freshness first
                 if pdf_dt > run_dt:
                     reason = "pdf_newer"
                     outdated_pdf += 1
-                elif t_mtime and t_mtime > run_dt:
-                    reason = "terms_newer"
-                    outdated_terms += 1
                 else:
-                    up_to_date += 1
+                    # If we have a readable schema, compare schema term keys to the
+                    # keys present in this serial's scan_results.json. Missing keys
+                    # mean the schema has terms that have never been extracted for
+                    # this EIDP yet.
+                    needs_terms = False
+                    if schema_keys:
+                        have_keys = run_terms_map.get(serial)
+                        if not have_keys:
+                            # No run outputs or unreadable results for this serial
+                            needs_terms = True
+                        else:
+                            missing = schema_keys.difference(have_keys)
+                            if missing:
+                                needs_terms = True
+                    if needs_terms:
+                        reason = "terms_newer"
+                        outdated_terms += 1
+                    else:
+                        up_to_date += 1
+
             details.append({
                 "pdf": str(p),
                 "serial_component": serial,
