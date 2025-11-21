@@ -3346,7 +3346,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dlg_open_outdated = True
         try:
             details = getattr(self, "_sync_details", None) or []
-            rows = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
+            # Out-of-date rows (existing behaviour) and full list for manual re-runs
+            rows_outdated = [d for d in details if d.get("reason") in ("new", "pdf_newer", "terms_newer")]
+            rows_all = list(details)
             dlg = QtWidgets.QDialog(self)
             dlg.setWindowTitle("View Data Package List and Update EIDAT Database")
             dlg.resize(1100, 600)
@@ -3410,7 +3412,45 @@ class MainWindow(QtWidgets.QMainWindow):
             toolbar.addStretch(1)
             v.addLayout(toolbar)
 
-            # Table with checkboxes
+            # Tabs for Out-of-Date vs All EIDPs
+            tabs = QtWidgets.QTabWidget()
+            tabs.setTabPosition(QtWidgets.QTabWidget.TabPosition.North)
+            tabs.setStyleSheet("""
+                QTabWidget::pane {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    margin-top: 8px;
+                    background: #ffffff;
+                }
+                QTabBar::tab {
+                    padding: 8px 16px;
+                    margin-right: 4px;
+                    border: 1px solid #e5e7eb;
+                    border-bottom: none;
+                    border-top-left-radius: 6px;
+                    border-top-right-radius: 6px;
+                    background: #f3f4f6;
+                    color: #4b5563;
+                    font-size: 12px;
+                    font-weight: 500;
+                }
+                QTabBar::tab:selected {
+                    background: #2563eb;
+                    color: #ffffff;
+                    border-color: #2563eb;
+                }
+                QTabBar::tab:hover {
+                    background: #e5e7eb;
+                }
+            """)
+            tab_outdated = QtWidgets.QWidget()
+            tab_all = QtWidgets.QWidget()
+            tabs.addTab(tab_outdated, "Out-of-Date Only")
+            tabs.addTab(tab_all, "All Data Packages")
+
+            v.addWidget(tabs, 1)
+
+            # Table with checkboxes (Out-of-Date)
             cols = ["Select", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
             tbl = QtWidgets.QTableWidget(0, len(cols))
             tbl.setHorizontalHeaderLabels(cols)
@@ -3472,10 +3512,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 }
             """)
 
-            v.addWidget(tbl, 1)
+            # Place out-of-date table inside first tab
+            layout_outdated = QtWidgets.QVBoxLayout(tab_outdated)
+            layout_outdated.setContentsMargins(0, 0, 0, 0)
+            layout_outdated.addWidget(tbl)
 
-            # Populate table with checkboxes
-            for r, d in enumerate(rows):
+            # Table for all EIDPs (grouped by program)
+            cols_all = ["Select", "Program", "Serial", "Reason", "PDF", "Run Date", "PDF Modified", "Terms Modified"]
+            tbl_all = QtWidgets.QTableWidget(0, len(cols_all))
+            tbl_all.setHorizontalHeaderLabels(cols_all)
+            tbl_all.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+            tbl_all.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+            tbl_all.setAlternatingRowColors(True)
+            tbl_all.verticalHeader().setVisible(False)
+            tbl_all.setStyleSheet(tbl.styleSheet())
+
+            layout_all = QtWidgets.QVBoxLayout(tab_all)
+            layout_all.setContentsMargins(0, 0, 0, 0)
+            layout_all.addWidget(tbl_all)
+
+            # Populate Out-of-Date table with checkboxes
+            for r, d in enumerate(rows_outdated):
                 tbl.insertRow(r)
 
                 # Create checkbox widget for Select column
@@ -3517,13 +3574,72 @@ class MainWindow(QtWidgets.QMainWindow):
                 tbl.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
                 tbl.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
 
+            # Populate All-EIDP table with checkboxes (initially unchecked)
+            for r, d in enumerate(rows_all):
+                tbl_all.insertRow(r)
+
+                checkbox = QtWidgets.QCheckBox()
+                checkbox.setChecked(False)
+                checkbox.setStyleSheet("""
+                    QCheckBox {
+                        margin-left: 8px;
+                    }
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 3px;
+                        border: 2px solid #d1d5db;
+                        background: #ffffff;
+                    }
+                    QCheckBox::indicator:hover {
+                        border-color: #2563eb;
+                    }
+                    QCheckBox::indicator:checked {
+                        background: #2563eb;
+                        border-color: #2563eb;
+                    }
+                """)
+
+                checkbox_widget = QtWidgets.QWidget()
+                checkbox_layout = QtWidgets.QHBoxLayout(checkbox_widget)
+                checkbox_layout.addWidget(checkbox)
+                checkbox_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                tbl_all.setCellWidget(r, 0, checkbox_widget)
+
+                program = d.get("program_name", "") or "(Unknown Program)"
+                tbl_all.setItem(r, 1, QtWidgets.QTableWidgetItem(program))
+                tbl_all.setItem(r, 2, QtWidgets.QTableWidgetItem(d.get("serial_component", "")))
+                tbl_all.setItem(r, 3, QtWidgets.QTableWidgetItem(d.get("reason", "")))
+                tbl_all.setItem(r, 4, QtWidgets.QTableWidgetItem(d.get("pdf", "")))
+                tbl_all.setItem(r, 5, QtWidgets.QTableWidgetItem(d.get("run_date", "")))
+                tbl_all.setItem(r, 6, QtWidgets.QTableWidgetItem(d.get("pdf_mtime", "")))
+                tbl_all.setItem(r, 7, QtWidgets.QTableWidgetItem(d.get("terms_mtime", "")))
+
             tbl.resizeColumnsToContents()
             tbl.setColumnWidth(0, 80)  # Fixed width for checkbox column
 
-            # Update Select All/None to work with checkbox widgets
+            tbl_all.resizeColumnsToContents()
+            tbl_all.setColumnWidth(0, 80)
+            tbl_all.setSortingEnabled(True)
+            tbl_all.sortItems(1)
+
+            # Update Select All/None to work with checkbox widgets on the active tab
+            def _current_table_and_pdf_col():
+                # Determine which table is active and the index of the PDF column
+                current = tabs.currentWidget()
+                if current is tab_outdated:
+                    return tbl, cols.index("PDF")
+                if current is tab_all:
+                    return tbl_all, cols_all.index("PDF")
+                return None, -1
+
             def _set_all_checkboxes(checked: bool):
-                for r in range(tbl.rowCount()):
-                    widget = tbl.cellWidget(r, 0)
+                tbl_active, _ = _current_table_and_pdf_col()
+                if not tbl_active:
+                    return
+                for r in range(tbl_active.rowCount()):
+                    widget = tbl_active.cellWidget(r, 0)
                     if widget:
                         checkbox = widget.findChild(QtWidgets.QCheckBox)
                         if checkbox:
@@ -3589,17 +3705,26 @@ class MainWindow(QtWidgets.QMainWindow):
             btns.addWidget(btn_close)
             v.addLayout(btns)
 
-            # Update run functions to work with checkbox widgets
-            def _run_selected():
+            # Helper to collect checked paths from the active tab
+            def _collect_checked_paths() -> list[Path]:
+                tbl_active, pdf_col = _current_table_and_pdf_col()
                 paths: list[Path] = []
-                for r in range(tbl.rowCount()):
-                    widget = tbl.cellWidget(r, 0)
+                if not tbl_active or pdf_col < 0:
+                    return paths
+                for r in range(tbl_active.rowCount()):
+                    widget = tbl_active.cellWidget(r, 0)
                     if widget:
                         checkbox = widget.findChild(QtWidgets.QCheckBox)
                         if checkbox and checkbox.isChecked():
-                            p = tbl.item(r, 3).text() if tbl.item(r, 3) else ""
+                            item = tbl_active.item(r, pdf_col)
+                            p = item.text() if item else ""
                             if p:
                                 paths.append(Path(p))
+                return paths
+
+            # Update run functions to work with tabbed tables
+            def _run_selected():
+                paths = _collect_checked_paths()
                 if not paths:
                     QtWidgets.QMessageBox.information(dlg, "Nothing selected", "Choose at least one EIDP to run.")
                     return
@@ -3612,7 +3737,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 dlg.accept()
 
             def _run_all():
-                all_paths = [Path(d.get("pdf")) for d in rows if d.get("pdf")] if rows else []
+                all_paths = [Path(d.get("pdf")) for d in rows_outdated if d.get("pdf")] if rows_outdated else []
                 if not all_paths:
                     QtWidgets.QMessageBox.information(dlg, "Nothing to run", "No out-of-date EIDPs found.")
                     return
