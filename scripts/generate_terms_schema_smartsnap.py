@@ -23,6 +23,7 @@ HEADERS = [
     "Range (min)",
     "Range (max)",
     "Format",
+    "Alt Search",
     "Smart Position",
     "OCR_Row_EPS",
     "DPI",
@@ -94,11 +95,11 @@ def main() -> None:
 
     # Example rows (Smart Snap mode)
     # Column order: Data Group, Term Label, Smart Snap Type, Term, Secondary Term, Pages, GroupAfter, GroupBefore,
-    #               Units, Range (min), Range (max), Format, Smart Position, OCR_Row_EPS, DPI
+    #               Units, Range (min), Range (max), Format, Alt Search, Smart Position, OCR_Row_EPS, DPI
     examples = [
-        ["Metadata", "Title", "title", "title", "", "1", "", "", "", "", "", "", "", "", ""],
-        ["Performance", "Pre-Test ISP", "number", "isp", "", "1", "Pre Test", "Post Test", "sec", "40", "44", "", "", "", ""],
-        ["Tables", "Proof Load", "number", "proof load", "", "2", "", "", "psi", "", "", "", "", "12.0", "850"],
+        ["Metadata", "Title", "title", "title", "", "1", "", "", "", "", "", "", "", "", "", ""],
+        ["Performance", "Pre-Test ISP", "number", "isp", "", "1", "Pre Test", "Post Test", "sec", "40", "44", "", "", "", "", ""],
+        ["Tables", "Proof Load", "number", "proof load", "", "2", "", "", "psi", "", "", "", "", "", "12.0", "850"],
     ]
     for row in examples:
         ws.append(row)
@@ -122,6 +123,7 @@ def main() -> None:
         "Search Configuration:",
         " - Smart Snap Type: Hint for extraction type - 'number', 'date', 'time', 'title', or blank for auto-detect.",
         " - GroupAfter / GroupBefore: Limit search to text appearing after/before these anchor terms.",
+        " - Alt Search: Optional vertical search direction for numeric Smart Snap terms — 'below' or 'above'.",
         "",
         "Validation & Scoring:",
         " - Units: Expected units (e.g., 'psi', 'sec', 'kg').",

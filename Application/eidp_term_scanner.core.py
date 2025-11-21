@@ -307,6 +307,8 @@ class TermSpec:
     secondary_term: Optional[str] = None
     # Optional positional pick (1-based) of the Nth value to the right (smart mode only)
     smart_position: Optional[int] = None
+    # Optional alternate row search direction for Smart Snap numeric fields: 'above' or 'below'
+    alt_search: Optional[str] = None
     # Per-term OCR settings (override global defaults)
     ocr_row_eps: Optional[float] = None  # OCR line Y tolerance for grouping text into rows
     dpi: Optional[int] = None            # DPI for OCR rendering
@@ -334,8 +336,6 @@ class MatchResult:
     smart_snap_context: Optional[str] = None
     smart_snap_type: Optional[str] = None
     # Smart Snap extras
-    smart_line_min: Optional[str] = None
-    smart_line_max: Optional[str] = None
     smart_conflict: Optional[str] = None
     smart_secondary_found: Optional[bool] = None
     # Optional breakdown of numeric candidate scoring components (smart mode)
@@ -352,6 +352,15 @@ class MatchResult:
     debug_label_normalized: Optional[str] = None
     debug_anchor_span: Optional[str] = None
     debug_extracted_term: Optional[str] = None  # The actual term/label string matched in the document
+    # Debug fields for group_after/group_before behavior
+    debug_group_after_page: Optional[int] = None
+    debug_group_after_text: Optional[str] = None
+    debug_group_before_page: Optional[int] = None
+    debug_group_before_text: Optional[str] = None
+    # True when group_after/group_before anchors were detected and used to
+    # constrain the search region; False when bounds were requested but could
+    # not be honored (anchors not found). None when no bounds were requested.
+    debug_group_region_applied: Optional[bool] = None
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -407,6 +416,25 @@ def _format_score_breakdown(breakdown: Optional[Dict[str, Optional[float]]]) -> 
         new_key = f"{key} ({desc})" if key != "total" else key
         result[new_key] = value
     return result
+
+
+def _meta_to_json_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a JSON-friendly view of a metadata row without duplicated fields.
+
+    When grouped views (pdf_info/user_inputs/match_info/smart_info/debug_info)
+    are present, emit only those groups; otherwise, return the row as-is.
+    """
+    if not isinstance(row, dict):
+        return row
+    if all(k in row for k in ("pdf_info", "user_inputs", "match_info", "smart_info", "debug_info")):
+        return {
+            "pdf_info": row.get("pdf_info") or {},
+            "user_inputs": row.get("user_inputs") or {},
+            "match_info": row.get("match_info") or {},
+            "smart_info": row.get("smart_info") or {},
+            "debug_info": row.get("debug_info") or {},
+        }
+    return row
 
 
 def numeric_only(value: Optional[str]) -> Optional[str]:
@@ -636,6 +664,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                         smart_snap_type = None
                         secondary_term = None
                         smart_position: Optional[int] = None
+                        alt_search = None
                         data_group = None
                         term_label = None
                         for k, v in row.items():
@@ -695,6 +724,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                         smart_position = None
                                 except Exception:
                                     smart_position = None
+                            if k and k.strip().lower() in ("alt_search", "alt search", "altsearch", "smart_alt_search", "smart alt search"):
+                                alt_search = ((v or "").strip() or None)
                         if term:
                             result.append(TermSpec(term=term,
                                                    pages=parse_page_ranges(pages_str),
@@ -716,7 +747,8 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                                    group_before=group_before,
                                                    smart_snap_type=smart_snap_type,
                                                    secondary_term=secondary_term,
-                                                   smart_position=smart_position))
+                                                   smart_position=smart_position,
+                                                   alt_search=alt_search))
                     return result
 
             last_error: Optional[UnicodeDecodeError] = None
@@ -811,6 +843,13 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     smart_type_col = col_for("smart_snap_type") or col_for("smart") or col_for("smart snap type") or col_for("smart_snap")
     secondary_col = col_for("secondary_term") or col_for("secondary") or col_for("secondary label") or col_for("secondary_label")
     smart_pos_col = col_for("smart_position") or col_for("smart position") or col_for("smartpos")
+    alt_search_col = (
+        col_for("alt_search")
+        or col_for("alt search")
+        or col_for("altsearch")
+        or col_for("smart_alt_search")
+        or col_for("smart alt search")
+    )
     ocr_row_eps_col = col_for("ocr_row_eps") or col_for("ocr row eps") or col_for("ocr_row_tolerance") or col_for("row_eps")
     dpi_col = col_for("dpi") or col_for("ocr_dpi") or col_for("ocr dpi")
     if not term_col:
@@ -862,6 +901,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
         smart_type_val = row[smart_type_col - 1].value if smart_type_col else None
         sec_val = row[secondary_col - 1].value if secondary_col else None
         smart_pos_val = row[smart_pos_col - 1].value if smart_pos_col else None
+        alt_search_val = row[alt_search_col - 1].value if alt_search_col else None
         ocr_row_eps_val = row[ocr_row_eps_col - 1].value if ocr_row_eps_col else None
         dpi_val = row[dpi_col - 1].value if dpi_col else None
         fmt_val = row[fmt_col - 1].value if fmt_col else None if fmt_col else None
@@ -937,6 +977,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
                                    smart_snap_type=smart_snap_type,
                                    secondary_term=secondary_term,
                                    smart_position=smart_position,
+                                   alt_search=(str(alt_search_val).strip() if alt_search_val is not None and str(alt_search_val).strip() else None),
                                    ocr_row_eps=ocr_row_eps,
                                    dpi=dpi))
     return terms
@@ -1003,6 +1044,7 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
         except Exception:
             smart_position = None
         smart_snap_type = _norm_smart_type(str(get(row, 'smart_snap_type') or get(row, 'smart') or get(row, 'smart_snap') or '').strip() or None)
+        alt_search = str(get(row, 'alt_search') or get(row, 'alt search') or get(row, 'altsearch') or get(row, 'smart_alt_search') or get(row, 'smart alt search') or '').strip() or None
         # Parse per-term OCR settings
         _ocr_row_eps_raw = str(get(row, 'ocr_row_eps') or get(row, 'ocr row eps') or get(row, 'ocr_row_tolerance') or get(row, 'row_eps') or '').strip()
         try:
@@ -1026,6 +1068,7 @@ def _terms_from_dataframe(df) -> List[TermSpec]:
                                   range_min_disabled=rmin_disabled, range_max_disabled=rmax_disabled,
                             value_format=value_format, group_after=group_after, group_before=group_before,
                             smart_snap_type=smart_snap_type, secondary_term=secondary_term, smart_position=smart_position,
+                            alt_search=alt_search,
                             ocr_row_eps=ocr_row_eps, dpi=dpi))
     return out
 
@@ -1975,6 +2018,13 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     value_text = None
     units_value = None
     page_hit: Optional[int] = None
+    # Debug: track how group_after/group_before anchors were resolved across
+    # all internal paths (PDF text, OCR, etc.) for this term/PDF.
+    debug_group_after_page_global: Optional[int] = None
+    debug_group_after_text_global: Optional[str] = None
+    debug_group_before_page_global: Optional[int] = None
+    debug_group_before_text_global: Optional[str] = None
+    debug_group_region_applied_global: Optional[bool] = None
 
     # Helper to extract for one line
     value_format_text, double_height_mode = _value_format_info(_effective_value_format(spec))
@@ -1988,6 +2038,103 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     except Exception:
         _SEC_HEADER_WEIGHT = 0.7
     debug_mode = bool(os.environ.get('SMART_DEBUG') or os.environ.get('SMART_SNAP_DEBUG'))
+    # Alt-row search direction for numeric smart snaps: 'above' or 'below'
+    alt_dir_raw = getattr(spec, "alt_search", None)
+    alt_dir = (alt_dir_raw or "").strip().lower()
+
+    def _alt_row_search_pdf(pdf_path_inner: Path, page_num: int, anchor_y0: float, direction: str) -> Optional[Tuple[int, str, str]]:
+        """
+        Alternate Smart Snap search: when the numeric value is not on the same
+        row as the term, scan rows above or below (entire line) until a value
+        is found. Only used for numeric Smart Snap types.
+        """
+        try:
+            doc_inner = fitz.open(str(pdf_path_inner))  # type: ignore[name-defined]
+        except Exception:
+            return None
+        try:
+            try:
+                page = doc_inner.load_page(page_num - 1)
+                words = page.get_text('words') or []
+            except Exception:
+                return None
+            # Group into row bands by Y center
+            lines_map: Dict[int, Dict] = {}
+            for w in words:
+                try:
+                    x0, y0, x1, y1, txt, *_rest = w
+                except Exception:
+                    if len(w) >= 5:
+                        x0, y0, x1, y1, txt = w[:5]
+                    else:
+                        continue
+                cy = int(round((float(y0) + float(y1)) / 2.0))
+                entry = lines_map.get(cy)
+                if not entry:
+                    entry = {'tokens': [], 'x0': float(x0), 'y0': float(y0), 'x1': float(x1), 'y1': float(y1)}
+                    lines_map[cy] = entry
+                entry['tokens'].append((float(x0), float(y0), float(x1), float(y1), str(txt)))
+                entry['x0'] = min(float(entry['x0']), float(x0))
+                entry['y0'] = min(float(entry['y0']), float(y0))
+                entry['x1'] = max(float(entry['x1']), float(x1))
+                entry['y1'] = max(float(entry['y1']), float(y1))
+            if not lines_map:
+                return None
+            rows = sorted(lines_map.values(), key=lambda e: (e['y0'], e['x0']))
+            # Locate anchor row by closest Y
+            anchor_idx = None
+            best_dy = None
+            for idx, e in enumerate(rows):
+                try:
+                    y0 = float(e.get('y0', 0.0))
+                except Exception:
+                    y0 = float(e['y0'])
+                dy = abs(y0 - anchor_y0)
+                if best_dy is None or dy < best_dy:
+                    best_dy = dy
+                    anchor_idx = idx
+            if anchor_idx is None:
+                return None
+            if direction == 'below':
+                indices = range(anchor_idx + 1, len(rows))
+            else:
+                indices = range(anchor_idx - 1, -1, -1)
+            for idx in indices:
+                entry = rows[idx]
+                tokens = sorted(entry['tokens'], key=lambda t: (t[1], t[0]))
+                texts = [t[4] for t in tokens]
+                line_text = ' '.join(texts).strip()
+                if not line_text:
+                    continue
+                # Whole-line numeric search with range filtering:
+                # prefer the first value that falls within the configured range.
+                matches = list(NUMBER_REGEX.finditer(line_text))
+                if not matches:
+                    continue
+                chosen_val: Optional[str] = None
+                for m in matches:
+                    cand = m.group(0)
+                    nclean = numeric_only(cand)
+                    try:
+                        nval = float(nclean) if nclean is not None else None
+                    except Exception:
+                        nval = None
+                    if nval is None:
+                        continue
+                    if spec.range_min is not None and nval < spec.range_min:
+                        continue
+                    if spec.range_max is not None and nval > spec.range_max:
+                        continue
+                    chosen_val = cand
+                    break
+                if chosen_val:
+                    return page_num, line_text, chosen_val
+            return None
+        finally:
+            try:
+                doc_inner.close()
+            except Exception:
+                pass
 
     def extract_from_line(line_text: str, right_text: str, smart_kind: str) -> Optional[str]:
         nonlocal units_value
@@ -1999,7 +2146,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             m = TIME_REGEX.search(target_text)
             return m.group(0) if m else None
         if smart_kind == 'number':
-            matches = list(NUMBER_REGEX.finditer(right_text))
+            # Search within the preferred target text (right segment when provided,
+            # otherwise the full line). This also enables whole-line searches for
+            # alternate row scanning.
+            matches = list(NUMBER_REGEX.finditer(target_text))
             if not matches:
                 return None
             pick = None
@@ -2064,11 +2214,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 best_selection_method: Optional[str] = None  # 'smart_position' vs 'smart_score'
                 best_extracted_term: Optional[str] = None  # The extracted term/label string from the document
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
+                pdf_best_line_y0: Optional[float] = None  # Y position of best-matching row (for alt-row search)
                 # Track first occurrences of group_after/group_before across pages
                 group_after_seen = spec.group_after is None
                 group_after_page: Optional[int] = None
                 group_before_seen = spec.group_before is None
                 group_before_page: Optional[int] = None
+                group_after_text: Optional[str] = None
+                group_before_text: Optional[str] = None
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -2077,6 +2230,19 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     if _normalize_anchor_token(anchor) and _normalize_anchor_token(anchor) in _normalize_anchor_token(text):
                         sc = max(sc, 0.99)
                     return sc
+
+                def _line_contains_anchor_exact(text: str, anchor: str) -> bool:
+                    """Return True when the anchor string appears verbatim in the line.
+
+                    This is used for group_after/group_before detection so that
+                    we never treat fuzzy/partial matches (e.g., 'Thermal Ramp')
+                    as bounding anchors for an unrelated heading.
+                    """
+                    if not anchor:
+                        return False
+                    if case_sensitive:
+                        return anchor in text
+                    return anchor.lower() in text.lower()
 
                 for p in pages:
                     try:
@@ -2117,48 +2283,76 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 cx_tok = (float(tok[0]) + float(tok[2])) / 2.0
                                 header_tokens[txt_norm].append((cy_tok, float(e['y0']), cx_tok))
                     if spec.group_after:
-                        best = None
+                        best_y: Optional[float] = None
+                        best_text: Optional[str] = None
                         for _, e in lines_map.items():
                             lt = ' '.join([t[4] for t in sorted(e['tokens'], key=lambda t: (t[1], t[0]))]).strip()
-                            sc = _line_anchor_score(lt, spec.group_after)
-                            if sc >= 0.6:
-                                y = float(e['y1'])
-                                if best is None or sc > best[0] or (abs(sc - best[0]) < 1e-6 and y < best[1]):
-                                    best = (sc, y)
-                        if best:
-                            ga_y = best[1]
+                            if not _line_contains_anchor_exact(lt, spec.group_after):
+                                continue
+                            y = float(e['y1'])
+                            # All exact matches are treated equally; pick the
+                            # visually earliest (top-most) one on this page.
+                            if best_y is None or y < best_y:
+                                best_y = y
+                                best_text = lt
+                        if best_y is not None:
+                            ga_y = best_y
                             if not group_after_seen:
                                 group_after_seen = True
                                 group_after_page = p
+                                group_after_text = best_text
+                                if debug_group_after_page_global is None:
+                                    debug_group_after_page_global = p
+                                    debug_group_after_text_global = best_text
+                                    if debug_group_region_applied_global is None:
+                                        debug_group_region_applied_global = True
                     if spec.group_before:
-                        best = None
+                        # Only enforce "group_before must be visually below group_after"
+                        # when both anchors live on the *same* page as the first
+                        # group_after occurrence. On later pages in the group, we
+                        # allow group_before to appear anywhere on the page as long
+                        # as the page itself comes after group_after_page.
+                        effective_ga_y = None
+                        if spec.group_after and group_after_page is not None and p == group_after_page:
+                            effective_ga_y = ga_y
+                        best_y0: Optional[float] = None
+                        best_text: Optional[str] = None
                         for _, e in lines_map.items():
                             lt = ' '.join([t[4] for t in sorted(e['tokens'], key=lambda t: (t[1], t[0]))]).strip()
-                            sc = _line_anchor_score(lt, spec.group_before)
-                            if sc >= 0.6 and (ga_y is None or float(e['y0']) > ga_y + 0.5):
-                                y = float(e['y0'])
-                                if best is None or sc > best[0] or (abs(sc - best[0]) < 1e-6 and y < best[1]):
-                                    best = (sc, y)
-                        if best:
-                            gb_y = best[1]
-                            page_group_before_y = best[1]
-                            if not group_before_seen:
+                            if not _line_contains_anchor_exact(lt, spec.group_before):
+                                continue
+                            y0 = float(e['y0'])
+                            if effective_ga_y is not None and y0 <= effective_ga_y + 0.5:
+                                # Require group_before to appear visually below
+                                # group_after when both live on the same page.
+                                continue
+                            if best_y0 is None or y0 < best_y0:
+                                best_y0 = y0
+                                best_text = lt
+                        if best_y0 is not None:
+                            gb_y = best_y0
+                            page_group_before_y = best_y0
+                            # Only lock in group_before once we've already seen group_after
+                            # somewhere in the document; this avoids treating front-matter
+                            # (e.g., table-of-contents lines that mention the heading) as the
+                            # terminal bound when the actual group_after anchor lies later.
+                            if not group_before_seen and group_after_seen:
                                 group_before_seen = True
                                 group_before_page = p
+                                group_before_text = best_text
+                                if debug_group_before_page_global is None:
+                                    debug_group_before_page_global = p
+                                    debug_group_before_text_global = best_text
+                                    if debug_group_region_applied_global is None:
+                                        debug_group_region_applied_global = True
                     # Enforce page-level group_after/group_before bounds
                     if spec.group_after and not group_after_seen:
                         # Haven't seen group_after anywhere yet (including this page); skip searching this page
                         continue
                     if spec.group_before and group_before_seen and group_before_page is not None:
-                        # group_before marks the end of the search region; skip pages after it,
-                        # but only when the group_before anchor lies on a page *after* the first
-                        # search page. This avoids cutting off multi-page sections when the
-                        # table-of-contents also contains the group_before heading on page 1.
-                        try:
-                            first_page = min(pages) if pages else None
-                        except Exception:
-                            first_page = None
-                        if first_page is not None and group_before_page > first_page and p > group_before_page:
+                        # group_before marks the end of the search region; skip all pages that
+                        # come after the first page on which the group_before anchor is seen.
+                        if p > group_before_page:
                             continue
 
                     # Build line texts and evaluate
@@ -2208,6 +2402,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if row_name and score > 0.6 and anchor_tokens_ok:
                             if not pdf_best_line_only or score > pdf_best_line_only[2]:
                                 pdf_best_line_only = (p, line_text, score)
+                                try:
+                                    pdf_best_line_y0 = float(entry.get('y0', 0.0))
+                                except Exception:
+                                    pdf_best_line_y0 = float(entry['y0'])
                         if row_name and (score < min_score or not anchor_tokens_ok):
                             if debug_mode:
                                 reason = "missing anchor tokens" if not anchor_tokens_ok else "score<0.6"
@@ -2932,6 +3130,41 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     doc.close()
                 except Exception:
                     pass
+            # Alternate row search (vertical) for numeric Smart Snap when no value
+            # was found on the term row but a matching row exists.
+            if best_info is None and pdf_best_line_only is not None and pdf_best_line_y0 is not None:
+                if alt_dir in ("above", "below"):
+                    smart_pref = _norm_smart_type(getattr(spec, "smart_snap_type", None))
+                    if smart_pref == "number":
+                        alt_hit = _alt_row_search_pdf(pdf_path, pdf_best_line_only[0], pdf_best_line_y0, alt_dir)
+                        if alt_hit is not None:
+                            page_hit, context_line_text, value_text = alt_hit
+                            row_text_selected = context_line_text
+                            confidence = pdf_best_line_only[2]
+                            method_used = f"smart:pdf-alt-{alt_dir}"
+                            text_source = "pdf"
+                            return MatchResult(
+                                pdf_file=pdf_path.name,
+                                serial_number=serial_number,
+                                term=spec.term,
+                                page=page_hit,
+                                number=value_text,
+                                units=units_value,
+                                context=context_line_text,
+                                method=method_used,
+                                found=True,
+                                confidence=confidence,
+                                row_label=row_text_selected,
+                                column_label=None,
+                                text_source=text_source,
+                                smart_snap_context=context_line_text,
+                                smart_snap_type="number",
+                                smart_conflict=None,
+                                smart_secondary_found=None,
+                                smart_score_breakdown=None,
+                                smart_selection_method="alt_row",
+                                debug_extracted_term=None,
+                            )
             if best_info:
                 page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
                 # For title/text smart snaps, strip label tokens and normalize
@@ -2948,6 +3181,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 method_used = 'smart:pdf'
                 text_source = 'pdf'
                 sel_method = "smart_position" if getattr(spec, "smart_position", None) is not None else "smart_score"
+                if spec.group_after or spec.group_before:
+                    group_region_applied = bool((group_after_page is not None) or (group_before_page is not None))
+                else:
+                    group_region_applied = None
+                if debug_group_region_applied_global is None and group_region_applied is not None:
+                    debug_group_region_applied_global = group_region_applied
                 return MatchResult(
                     pdf_file=pdf_path.name,
                     serial_number=serial_number,
@@ -2964,16 +3203,25 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     text_source=text_source,
                     smart_snap_context=context_line_text,
                     smart_snap_type=smart_kind,
-                    smart_line_min=line_min_txt,
-                    smart_line_max=line_max_txt,
                     smart_conflict=conflict_reason,
                     smart_secondary_found=sec_found,
                     smart_score_breakdown=_format_score_breakdown(best_components),
                     smart_selection_method=sel_method,
                     debug_extracted_term=best_extracted_term,
+                    debug_group_after_page=debug_group_after_page_global,
+                    debug_group_after_text=debug_group_after_text_global,
+                    debug_group_before_page=debug_group_before_page_global,
+                    debug_group_before_text=debug_group_before_text_global,
+                    debug_group_region_applied=debug_group_region_applied_global,
                 )
             if best_info is None and pdf_best_line_only is not None:
                 p, context_line_text, sc = pdf_best_line_only
+                if spec.group_after or spec.group_before:
+                    group_region_applied = bool((group_after_page is not None) or (group_before_page is not None))
+                else:
+                    group_region_applied = None
+                if debug_group_region_applied_global is None and group_region_applied is not None:
+                    debug_group_region_applied_global = group_region_applied
                 return MatchResult(
                     pdf_file=pdf_path.name,
                     serial_number=serial_number,
@@ -2991,9 +3239,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     error_reason="Smart snap: matched row, no value",
                     smart_snap_context=context_line_text,
                     smart_snap_type=spec.smart_snap_type or 'auto',
+                    debug_group_after_page=debug_group_after_page_global,
+                    debug_group_after_text=debug_group_after_text_global,
+                    debug_group_before_page=debug_group_before_page_global,
+                    debug_group_before_text=debug_group_before_text_global,
+                    debug_group_region_applied=debug_group_region_applied_global,
                 )
 
-    # OCR fallback with EasyOCR boxes -> lines
+    # OCR fallback with EasyOCR boxes -> lines.
+    # Always allow OCR as a secondary path so that image-only or weak-text
+    # regions can still be scanned, even when group_after/group_before are set.
     if _HAVE_EASYOCR and _HAVE_PYMUPDF:
         try:
             # Use per-term DPI if specified, otherwise use global DPI list
@@ -3054,6 +3309,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             group_after_page: Optional[int] = None
             group_before_seen = spec.group_before is None
             group_before_page: Optional[int] = None
+            group_after_text: Optional[str] = None
+            group_before_text: Optional[str] = None
+            # Track best label row (even if no value) for OCR alt-row search
+            ocr_best_line_only: Optional[Tuple[int, str, float]] = None  # (page, line_text, score)
+            ocr_best_line_y0: Optional[float] = None
+            ocr_best_line_dpi: Optional[int] = None
             # Vertical tolerance (in OCR pixel coordinates) for grouping
             # EasyOCR boxes into logical text rows. Use per-term value if specified,
             # otherwise fall back to global OCR_ROW_EPS; default tuned for 10–14pt text.
@@ -3091,58 +3352,71 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     if getattr(spec, 'group_after', None):
                         raw_tokens = str(spec.group_after or "").split()
                         group_after_tokens = [_normalize_anchor_token(tok) for tok in raw_tokens if tok.strip()]
-                    # detect optional group bounds using anchors
+                    # detect optional group bounds using anchors (exact string match)
                     group_anchor_y = None
                     group_upper_y = None
                     page_group_before_y = None
                     if spec.group_after:
-                        matches = []
-                        for it in items:
-                            txt = str(it.get('text') or '')
-                            sc = _fuzzy_ratio(txt, spec.group_after)
-                            if _normalize_anchor_token(spec.group_after) and _normalize_anchor_token(spec.group_after) in _normalize_anchor_token(txt):
-                                sc = max(sc, 0.99)
-                            if sc >= 0.6:
-                                matches.append((it, sc))
-                        if matches:
-                            anchor_best = max(m[1] for m in matches)
-                            top = [m for m in matches if m[1] >= anchor_best - 0.1]
-                            group_anchor_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                        anchor_cmp = spec.group_after if case_sensitive else spec.group_after.lower()
+                        candidates: List[Tuple[float, str]] = []
+                        for row_items in rows.values():
+                            text_row = " ".join(str(it.get('text') or '') for it in sorted(row_items, key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))).strip()
+                            cmp_text = text_row if case_sensitive else text_row.lower()
+                            if anchor_cmp and anchor_cmp in cmp_text:
+                                cy_vals = [float(it.get('cy', 0.0)) for it in row_items]
+                                if cy_vals:
+                                    candidates.append((min(cy_vals), text_row))
+                        if candidates:
+                            best_cy, best_text = min(candidates, key=lambda t: t[0])
+                            group_anchor_y = best_cy
                             if not group_after_seen:
                                 group_after_seen = True
                                 group_after_page = p
+                                group_after_text = best_text
+                                if debug_group_after_page_global is None:
+                                    debug_group_after_page_global = p
+                                    debug_group_after_text_global = best_text
+                                    if debug_group_region_applied_global is None:
+                                        debug_group_region_applied_global = True
                     if spec.group_before:
-                        matches = []
-                        for it in items:
-                            txt = str(it.get('text') or '')
-                            sc = _fuzzy_ratio(txt, spec.group_before)
-                            if _normalize_anchor_token(spec.group_before) and _normalize_anchor_token(spec.group_before) in _normalize_anchor_token(txt):
-                                sc = max(sc, 0.99)
-                            if sc >= 0.6 and (group_anchor_y is None or float(it.get('cy',0.0)) > float(group_anchor_y) + 1.0):
-                                matches.append((it, sc))
-                        if matches:
-                            upper_best = max(m[1] for m in matches)
-                            top = [m for m in matches if m[1] >= upper_best - 0.1]
-                            found_y = min(top, key=lambda t: float(t[0].get('cy',0.0)))[0].get('cy', None)
+                        anchor_cmp = spec.group_before if case_sensitive else spec.group_before.lower()
+                        candidates: List[Tuple[float, str]] = []
+                        for row_items in rows.values():
+                            text_row = " ".join(str(it.get('text') or '') for it in sorted(row_items, key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))).strip()
+                            cmp_text = text_row if case_sensitive else text_row.lower()
+                            cy_vals = [float(it.get('cy', 0.0)) for it in row_items]
+                            row_cy = min(cy_vals) if cy_vals else None
+                            if not (anchor_cmp and anchor_cmp in cmp_text):
+                                continue
+                            if row_cy is not None and group_anchor_y is not None and row_cy <= float(group_anchor_y) + 1.0:
+                                # Require group_before to lie below group_after when both appear.
+                                continue
+                            if row_cy is not None:
+                                candidates.append((row_cy, text_row))
+                        if candidates:
+                            found_y, best_text = min(candidates, key=lambda t: t[0])
                             group_upper_y = found_y
                             page_group_before_y = found_y
-                            if not group_before_seen and found_y is not None:
+                            # Only lock in group_before once we've already seen group_after
+                            # somewhere in the document; this avoids treating table-of-contents
+                            # entries as hard group_before bounds.
+                            if not group_before_seen and group_after_seen:
                                 group_before_seen = True
                                 group_before_page = p
+                                group_before_text = best_text
+                                if debug_group_before_page_global is None:
+                                    debug_group_before_page_global = p
+                                    debug_group_before_text_global = best_text
+                                    if debug_group_region_applied_global is None:
+                                        debug_group_region_applied_global = True
                     # Enforce page-level group_after/group_before bounds
                     if spec.group_after and not group_after_seen:
                         # Haven't seen group_after anywhere yet (including this page); skip searching this page
                         continue
                     if spec.group_before and group_before_seen and group_before_page is not None:
-                        # group_before marks the end of the search region; skip pages after it,
-                        # but only when the group_before anchor lies on a page *after* the first
-                        # search page. This avoids cutting off multi-page sections when a
-                        # table-of-contents also contains the group_before heading on page 1.
-                        try:
-                            first_page = min(pages) if pages else None
-                        except Exception:
-                            first_page = None
-                        if first_page is not None and group_before_page > first_page and p > group_before_page:
+                        # group_before marks the end of the search region; skip all pages that
+                        # come after the first page on which the group_before anchor is seen.
+                        if p > group_before_page:
                             continue
                     for cy, row_items in sorted(rows.items(), key=lambda kv: kv[0]):
                         row_components: Optional[Dict[str, float]] = None
@@ -3174,6 +3448,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if debug_mode:
                                 print(f"[SMART DEBUG] skip row score<0.6 dpi={dpi} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
                             continue
+                        # Track best-matching OCR row (for alt-row search) even if we ultimately find no value
+                        if row_name and score > 0.6 and anchor_tokens_ok:
+                            if debug_mode:
+                                print(f"[SMART DEBUG][OCR] best_line_only? dpi={dpi} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
+                            if not ocr_best_line_only or score > ocr_best_line_only[2]:
+                                ocr_best_line_only = (p, line_text, score)
+                                try:
+                                    ocr_best_line_y0 = float(min((float(it.get('y0',0.0)) for it in row_items), default=0.0))
+                                except Exception:
+                                    ocr_best_line_y0 = None
+                                ocr_best_line_dpi = dpi
                         # right-of approx via anchor match in token stream
                         tok_norms = [_normalize_anchor_token(t) for t in texts]
                         span = _match_anchor_on_line(row_name, texts if case_sensitive else [t.lower() for t in texts], tok_norms)
@@ -3898,12 +4183,131 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         best_extracted_term = current_extracted_term
                                         if debug_mode:
                                             print(f"[SMART DEBUG][OCR] best_update(direct) dpi={dpi} page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+            # Helper: alternate row search over OCR rows for numeric smart snaps.
         finally:
             try:
                 if doc is not None:
                     doc.close()
             except Exception:
                 pass
+
+        def _alt_row_search_ocr(pdf_path_inner: Path, page_num: int, anchor_y0: float, direction: str, dpi_val: int, langs_list: List[str]) -> Optional[Tuple[int, str, str]]:
+            """
+            OCR-based alternate row search: walk rows above/below the best
+            matching label row and pick the first in-range numeric value.
+            """
+            try:
+                items = _get_easyocr_boxes_page(pdf_path_inner, page_num, dpi=dpi_val, langs=langs_list)
+            except Exception:
+                return None
+            if not items:
+                return None
+            try:
+                rows_seq = _group_easyocr_rows(items)  # type: ignore[arg-type]
+            except Exception:
+                return None
+            if not rows_seq:
+                return None
+            # Locate anchor row by closest Y (cy)
+            anchor_idx: Optional[int] = None
+            best_dy: Optional[float] = None
+            for idx, row in enumerate(rows_seq):
+                try:
+                    cy = float(row.get("cy", 0.0))  # type: ignore[call-arg]
+                except Exception:
+                    cy = 0.0
+                dy = abs(cy - anchor_y0)
+                if best_dy is None or dy < best_dy:
+                    best_dy = dy
+                    anchor_idx = idx
+            if anchor_idx is None:
+                return None
+            if direction == "below":
+                indices = range(anchor_idx + 1, len(rows_seq))
+            else:
+                indices = range(anchor_idx - 1, -1, -1)
+            for idx in indices:
+                row = rows_seq[idx]
+                try:
+                    text_row = str(row.get("text", "") or "")  # type: ignore[call-arg]
+                except Exception:
+                    text_row = ""
+                line_text = text_row.strip()
+                if not line_text:
+                    continue
+                matches = list(NUMBER_REGEX.finditer(line_text))
+                if not matches:
+                    continue
+                chosen_val: Optional[str] = None
+                for m in matches:
+                    cand = m.group(0)
+                    nclean = numeric_only(cand)
+                    try:
+                        nval = float(nclean) if nclean is not None else None
+                    except Exception:
+                        nval = None
+                    if nval is None:
+                        continue
+                    if spec.range_min is not None and nval < spec.range_min:
+                        continue
+                    if spec.range_max is not None and nval > spec.range_max:
+                        continue
+                    chosen_val = cand
+                    break
+                if chosen_val:
+                    return page_num, line_text, chosen_val
+            return None
+
+        # Alternate row search for OCR: numeric only, when the label row was
+        # detected but no value was selected.
+        if best_info is None and ocr_best_line_only is not None and ocr_best_line_y0 is not None:
+            if alt_dir in ("above", "below"):
+                smart_pref = _norm_smart_type(getattr(spec, "smart_snap_type", None))
+                if smart_pref == "number" and ocr_best_line_dpi is not None:
+                    alt_hit = _alt_row_search_ocr(pdf_path, ocr_best_line_only[0], ocr_best_line_y0, alt_dir, ocr_best_line_dpi, langs)
+                    if alt_hit is not None:
+                        page_hit, context_line_text, value_text = alt_hit
+                        if spec.group_after or spec.group_before:
+                            group_region_applied = bool((group_after_page is not None) or (group_before_page is not None))
+                        else:
+                            group_region_applied = None
+                        if debug_group_region_applied_global is None and group_region_applied is not None:
+                            debug_group_region_applied_global = group_region_applied
+                        return MatchResult(
+                            pdf_file=pdf_path.name,
+                            serial_number=serial_number,
+                            term=spec.term,
+                            page=page_hit,
+                            number=value_text,
+                            units=units_value,
+                            context=context_line_text,
+                            method=f"smart:ocr-alt-{alt_dir}",
+                            found=True,
+                            confidence=ocr_best_line_only[2],
+                            row_label=context_line_text,
+                            column_label=None,
+                            text_source='ocr',
+                            smart_snap_context=context_line_text,
+                            smart_snap_type="number",
+                            smart_conflict=None,
+                            smart_secondary_found=None,
+                            smart_score_breakdown=None,
+                            smart_selection_method="alt_row",
+                            debug_ordered_boxes=None,
+                            debug_fields_for_pos=None,
+                            debug_smart_position_requested=None,
+                            debug_smart_position_extracted=None,
+                            debug_label_used=None,
+                            debug_label_normalized=None,
+                            debug_anchor_span=None,
+                            debug_extracted_term=None,
+                            debug_group_after_page=debug_group_after_page_global,
+                            debug_group_after_text=debug_group_after_text_global,
+                            debug_group_before_page=debug_group_before_page_global,
+                            debug_group_before_text=debug_group_before_text_global,
+                            debug_group_region_applied=debug_group_region_applied_global,
+                        )
+
         if best_info:
             page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
             # For title/text smart snaps, strip label tokens only when NOT using Smart Position
@@ -3913,6 +4317,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 value_text = _strip_label_tokens(value_text, row_name)
                 value_text = _extract_status_from_title(value_text)
             sel_method = "smart_position" if getattr(spec, "smart_position", None) is not None else "smart_score"
+            if spec.group_after or spec.group_before:
+                group_region_applied = bool((group_after_page is not None) or (group_before_page is not None))
+            else:
+                group_region_applied = None
+            if debug_group_region_applied_global is None and group_region_applied is not None:
+                debug_group_region_applied_global = group_region_applied
             return MatchResult(
                 pdf_file=pdf_path.name,
                 serial_number=serial_number,
@@ -3929,8 +4339,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 text_source='ocr',
                 smart_snap_context=context_line_text,
                 smart_snap_type=smart_kind,
-                smart_line_min=line_min_txt,
-                smart_line_max=line_max_txt,
                 smart_conflict=conflict_reason,
                 smart_secondary_found=sec_found,
                 smart_score_breakdown=_format_score_breakdown(best_components),
@@ -3943,6 +4351,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 debug_label_normalized=debug_label_normalized,
                 debug_anchor_span=debug_anchor_span,
                 debug_extracted_term=debug_extracted_term,
+                 debug_group_after_page=debug_group_after_page_global,
+                 debug_group_after_text=debug_group_after_text_global,
+                 debug_group_before_page=debug_group_before_page_global,
+                 debug_group_before_text=debug_group_before_text_global,
+                 debug_group_region_applied=debug_group_region_applied_global,
             )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
@@ -3983,6 +4396,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         error_reason="Smart snap: no matching row/value",
         smart_snap_context=debug_context,
         smart_snap_type=debug_type,
+        debug_group_after_page=debug_group_after_page_global,
+        debug_group_after_text=debug_group_after_text_global,
+        debug_group_before_page=debug_group_before_page_global,
+        debug_group_before_text=debug_group_before_text_global,
+        debug_group_region_applied=debug_group_region_applied_global,
     )
 
 
@@ -6038,8 +6456,6 @@ def write_outputs_excel_or_csv(
             "serial_component": "Serial Component",
             "smart_score": "Smart Score",
             "smart_snap_type": "Smart Snap Type",
-            "smart_line_min": "Smart Line Min",
-            "smart_line_max": "Smart Line Max",
             "smart_conflict": "Smart Conflict",
             "smart_secondary_found": "Smart Secondary Found",
             "group_after": "Group After",
@@ -6051,6 +6467,7 @@ def write_outputs_excel_or_csv(
             "return_type": "Return Type",
             "pages_raw": "Pages Raw",
             "smart_snap_context": "Smart Snap Context",
+            "alt_search": "Alt Search",
             "smart_position": "Smart Position",
             "secondary_term": "Secondary Term",
         }
@@ -6153,8 +6570,9 @@ def write_outputs_excel_or_csv(
         "return_type", "group_after", "group_before", "value_format",
         "pages_raw", "mode",
         "error_reason",
-        "smart_snap_context", "smart_snap_type", "smart_line_min", "smart_line_max",
-        "smart_conflict", "smart_secondary_found", "smart_position", "secondary_term"
+        "smart_snap_context", "smart_snap_type",
+        "smart_conflict", "smart_secondary_found", "smart_position", "secondary_term",
+        "alt_search",
     ]
     display_names = {
         "extracted_value": "Extracted Value",
@@ -6167,8 +6585,6 @@ def write_outputs_excel_or_csv(
         "serial_component": "Serial Component",
         "smart_score": "Smart Score",
         "smart_snap_type": "Smart Snap Type",
-        "smart_line_min": "Smart Line Min",
-        "smart_line_max": "Smart Line Max",
         "smart_conflict": "Smart Conflict",
         "smart_secondary_found": "Smart Secondary Found",
         "group_after": "Group After",
@@ -6182,6 +6598,7 @@ def write_outputs_excel_or_csv(
         "smart_snap_context": "Smart Snap Context",
         "smart_position": "Smart Position",
         "secondary_term": "Secondary Term",
+        "alt_search": "Alt Search",
     }
     with metadata_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -6438,8 +6855,6 @@ def run_scan(
                 "error_reason": (None if rows_count > 0 else "No table rows in selected range"),
                 "smart_snap_context": None,
                 "smart_snap_type": None,
-                "smart_line_min": None,
-                "smart_line_max": None,
                 "smart_conflict": None,
                 "smart_secondary_found": None,
                 "smart_position": None,
@@ -6581,8 +6996,6 @@ def run_scan(
             range_max_schema = getattr(t, 'range_max', None)
             range_min_disabled = getattr(t, 'range_min_disabled', False)
             range_max_disabled = getattr(t, 'range_max_disabled', False)
-            smart_line_min = getattr(res, 'smart_line_min', None)
-            smart_line_max = getattr(res, 'smart_line_max', None)
             units_hint_raw = getattr(t, 'units_hint', None)
             if isinstance(units_hint_raw, (list, tuple, set)):
                 units_hint_display = "|".join(
@@ -6594,11 +7007,11 @@ def run_scan(
             if range_min_disabled:
                 effective_range_min = None
             else:
-                effective_range_min = range_min_schema if range_min_schema is not None else smart_line_min
+                effective_range_min = range_min_schema
             if range_max_disabled:
                 effective_range_max = None
             else:
-                effective_range_max = range_max_schema if range_max_schema is not None else smart_line_max
+                effective_range_max = range_max_schema
 
             pdf_stem = Path(res.pdf_file).stem if res.pdf_file else ""
             parts = [p for p in pdf_stem.split("_") if p]
@@ -6622,23 +7035,26 @@ def run_scan(
             data_group_out = (t.data_group or "").strip()
 
             component_value = info_entry.get("serial_component") or serial_component or res.serial_number
-            meta = {
+
+            score_breakdown = getattr(res, 'smart_score_breakdown', None)
+            if isinstance(score_breakdown, dict):
+                smart_score_total = score_breakdown.get("total")
+            else:
+                smart_score_total = None
+
+            pdf_info = {
                 "pdf_file": res.pdf_file,
                 "program_name": info_entry.get("program_name") or program_name,
                 "vehicle_number": info_entry.get("vehicle_number") or vehicle_number,
                 "serial_component": component_value,
+            }
+
+            user_inputs = {
                 # Expose the user-facing label as the primary Term field
                 # and keep the raw search term separately for debugging.
                 "term": term_label_out or res.term,
                 "term_label": term_label_out,
                 "data_group": data_group_out,
-                "found": res.found,
-                "page": res.page,
-                "extracted_value": res.number,
-                "units": res.units,
-                "text_source": res.text_source,
-                "smart_score": res.confidence,
-                "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
                 "pages_raw": getattr(t, 'pages_raw', ""),
                 "range_min": effective_range_min,
                 "range_max": effective_range_max,
@@ -6647,17 +7063,32 @@ def run_scan(
                 "group_after": getattr(t, 'group_after', None),
                 "group_before": getattr(t, 'group_before', None),
                 "value_format": getattr(t, 'value_format', None),
-                "error_reason": res.error_reason,
-                "smart_snap_context": getattr(res, 'smart_snap_context', None),
+                "mode": ((t.mode or ("table(xy)" if getattr(t, 'line', None) and getattr(t, 'column', None) else "nearest")) if hasattr(t, 'mode') else "nearest"),
                 "smart_snap_type": (getattr(t, 'smart_snap_type', None) or getattr(res, 'smart_snap_type', None)),
-                "smart_line_min": smart_line_min,
-                "smart_line_max": smart_line_max,
-                "smart_conflict": getattr(res, 'smart_conflict', None),
-                "smart_secondary_found": getattr(res, 'smart_secondary_found', None),
-                "smart_score_breakdown": getattr(res, 'smart_score_breakdown', None),
-                "smart_selection_method": getattr(res, 'smart_selection_method', None),
                 "smart_position": getattr(t, 'smart_position', None),
                 "secondary_term": getattr(t, 'secondary_term', None),
+                "alt_search": getattr(t, 'alt_search', None),
+            }
+
+            match_info = {
+                "found": res.found,
+                "page": res.page,
+                "extracted_value": res.number,
+                "units": res.units,
+                "text_source": res.text_source,
+                "error_reason": res.error_reason,
+            }
+
+            smart_info = {
+                "smart_score": smart_score_total,
+                "smart_score_breakdown": score_breakdown,
+                "smart_selection_method": getattr(res, 'smart_selection_method', None),
+                "smart_conflict": getattr(res, 'smart_conflict', None),
+                "smart_secondary_found": getattr(res, 'smart_secondary_found', None),
+            }
+
+            debug_info = {
+                "smart_snap_context": getattr(res, 'smart_snap_context', None),
                 "search_term": res.term,
                 "xy_fuzz": _xy_fuzz_debug,
                 "ocr_row_eps": _ocr_row_eps_debug,
@@ -6671,6 +7102,69 @@ def run_scan(
                 "debug_label_normalized": getattr(res, 'debug_label_normalized', None),
                 "debug_anchor_span": getattr(res, 'debug_anchor_span', None),
                 "debug_extracted_term": getattr(res, 'debug_extracted_term', None),
+                # Debug fields for group_before/group_after behavior
+                "debug_group_after_page": getattr(res, 'debug_group_after_page', None),
+                "debug_group_after_text": getattr(res, 'debug_group_after_text', None),
+                "debug_group_before_page": getattr(res, 'debug_group_before_page', None),
+                "debug_group_before_text": getattr(res, 'debug_group_before_text', None),
+                "debug_group_region_applied": getattr(res, 'debug_group_region_applied', None),
+            }
+
+            meta = {
+                # Keep flat keys for backwards-compatible CSV/Excel and ad-hoc searches
+                **pdf_info,
+                **{
+                    "term": user_inputs["term"],
+                    "term_label": user_inputs["term_label"],
+                    "data_group": user_inputs["data_group"],
+                    "found": match_info["found"],
+                    "page": match_info["page"],
+                    "extracted_value": match_info["extracted_value"],
+                    "units": match_info["units"],
+                    "text_source": match_info["text_source"],
+                    "smart_score": smart_info["smart_score"],
+                    "mode": user_inputs["mode"],
+                    "pages_raw": user_inputs["pages_raw"],
+                    "range_min": user_inputs["range_min"],
+                    "range_max": user_inputs["range_max"],
+                    "units_hint": user_inputs["units_hint"],
+                    "return_type": user_inputs["return_type"],
+                    "group_after": user_inputs["group_after"],
+                    "group_before": user_inputs["group_before"],
+                    "value_format": user_inputs["value_format"],
+                    "alt_search": user_inputs["alt_search"],
+                    "error_reason": match_info["error_reason"],
+                    "smart_snap_context": debug_info["smart_snap_context"],
+                "smart_snap_type": user_inputs["smart_snap_type"],
+                    "smart_conflict": smart_info["smart_conflict"],
+                    "smart_secondary_found": smart_info["smart_secondary_found"],
+                    "smart_score_breakdown": smart_info["smart_score_breakdown"],
+                    "smart_selection_method": smart_info["smart_selection_method"],
+                    "smart_position": user_inputs["smart_position"],
+                    "secondary_term": user_inputs["secondary_term"],
+                    "search_term": debug_info["search_term"],
+                    "xy_fuzz": debug_info["xy_fuzz"],
+                    "ocr_row_eps": debug_info["ocr_row_eps"],
+                    "debug_ordered_boxes": debug_info["debug_ordered_boxes"],
+                    "debug_fields_for_pos": debug_info["debug_fields_for_pos"],
+                    "debug_smart_position_requested": debug_info["debug_smart_position_requested"],
+                    "debug_smart_position_extracted": debug_info["debug_smart_position_extracted"],
+                    "debug_label_used": debug_info["debug_label_used"],
+                    "debug_label_normalized": debug_info["debug_label_normalized"],
+                    "debug_anchor_span": debug_info["debug_anchor_span"],
+                    "debug_extracted_term": debug_info["debug_extracted_term"],
+                    "debug_group_after_page": debug_info["debug_group_after_page"],
+                    "debug_group_after_text": debug_info["debug_group_after_text"],
+                    "debug_group_before_page": debug_info["debug_group_before_page"],
+                    "debug_group_before_text": debug_info["debug_group_before_text"],
+                    "debug_group_region_applied": debug_info["debug_group_region_applied"],
+                },
+                # Structured groups to make JSON easier to browse
+                "pdf_info": pdf_info,
+                "user_inputs": user_inputs,
+                "match_info": match_info,
+                "smart_info": smart_info,
+                "debug_info": debug_info,
             }
             metadata_rows.append(meta)
             summary.append(meta)
@@ -6691,7 +7185,7 @@ def run_scan(
         # Step 4: Persist JSON progress incrementally (so partial work isn't lost)
         try:
             with output_json.open("w", encoding="utf-8") as jf:
-                json.dump(summary, jf, ensure_ascii=False, indent=2)
+                json.dump([_meta_to_json_row(row) for row in summary], jf, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[WARN] Could not write JSON during loop: {e}")
 
@@ -6725,7 +7219,7 @@ def run_scan(
                 "ocr_row_eps": _ocr_row_eps_debug,
             }
             with per_json.open("w", encoding="utf-8") as jf:
-                json.dump(summary_pdf + [match_summary_row], jf, ensure_ascii=False, indent=2)
+                json.dump([_meta_to_json_row(row) for row in summary_pdf] + [match_summary_row], jf, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[WARN] Could not write per-PDF JSON for {safe_id}: {e}")
         # Write per-PDF flat CSV (header mapped to friendly names)
@@ -6736,7 +7230,7 @@ def run_scan(
                 "extracted_value", "units", "units_hint",
                 "range_min", "range_max",
                 "text_source", "smart_score",
-                "smart_snap_type", "smart_line_min", "smart_line_max",
+                "smart_snap_type",
                 "smart_conflict", "smart_secondary_found",
                 "group_after", "group_before", "error_reason",
             ]
@@ -6751,8 +7245,6 @@ def run_scan(
                 "serial_component": "Serial Component",
                 "smart_score": "Smart Score",
                 "smart_snap_type": "Smart Snap Type",
-                "smart_line_min": "Smart Line Min",
-                "smart_line_max": "Smart Line Max",
                 "smart_conflict": "Smart Conflict",
                 "smart_secondary_found": "Smart Secondary Found",
                 "group_after": "Group After",
@@ -6788,7 +7280,7 @@ def run_scan(
         "extracted_value", "units", "units_hint",
         "range_min", "range_max",
         "text_source", "smart_score",
-        "smart_snap_type", "smart_line_min", "smart_line_max",
+        "smart_snap_type",
         "smart_conflict", "smart_secondary_found",
         "group_after", "group_before", "error_reason",
     ]
@@ -6807,8 +7299,6 @@ def run_scan(
                 "serial_component": "Serial Component",
                 "smart_score": "Smart Score",
                 "smart_snap_type": "Smart Snap Type",
-                "smart_line_min": "Smart Line Min",
-                "smart_line_max": "Smart Line Max",
                 "smart_conflict": "Smart Conflict",
                 "smart_secondary_found": "Smart Secondary Found",
                 "group_after": "Group After",
@@ -6843,8 +7333,6 @@ def run_scan(
                     "text_source": row.get("text_source"),
                     "smart_score": row.get("smart_score"),
                     "smart_snap_type": row.get("smart_snap_type"),
-                    "smart_line_min": row.get("smart_line_min"),
-                    "smart_line_max": row.get("smart_line_max"),
                     "smart_conflict": row.get("smart_conflict"),
                     "smart_secondary_found": row.get("smart_secondary_found"),
                     "group_after": row.get("group_after") or "",

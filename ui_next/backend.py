@@ -34,6 +34,7 @@ TERMS_SCHEMA_COLUMNS = [
     "Range (min)",
     "Range (max)",
     "Format",
+    "Alt Search",
     "Smart Position",
     "OCR_Row_EPS",
     "DPI",
