@@ -1,6 +1,7 @@
 # Ignore only environment/build artifacts so data files are tracked
 /Lib/
 /.venv/
+/Product_Data_File/
 __pycache__/
 **/__pycache__/
 *.pyc

@@ -263,6 +263,91 @@ def _get_ocr_mode() -> str:
     return 'fallback'
 
 
+def _get_fuzzy_match_config() -> Dict[str, float]:
+    """
+    Get fuzzy matching configuration from environment variables (loaded from scanner.env).
+
+    Preset Levels (via FUZZY_PRESET in scanner.env):
+    - lenient: For poor OCR quality (min_score=0.55, min_word_score=0.70, token_threshold=0.75)
+    - medium:  Balanced default (min_score=0.65, min_word_score=0.80, token_threshold=0.85)
+    - strict:  For high OCR quality (min_score=0.75, min_word_score=0.90, token_threshold=0.90)
+
+    Custom Environment Variables (override preset):
+    - FUZZY_MIN_SCORE: Minimum overall fuzzy match score
+      Lower = more lenient matching, higher = stricter matching
+      Range: 0.0 (match anything) to 1.0 (exact match only)
+
+    - FUZZY_MIN_WORD_SCORE: Minimum score per word for multi-word terms
+      For "Seats Closed", each word must score at least this value
+      0.80 allows ~20% character errors per word
+
+    - FUZZY_TOKEN_THRESHOLD: Minimum similarity for token presence check
+      Used in _anchor_tokens_present() to allow fuzzy token matching
+
+    Returns:
+        Dictionary with 'min_score', 'min_word_score', and 'token_threshold' keys
+    """
+    # Define presets
+    presets = {
+        'lenient': {
+            'min_score': 0.55,
+            'min_word_score': 0.70,
+            'token_threshold': 0.75
+        },
+        'medium': {
+            'min_score': 0.65,
+            'min_word_score': 0.80,
+            'token_threshold': 0.85
+        },
+        'strict': {
+            'min_score': 0.75,
+            'min_word_score': 0.90,
+            'token_threshold': 0.90
+        }
+    }
+
+    # Start with medium preset as default
+    config = presets['medium'].copy()
+
+    # Apply preset if specified
+    try:
+        preset_name = os.environ.get('FUZZY_PRESET', '').strip().lower()
+        if preset_name in presets:
+            config = presets[preset_name].copy()
+    except Exception:
+        pass
+
+    # Allow custom overrides for individual parameters
+    try:
+        min_score = os.environ.get('FUZZY_MIN_SCORE', '').strip()
+        if min_score:
+            val = float(min_score)
+            if 0.0 <= val <= 1.0:
+                config['min_score'] = val
+    except Exception:
+        pass
+
+    try:
+        min_word_score = os.environ.get('FUZZY_MIN_WORD_SCORE', '').strip()
+        if min_word_score:
+            val = float(min_word_score)
+            if 0.0 <= val <= 1.0:
+                config['min_word_score'] = val
+    except Exception:
+        pass
+
+    try:
+        token_threshold = os.environ.get('FUZZY_TOKEN_THRESHOLD', '').strip()
+        if token_threshold:
+            val = float(token_threshold)
+            if 0.0 <= val <= 1.0:
+                config['token_threshold'] = val
+    except Exception:
+        pass
+
+    return config
+
+
 @dataclass
 class TermSpec:
     """Term, page constraints, and extraction hints.
@@ -361,6 +446,10 @@ class MatchResult:
     # constrain the search region; False when bounds were requested but could
     # not be honored (anchors not found). None when no bounds were requested.
     debug_group_region_applied: Optional[bool] = None
+    # Fuzzy matching score for the search term (0.0-1.0)
+    debug_fuzzy_match_score: Optional[float] = None
+    # Fuzzy matching threshold used (from FUZZY_PRESET config)
+    debug_fuzzy_match_threshold: Optional[float] = None
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -1547,10 +1636,192 @@ def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, lan
     return boxes
 
 
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """
+    Calculate Levenshtein (edit) distance between two strings.
+    Returns the minimum number of single-character edits (insertions, deletions, substitutions)
+    required to change s1 into s2.
+    """
+    if s1 == s2:
+        return 0
+    if len(s1) == 0:
+        return len(s2)
+    if len(s2) == 0:
+        return len(s1)
+
+    # Create distance matrix
+    v0 = list(range(len(s2) + 1))
+    v1 = [0] * (len(s2) + 1)
+
+    for i in range(len(s1)):
+        v1[0] = i + 1
+        for j in range(len(s2)):
+            deletion_cost = v0[j + 1] + 1
+            insertion_cost = v1[j] + 1
+            substitution_cost = v0[j] if s1[i] == s2[j] else v0[j] + 1
+            v1[j + 1] = min(deletion_cost, insertion_cost, substitution_cost)
+        v0, v1 = v1, v0
+
+    return v0[len(s2)]
+
+
+def _levenshtein_ratio(s1: str, s2: str) -> float:
+    """
+    Calculate similarity ratio using Levenshtein distance.
+    Returns a value between 0.0 (completely different) and 1.0 (identical).
+    """
+    if not s1 and not s2:
+        return 1.0
+    if not s1 or not s2:
+        return 0.0
+
+    distance = _levenshtein_distance(s1, s2)
+    max_len = max(len(s1), len(s2))
+    return 1.0 - (distance / max_len)
+
+
+def _fuzzy_match_multiword(
+    search_term: str,
+    target_text: str,
+    min_word_score: float = 0.75,
+    min_overall_score: float = 0.6,
+    require_all_words: bool = True
+) -> Tuple[float, Dict[str, Any]]:
+    """
+    Improved fuzzy matching for multi-word search terms.
+
+    For multi-word terms like "Seats Closed":
+    - Splits both search_term and target_text into words
+    - Matches each search word against target words using Levenshtein distance
+    - Allows 1-2 character differences per word
+    - Handles spacing issues gracefully
+
+    Args:
+        search_term: The term to search for (e.g., "Seats Closed")
+        target_text: The text to search within (e.g., "Seat Closed" from OCR)
+        min_word_score: Minimum similarity score per word (0.0-1.0)
+        min_overall_score: Minimum overall similarity score (0.0-1.0)
+        require_all_words: If True, all search words must find a match
+
+    Returns:
+        (score, debug_info) where score is 0.0-1.0 and debug_info contains matching details
+    """
+    # Normalize whitespace
+    search_norm = re.sub(r"\s+", " ", search_term or '').strip().lower()
+    target_norm = re.sub(r"\s+", " ", target_text or '').strip().lower()
+
+    if not search_norm:
+        return 1.0, {"method": "empty_search"}
+    if not target_norm:
+        return 0.0, {"method": "empty_target"}
+
+    # Split into words
+    search_words = [w for w in search_norm.split() if w]
+    target_words = [w for w in target_norm.split() if w]
+
+    if not search_words:
+        return 1.0, {"method": "no_search_words"}
+    if not target_words:
+        return 0.0, {"method": "no_target_words"}
+
+    # For single-word search terms, use simple Levenshtein ratio
+    if len(search_words) == 1:
+        best_score = 0.0
+        for target_word in target_words:
+            word_score = _levenshtein_ratio(search_words[0], target_word)
+            best_score = max(best_score, word_score)
+        return best_score, {
+            "method": "single_word",
+            "search_word": search_words[0],
+            "best_score": best_score
+        }
+
+    # Multi-word matching: find best match for each search word
+    word_matches = []
+    matched_target_indices = set()
+
+    for search_word in search_words:
+        best_match = None
+        best_score = 0.0
+        best_idx = -1
+
+        for idx, target_word in enumerate(target_words):
+            # Skip already matched words (for strict 1-to-1 matching)
+            # Actually, let's allow re-matching for now to be more lenient
+            word_score = _levenshtein_ratio(search_word, target_word)
+            if word_score > best_score:
+                best_score = word_score
+                best_match = target_word
+                best_idx = idx
+
+        word_matches.append({
+            "search_word": search_word,
+            "matched_word": best_match,
+            "score": best_score,
+            "target_idx": best_idx
+        })
+
+        if best_idx >= 0:
+            matched_target_indices.add(best_idx)
+
+    # Calculate overall score
+    if require_all_words:
+        # All search words must meet minimum threshold
+        word_scores = [m["score"] for m in word_matches]
+        if any(score < min_word_score for score in word_scores):
+            # At least one word failed to match well enough
+            overall_score = min(word_scores)  # Penalize by worst match
+        else:
+            # All words matched well - average the scores
+            overall_score = sum(word_scores) / len(word_scores)
+    else:
+        # Average all word scores
+        overall_score = sum(m["score"] for m in word_matches) / len(word_matches)
+
+    debug_info = {
+        "method": "multi_word",
+        "search_words": search_words,
+        "target_words": target_words,
+        "word_matches": word_matches,
+        "overall_score": overall_score,
+        "min_word_score": min_word_score,
+        "passed": overall_score >= min_overall_score
+    }
+
+    return overall_score, debug_info
+
+
 def _fuzzy_ratio(a: str, b: str) -> float:
+    """
+    Legacy fuzzy matching function - now uses improved Levenshtein-based matching.
+
+    For multi-word terms, uses _fuzzy_match_multiword() for better OCR error tolerance.
+    For single-word terms or simple comparisons, uses Levenshtein ratio.
+
+    Thresholds are configured via scanner.env (FUZZY_PRESET or custom values).
+    """
     a2 = re.sub(r"\s+", " ", a or '').strip().lower()
     b2 = re.sub(r"\s+", " ", b or '').strip().lower()
-    return difflib.SequenceMatcher(None, a2, b2).ratio()
+
+    # Get fuzzy matching configuration
+    config = _get_fuzzy_match_config()
+
+    # Check if this is a multi-word search term
+    a_words = [w for w in a2.split() if w]
+
+    if len(a_words) > 1:
+        # Use improved multi-word matching with configured thresholds
+        score, _ = _fuzzy_match_multiword(
+            search_term=a2,
+            target_text=b2,
+            min_word_score=config['min_word_score'],
+            min_overall_score=config['min_score'],
+            require_all_words=True
+        )
+        return score
+    else:
+        # Single word or simple comparison - use Levenshtein ratio
+        return _levenshtein_ratio(a2, b2)
 
 
 def _normalize_anchor_token(text: Optional[str]) -> str:
@@ -1727,24 +1998,61 @@ def _match_anchor_on_line(anchor: str, line_tokens: List[str], line_token_norms:
             return i, i + span - 1
     return None
 
-def _anchor_tokens_present(anchor: str, text: str) -> bool:
+def _anchor_tokens_present(anchor: str, text: str, fuzzy_threshold: Optional[float] = None) -> bool:
     """
-    Ensure every normalized token from the anchor exists in the target text.
-    Helps prevent partial matches (single-word hits) from masquerading as full row matches.
+    Ensure anchor tokens exist in target text with fuzzy matching tolerance.
+
+    For multi-word anchors like "Seats Closed", this ensures all words are present
+    even if OCR introduced small errors (e.g., "Seat Closed" or "Seats Clsd").
+
+    Args:
+        anchor: Search term (e.g., "Seats Closed")
+        text: Target text to search within
+        fuzzy_threshold: Minimum Levenshtein similarity ratio (0.0-1.0) for word matching
+                        If None, uses value from scanner.env configuration
+
+    Returns:
+        True if enough anchor tokens are found (with fuzzy tolerance) in the text
     """
     if not anchor:
         return True
+
+    # Get fuzzy threshold from config if not specified
+    if fuzzy_threshold is None:
+        config = _get_fuzzy_match_config()
+        fuzzy_threshold = config['token_threshold']
+
+    # Get normalized anchor tokens
     anchor_tokens = [_normalize_anchor_token(tok) for tok in re.split(r"\s+", anchor) if _normalize_anchor_token(tok)]
     if not anchor_tokens:
         return True
-    text_tokens = {_normalize_anchor_token(tok) for tok in re.split(r"\s+", text) if _normalize_anchor_token(tok)}
+
+    # Get normalized text tokens
+    text_tokens_raw = [tok for tok in re.split(r"\s+", text) if tok]
+    text_tokens = [_normalize_anchor_token(tok) for tok in text_tokens_raw if _normalize_anchor_token(tok)]
     if not text_tokens:
         return False
+
+    # Count how many anchor tokens have a match in text (exact or fuzzy)
+    present = 0
+    for anchor_tok in anchor_tokens:
+        # First try exact match
+        if anchor_tok in text_tokens:
+            present += 1
+            continue
+
+        # Try fuzzy match with each text token
+        best_match_score = 0.0
+        for text_tok in text_tokens:
+            score = _levenshtein_ratio(anchor_tok, text_tok)
+            best_match_score = max(best_match_score, score)
+
+        # If any text token is similar enough, count as present
+        if best_match_score >= fuzzy_threshold:
+            present += 1
+
     # Require at least half of the anchor tokens (rounded up) to be present.
-    # This tolerates labels that are split across multiple lines (e.g.,
-    # "Serial / component" rendered as "Serial" on one line and "Component"
-    # on another) while still preventing spurious single-word matches.
-    present = sum(1 for tok in anchor_tokens if tok in text_tokens)
+    # This tolerates labels split across lines while preventing spurious matches.
     needed = max(1, (len(anchor_tokens) + 1) // 2)
     return present >= needed
 
@@ -2028,10 +2336,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
     # Track failure reasons for better error messages
     failure_tracking = {
-        "group_after_requested": spec.group_after is not None,
-        "group_before_requested": spec.group_before is not None,
-        "group_after_found": False,
-        "group_before_found": False,
         "row_found_but_filtered": False,  # Row matched but filtered by group constraints
         "row_found_no_value": False,      # Row matched but no value extracted
         "low_score_rows": [],              # List of (score, row_text) for rows with score < 0.6
@@ -2227,6 +2531,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 best_extracted_term: Optional[str] = None  # The extracted term/label string from the document
                 pdf_best_line_only: Optional[Tuple[int, str, float]] = None  # (p, line_text, score)
                 pdf_best_line_y0: Optional[float] = None  # Y position of best-matching row (for alt-row search)
+                # Track fuzzy matching scores for debugging
+                best_fuzzy_score: Optional[float] = None  # Best fuzzy match score
+                fuzzy_config = _get_fuzzy_match_config()  # Get current fuzzy matching thresholds
+                fuzzy_threshold = fuzzy_config['min_score']  # Threshold used for matching
                 # Track first occurrences of group_after/group_before across pages
                 group_after_seen = spec.group_after is None
                 group_after_page: Optional[int] = None
@@ -2313,7 +2621,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 group_after_seen = True
                                 group_after_page = p
                                 group_after_text = best_text
-                                failure_tracking["group_after_found"] = True
                                 if debug_group_after_page_global is None:
                                     debug_group_after_page_global = p
                                     debug_group_after_text_global = best_text
@@ -2353,7 +2660,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 group_before_seen = True
                                 group_before_page = p
                                 group_before_text = best_text
-                                failure_tracking["group_before_found"] = True
                                 if debug_group_before_page_global is None:
                                     debug_group_before_page_global = p
                                     debug_group_before_text_global = best_text
@@ -2428,6 +2734,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if row_name and score > 0.6 and anchor_tokens_ok:
                             if not pdf_best_line_only or score > pdf_best_line_only[2]:
                                 pdf_best_line_only = (p, line_text, score)
+                                best_fuzzy_score = score  # Track fuzzy match score for debugging
                                 try:
                                     pdf_best_line_y0 = float(entry.get('y0', 0.0))
                                 except Exception:
@@ -3246,6 +3553,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     debug_group_before_page=debug_group_before_page_global,
                     debug_group_before_text=debug_group_before_text_global,
                     debug_group_region_applied=debug_group_region_applied_global,
+                    debug_fuzzy_match_score=best_fuzzy_score,
+                    debug_fuzzy_match_threshold=fuzzy_threshold,
                 )
             if best_info is None and pdf_best_line_only is not None:
                 p, context_line_text, sc = pdf_best_line_only
@@ -4418,36 +4727,32 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         pass
 
     # Build detailed error message based on failure tracking
+    # Focus on what actually failed with the term search, not the grouping anchors
     error_parts = []
 
-    # Check for group anchor issues first
-    if failure_tracking["group_after_requested"] and not failure_tracking["group_after_found"]:
-        error_parts.append(f"group_after anchor '{spec.group_after}' not found")
-    if failure_tracking["group_before_requested"] and not failure_tracking["group_before_found"]:
-        error_parts.append(f"group_before anchor '{spec.group_before}' not found")
-
-    # Check if row was found but filtered
+    # Primary failure: row found but filtered by group bounds
     if failure_tracking["row_found_but_filtered"]:
-        error_parts.append("term found but filtered by group_after/group_before bounds")
+        error_parts.append("term found but outside group_after/group_before region")
 
-    # Check if row was found but no value
-    if failure_tracking["row_found_no_value"]:
+    # Secondary failure: row found but no value extracted
+    elif failure_tracking["row_found_no_value"]:
         error_parts.append("term found but no value extracted")
 
-    # Check if numeric candidates were nullified
-    if failure_tracking["numeric_candidates_nullified"]:
+    # Tertiary failure: numeric candidates nullified by range
+    elif failure_tracking["numeric_candidates_nullified"]:
         error_parts.append("numeric values found but all out of specified range")
 
-    # Check for low-score matches
-    if failure_tracking["low_score_rows"]:
+    # Quaternary failure: no term match, show near-misses
+    elif failure_tracking["low_score_rows"]:
         best_low = max(failure_tracking["low_score_rows"], key=lambda x: x[0])
-        error_parts.append(f"best match score {best_low[0]:.2f} below threshold 0.6")
+        error_parts.append(f"no match found (best score {best_low[0]:.2f} < threshold 0.6)")
+
+    # Default: no matching row or value found
+    else:
+        error_parts.append("no matching row/value")
 
     # Build final error message
-    if error_parts:
-        detailed_error = "Smart snap: " + "; ".join(error_parts)
-    else:
-        detailed_error = "Smart snap: no matching row/value"
+    detailed_error = "Smart snap: " + "; ".join(error_parts)
 
     return MatchResult(
         pdf_file=pdf_path.name,
@@ -7191,6 +7496,9 @@ def run_scan(
                 "debug_group_before_page": getattr(res, 'debug_group_before_page', None),
                 "debug_group_before_text": getattr(res, 'debug_group_before_text', None),
                 "debug_group_region_applied": getattr(res, 'debug_group_region_applied', None),
+                # Fuzzy matching debug info
+                "debug_fuzzy_match_score": getattr(res, 'debug_fuzzy_match_score', None),
+                "debug_fuzzy_match_threshold": getattr(res, 'debug_fuzzy_match_threshold', None),
             }
 
             meta = {

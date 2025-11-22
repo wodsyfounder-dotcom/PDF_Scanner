@@ -2,8 +2,8 @@
 """
 Generate or refresh a plotting configuration sheet (plot_terms.xlsx).
 
-Source: Product_Data_File/master.xlsx (preferred) or master.csv
-Output: user_inputs/plot_terms.xlsx (preferred) or plot_terms.csv
+Source: Product_Data_File/master.xlsx
+Output: user_inputs/plot_terms.xlsx
 
 Each row in the sheet corresponds to a unique (Term Label, Data Group)
 combination emitted by the master workbook compiled from run data.
@@ -82,24 +82,17 @@ def read_master() -> Tuple[List[str], List[Dict[str, Any]]]:
         print("[ERROR] pandas is required to read the master workbook.")
         return [], []
 
-    if MASTER_XLSX.exists():
-        try:
-            df = pd.read_excel(MASTER_XLSX, sheet_name="master")
-            serials, records = _prepare_master_df(df)
-            if serials or records:
-                return serials, records
-        except Exception:
-            pass
-    if MASTER_CSV.exists():
-        try:
-            df = pd.read_csv(MASTER_CSV)
-            serials, records = _prepare_master_df(df)
-            if serials or records:
-                return serials, records
-        except Exception:
-            pass
-    print("[ERROR] No usable master workbook found. Compile master first.")
-    return [], []
+    if not MASTER_XLSX.exists():
+        print("[ERROR] master.xlsx not found. Compile master first.")
+        return [], []
+
+    try:
+        df = pd.read_excel(MASTER_XLSX, sheet_name="master")
+        serials, records = _prepare_master_df(df)
+        return serials, records
+    except Exception as e:
+        print(f"[ERROR] Failed to read master.xlsx: {e}")
+        return [], []
 
 
 def default_plot_name(row: Dict[str, Any]) -> str:

@@ -55,13 +55,11 @@ def read_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict
     programs: Dict[str, str] = {}
     vehicles: Dict[str, str] = {}
 
-    if MASTER_XLSX.exists():
-        df = pd.read_excel(MASTER_XLSX, sheet_name="master")
-    elif MASTER_CSV.exists():
-        df = pd.read_csv(MASTER_CSV)
-    else:
-        print("[ERROR] No master workbook found. Compile master first.")
+    if not MASTER_XLSX.exists():
+        print("[ERROR] master.xlsx not found. Compile master first.")
         return [], [], {}, {}
+
+    df = pd.read_excel(MASTER_XLSX, sheet_name="master")
 
     rename_map: Dict[str, str] = {}
     if "Term Label" not in df.columns and "Term" in df.columns:

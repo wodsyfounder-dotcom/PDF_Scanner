@@ -2062,6 +2062,64 @@ class MainWindow(QtWidgets.QMainWindow):
         dpi_layout.addWidget(self.sld_ocr_dpi)
         ls.addWidget(dpi_container)
 
+        # Fuzzy Matching Preset (for multi-word search terms with OCR errors)
+        fuzzy_container = QtWidgets.QWidget()
+        fuzzy_layout = QtWidgets.QVBoxLayout(fuzzy_container)
+        fuzzy_layout.setContentsMargins(0, 0, 0, 0)
+        fuzzy_layout.setSpacing(6)
+        fuzzy_header = QtWidgets.QHBoxLayout()
+        fuzzy_label = QtWidgets.QLabel("Fuzzy Matching Strictness")
+        fuzzy_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500;")
+        fuzzy_header.addWidget(fuzzy_label)
+        fuzzy_info = QtWidgets.QLabel("\u24D8")
+        fuzzy_info.setStyleSheet("color: #9ca3af; font-size: 14px;")
+        fuzzy_info.setToolTip("Controls how strictly multi-word search terms (e.g., 'Seats Closed') must match OCR text\n\nLenient: For poor OCR quality, tolerates more errors\nMedium: Balanced (recommended for typical scans)\nStrict: For high-quality OCR, requires closer matches")
+        fuzzy_header.addWidget(fuzzy_info)
+        fuzzy_header.addStretch()
+        fuzzy_layout.addLayout(fuzzy_header)
+
+        # Preset mapping for fuzzy matching
+        self._fuzzy_value_to_display = {
+            "lenient": "Lenient (Poor OCR)",
+            "medium": "Medium (Balanced)",
+            "strict": "Strict (High Quality OCR)"
+        }
+        self._fuzzy_display_to_value = {v: k for k, v in self._fuzzy_value_to_display.items()}
+
+        self.cmb_fuzzy_preset = QtWidgets.QComboBox()
+        self.cmb_fuzzy_preset.setStyleSheet("""
+            QComboBox {
+                background: #ffffff;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #374151;
+                font-size: 13px;
+                min-height: 20px;
+            }
+            QComboBox:hover {
+                border-color: #9ca3af;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                color: #374151;
+                background: #ffffff;
+                selection-background-color: #dbeafe;
+                border: 1px solid #d1d5db;
+                padding: 4px;
+            }
+        """)
+        self.cmb_fuzzy_preset.addItems(list(self._fuzzy_value_to_display.values()))
+        self.cmb_fuzzy_preset.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.cmb_fuzzy_preset.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Set default to medium
+        self.cmb_fuzzy_preset.setCurrentText(self._fuzzy_value_to_display["medium"])
+        fuzzy_layout.addWidget(self.cmb_fuzzy_preset)
+        ls.addWidget(fuzzy_container)
+
         # Show detailed debug logs toggle
         debug_container = QtWidgets.QWidget()
         debug_layout = QtWidgets.QHBoxLayout(debug_container)
@@ -2099,6 +2157,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cmb_ocr_mode.currentTextChanged.connect(self._persist_settings_from_panel)
         self.sld_ocr_row_tol.valueChanged.connect(self._on_ocr_row_tol_slider)
         self.sld_ocr_dpi.valueChanged.connect(self._on_dpi_slider)
+        self.cmb_fuzzy_preset.currentTextChanged.connect(self._persist_settings_from_panel)
         self.chk_logging.stateChanged.connect(self._persist_settings_from_panel)
 
         grid.addWidget(grp_env, 0, 0, 1, 2)
@@ -4232,6 +4291,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.lbl_dpi_val.setText(str(dpi))
             except Exception:
                 pass
+            # Fuzzy Matching Preset
+            fuzzy_preset = env.get("FUZZY_PRESET", "medium").strip().lower()
+            fuzzy_display = self._fuzzy_value_to_display.get(fuzzy_preset, self._fuzzy_value_to_display["medium"]) if hasattr(self, "_fuzzy_value_to_display") else "Medium (Balanced)"
+            if self.cmb_fuzzy_preset.currentText() != fuzzy_display:
+                if fuzzy_display not in [self.cmb_fuzzy_preset.itemText(i) for i in range(self.cmb_fuzzy_preset.count())]:
+                    self.cmb_fuzzy_preset.addItem(fuzzy_display)
+                self.cmb_fuzzy_preset.blockSignals(True)
+                self.cmb_fuzzy_preset.setCurrentText(fuzzy_display)
+                self.cmb_fuzzy_preset.blockSignals(False)
             enable_logging = not (env.get("QUIET", "1").strip().lower() in ("1", "true", "yes"))
             self.chk_logging.blockSignals(True)
             self.chk_logging.setChecked(enable_logging)
@@ -4570,6 +4638,9 @@ class MainWindow(QtWidgets.QMainWindow):
             env["OCR_MODE"] = self._ocr_display_to_value.get(disp, "fallback") if hasattr(self, "_ocr_display_to_value") else disp.strip().lower()
             env["OCR_ROW_EPS"] = str(int(self.sld_ocr_row_tol.value()))
             env["OCR_DPI"] = str(int(self.sld_ocr_dpi.value()))
+            # Fuzzy matching preset
+            fuzzy_disp = self.cmb_fuzzy_preset.currentText()
+            env["FUZZY_PRESET"] = self._fuzzy_display_to_value.get(fuzzy_disp, "medium") if hasattr(self, "_fuzzy_display_to_value") else "medium"
             # QUIET is inverse of logging toggle
             env["QUIET"] = "0" if self.chk_logging.isChecked() else "1"
             # OCR language is fixed to English

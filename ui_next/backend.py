@@ -443,45 +443,36 @@ def _clean_master_cell(value: object) -> str:
 def _read_master_table() -> tuple[list[str], list[dict[str, str]]]:
     header: list[str] = []
     rows: list[dict[str, str]] = []
-    if MASTER_XLSX.exists():
+    if not MASTER_XLSX.exists():
+        return header, rows
+
+    try:
+        import pandas as pd  # type: ignore
+        # Preserve textual sentinels such as 'N/A' instead of coercing them
+        # to NaN so downstream logic can distinguish between true blanks and
+        # explicit "not applicable" markers.
+        df = pd.read_excel(MASTER_XLSX, dtype=object, keep_default_na=False)
+        header = [str(col) for col in df.columns]
+        raw_rows = df.fillna("").to_dict(orient="records")
+        for record in raw_rows:
+            cleaned = {str(k): _clean_master_cell(v) for k, v in record.items()}
+            rows.append(cleaned)
+        return header, rows
+    except Exception:
         try:
-            import pandas as pd  # type: ignore
-            # Preserve textual sentinels such as 'N/A' instead of coercing them
-            # to NaN so downstream logic can distinguish between true blanks and
-            # explicit "not applicable" markers.
-            df = pd.read_excel(MASTER_XLSX, dtype=object, keep_default_na=False)
-            header = [str(col) for col in df.columns]
-            raw_rows = df.fillna("").to_dict(orient="records")
-            for record in raw_rows:
-                cleaned = {str(k): _clean_master_cell(v) for k, v in record.items()}
-                rows.append(cleaned)
-            return header, rows
-        except Exception:
-            try:
-                from openpyxl import load_workbook  # type: ignore
-                wb = load_workbook(str(MASTER_XLSX), data_only=True)
-                ws = wb.active
-                first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-                header = [(_clean_master_cell(val) or f"column_{idx}") for idx, val in enumerate(first_row)]
-                for values in ws.iter_rows(min_row=2, values_only=True):
-                    record: dict[str, str] = {}
-                    for idx, val in enumerate(values):
-                        if idx >= len(header):
-                            continue
-                        record[header[idx]] = _clean_master_cell(val)
-                    rows.append(record)
-                wb.close()
-                return header, rows
-            except Exception:
-                pass
-    if MASTER_CSV.exists():
-        try:
-            with MASTER_CSV.open("r", newline="", encoding="utf-8") as f:
-                reader = _csv.DictReader(f)
-                header = reader.fieldnames or []
-                for row in reader:
-                    cleaned = {str(k): _clean_master_cell(v) for k, v in row.items()}
-                    rows.append(cleaned)
+            from openpyxl import load_workbook  # type: ignore
+            wb = load_workbook(str(MASTER_XLSX), data_only=True)
+            ws = wb.active
+            first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+            header = [(_clean_master_cell(val) or f"column_{idx}") for idx, val in enumerate(first_row)]
+            for values in ws.iter_rows(min_row=2, values_only=True):
+                record: dict[str, str] = {}
+                for idx, val in enumerate(values):
+                    if idx >= len(header):
+                        continue
+                    record[header[idx]] = _clean_master_cell(val)
+                rows.append(record)
+            wb.close()
             return header, rows
         except Exception:
             pass
@@ -1282,11 +1273,9 @@ def clear_stale_run_data() -> tuple[int, int]:
 
 def open_master_workbook() -> None:
     xlsx = ROOT / "Product_Data_File" / "master.xlsx"
-    csv = ROOT / "Product_Data_File" / "master.csv"
-    target = xlsx if xlsx.exists() else (csv if csv.exists() else None)
-    if not target:
-        raise FileNotFoundError("No master workbook found (compile first)")
-    open_path(target)
+    if not xlsx.exists():
+        raise FileNotFoundError("master.xlsx not found (compile first)")
+    open_path(xlsx)
 
 
 # Deprecated: enrichment now handled during/after runs; external script removed

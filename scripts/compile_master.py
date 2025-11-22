@@ -8,14 +8,13 @@ Inputs:
   - Each run folder contains scan_results.json which holds per-term values per SN.
 
 Output:
-  - Product_Data_File/master.xlsx (preferred, pandas + xlsxwriter)
-  - Fallback: Product_Data_File/master.csv
+  - Product_Data_File/master.xlsx (requires pandas + xlsxwriter)
 
 Workbook layout:
   - Leading rows reserved for "Program", "Space Vehicle", and "Data" metadata.
   - Columns include Term Label, Data Group, Units, Min, Max, followed by one column per serial number.
 
-No external executables required. Uses pandas/xlsxwriter if available; otherwise falls back to CSV.
+Requires pandas and xlsxwriter packages.
 """
 from __future__ import annotations
 
@@ -389,11 +388,10 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
     runs_root = EXPORTS / "run_data"
     if runs_root.exists():
         for run_dir in sorted(p for p in runs_root.iterdir() if p.is_dir()):
-            run_dt = _parse_run_datetime(run_dir)
-            if master_mtime and run_dt.timestamp() <= master_mtime:
-                # Skip runs that predate the current master; they have already
-                # been incorporated or were intentionally overridden/cleared.
-                continue
+            # Process all run_data folders regardless of timestamp. This ensures
+            # that if a user deletes a value from master.xlsx (making it blank),
+            # it will be refilled from ANY available run_data on the next compile.
+            # Since we only fill blank cells (line 494), existing values are safe.
             rows = load_results_json(run_dir)
             if not rows:
                 continue
@@ -562,10 +560,17 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
             row[sn] = values.get(sn, "")
         structured_rows.append(row)
 
-    # Try Excel via pandas/xlsxwriter
+    # Write to Excel (required - no CSV fallback)
     try:
         import pandas as pd  # type: ignore
         import xlsxwriter  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "pandas and xlsxwriter are required to create master.xlsx. "
+            "Install them with: pip install pandas xlsxwriter"
+        ) from e
+
+    try:
         df = pd.DataFrame(structured_rows, columns=header)
         with pd.ExcelWriter(OUT_XLSX, engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="master", index=False)
@@ -580,21 +585,8 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
                     max_len = len(col)
                 ws.set_column(i, i, min(60, max(12, max_len + 2)))
         print(f"[DONE] Master workbook -> {OUT_XLSX}")
-        return
     except Exception as e:
-        print(f"[WARN] Excel write unavailable ({e}); falling back to CSV")
-
-    # CSV fallback
-    try:
-        with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(header)
-            for row_dict in structured_rows:
-                row = [row_dict.get(col, "") for col in header]
-                w.writerow(row)
-        print(f"[DONE] Master CSV -> {OUT_CSV}")
-    except Exception as e:
-        print(f"[ERROR] Could not write master CSV: {e}")
+        raise RuntimeError(f"Failed to write master.xlsx: {e}") from e
 
 
 def main() -> None:
