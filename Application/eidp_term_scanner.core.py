@@ -1,4 +1,4 @@
-﻿
+
 #!/usr/bin/env python3
 # Application-consolidated build
 """
@@ -658,7 +658,7 @@ def _parse_field_index(v: Optional[str]) -> Optional[int]:
 
 def _norm_field_split(s: Optional[str]) -> str:
     # Default to 'groups' so fields separated by 3+ spaces/tabs are distinct,
-    # and words separated by 1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“2 spaces remain within the same field.
+    # and words separated by 1-2 spaces remain within the same field.
     if not s:
         return "groups"
     v = s.strip().lower()
@@ -888,7 +888,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     wb = openpyxl.load_workbook(str(input_path), data_only=True)
     ws = wb.active
 
-    # Build a map of header name ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ column index
+    # Build a map of header name -> column index
     header_map: Dict[str, int] = {}
     for col_idx, cell in enumerate(ws[1], start=1):
         key = (str(cell.value) if cell.value is not None else "").strip().lower()
@@ -5292,7 +5292,7 @@ def _normalize_text_for_search(s: str) -> str:
     if not s:
         return ""
     s = s.replace("\u00A0", " ")
-    s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
+    s = s.replace("\u2013", "-").replace("\u2014", "-")  # en-dash, em-dash
     s = s.replace("|", " ")
     s = re.sub(r"[ \t\f\r]+", " ", s)
     return s
@@ -7872,7 +7872,7 @@ def main() -> None:
     parser.add_argument("--output-csv", default="scan_results_flat.csv", help="Flat CSV summary (legacy)")
     parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")
     parser.add_argument("--output-xlsx", default="scan_results.xlsx", help="Excel workbook with 'results' and 'metadata' sheets")
-    parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± chars)")
+    parser.add_argument("--window-chars", type=int, default=160, help="Search window size around term (+/- chars)")
     parser.add_argument("--case-sensitive", action="store_true", help="Enable case-sensitive term matching")
     parser.add_argument("--quiet", action="store_true", help="Reduce console output (suppress progress/debug)")
     args = parser.parse_args()
