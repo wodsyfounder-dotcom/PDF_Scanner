@@ -20,3 +20,5 @@ FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,Thermal Soak High Duration,Env
 FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,Random Vib Z Amplitude,Environmental,Random Vib Z Amplitude,True,3,12.0,,grms,12.0,12.0,ocr,,number,,,thermal_margin,TC-01,
 FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,TC-02 Post Trim,Calibration,TC-02 Post Trim,True,3,0.9989,,TC-01,0.99,1.01,ocr,,number,,,Sine Sweep,Severity,
 FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,LVDT-2 Status,Calibration,LVDT-2 Status,True,3,Missing,,N|A,,,ocr,,title,,,Sine Sweep,Severity,
+FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,LVDT-2 Pre-Trim,Calibration,LVDT-2 Pre-Trim,True,3,1.0040,,,,,ocr,,number,,,Sine Sweep,Severity,
+FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,LVDT-2 Post-Trim,Calibration,LVDT-2 Post-Trim,True,3,1.0040,,,,,ocr,,number,,,Sine Sweep,Severity,

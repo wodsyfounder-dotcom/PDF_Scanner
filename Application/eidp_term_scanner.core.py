@@ -2026,6 +2026,18 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     debug_group_before_text_global: Optional[str] = None
     debug_group_region_applied_global: Optional[bool] = None
 
+    # Track failure reasons for better error messages
+    failure_tracking = {
+        "group_after_requested": spec.group_after is not None,
+        "group_before_requested": spec.group_before is not None,
+        "group_after_found": False,
+        "group_before_found": False,
+        "row_found_but_filtered": False,  # Row matched but filtered by group constraints
+        "row_found_no_value": False,      # Row matched but no value extracted
+        "low_score_rows": [],              # List of (score, row_text) for rows with score < 0.6
+        "numeric_candidates_nullified": False,  # All numeric candidates were out of range
+    }
+
     # Helper to extract for one line
     value_format_text, double_height_mode = _value_format_info(_effective_value_format(spec))
     fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
@@ -2301,6 +2313,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 group_after_seen = True
                                 group_after_page = p
                                 group_after_text = best_text
+                                failure_tracking["group_after_found"] = True
                                 if debug_group_after_page_global is None:
                                     debug_group_after_page_global = p
                                     debug_group_after_text_global = best_text
@@ -2340,6 +2353,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 group_before_seen = True
                                 group_before_page = p
                                 group_before_text = best_text
+                                failure_tracking["group_before_found"] = True
                                 if debug_group_before_page_global is None:
                                     debug_group_before_page_global = p
                                     debug_group_before_text_global = best_text
@@ -2375,11 +2389,23 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # subsequent pages (after group_after_page) are fully within the region.
                         if ga_y is not None and group_after_page is not None and p == group_after_page:
                             if float(entry['y0']) <= ga_y + 0.5:
+                                # Check if this row would have matched if not for the filter
+                                raw_check = line_text if case_sensitive else line_text.lower()
+                                needle_check = row_name if case_sensitive else row_name.lower()
+                                score_check = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                                if score_check >= 0.6 and _anchor_tokens_present(row_name, line_text):
+                                    failure_tracking["row_found_but_filtered"] = True
                                 continue
                         # group_before: only rows strictly above the anchor line on the first group_before page;
                         # pages after group_before_page have already been skipped at page level.
                         if spec.group_before and group_before_page is not None and p == group_before_page:
                             if page_group_before_y is not None and float(entry['y1']) >= page_group_before_y - 0.5:
+                                # Check if this row would have matched if not for the filter
+                                raw_check = line_text if case_sensitive else line_text.lower()
+                                needle_check = row_name if case_sensitive else row_name.lower()
+                                score_check = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                                if score_check >= 0.6 and _anchor_tokens_present(row_name, line_text):
+                                    failure_tracking["row_found_but_filtered"] = True
                                 continue
                         raw = line_text if case_sensitive else line_text.lower()
                         needle = row_name if case_sensitive else row_name.lower()
@@ -2407,6 +2433,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 except Exception:
                                     pdf_best_line_y0 = float(entry['y0'])
                         if row_name and (score < min_score or not anchor_tokens_ok):
+                            # Track low-score rows for better error reporting
+                            if score >= 0.3 and len(failure_tracking["low_score_rows"]) < 3:
+                                failure_tracking["low_score_rows"].append((score, line_text[:100]))
                             if debug_mode:
                                 reason = "missing anchor tokens" if not anchor_tokens_ok else "score<0.6"
                                 print(f"[SMART DEBUG][PDF] skip row {reason} page={p} score={score:.3f} text={line_text!r}", file=sys.stderr)
@@ -2854,6 +2883,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 score_components[id(c)] = comp
 
                             # Filter out nullified candidates
+                            num_nullified = sum(1 for t in scored if t[3])
+                            num_total = len(scored)
+                            if num_nullified > 0 and num_nullified == num_total:
+                                failure_tracking["numeric_candidates_nullified"] = True
                             scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
@@ -3222,6 +3255,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     group_region_applied = None
                 if debug_group_region_applied_global is None and group_region_applied is not None:
                     debug_group_region_applied_global = group_region_applied
+                failure_tracking["row_found_no_value"] = True
                 return MatchResult(
                     pdf_file=pdf_path.name,
                     serial_number=serial_number,
@@ -3927,6 +3961,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 score_components[id(c)] = comp
 
                             # Filter out nullified candidates
+                            num_nullified = sum(1 for t in scored if t[3])
+                            num_total = len(scored)
+                            if num_nullified > 0 and num_nullified == num_total:
+                                failure_tracking["numeric_candidates_nullified"] = True
                             scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
@@ -4379,6 +4417,38 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     except Exception:
         pass
 
+    # Build detailed error message based on failure tracking
+    error_parts = []
+
+    # Check for group anchor issues first
+    if failure_tracking["group_after_requested"] and not failure_tracking["group_after_found"]:
+        error_parts.append(f"group_after anchor '{spec.group_after}' not found")
+    if failure_tracking["group_before_requested"] and not failure_tracking["group_before_found"]:
+        error_parts.append(f"group_before anchor '{spec.group_before}' not found")
+
+    # Check if row was found but filtered
+    if failure_tracking["row_found_but_filtered"]:
+        error_parts.append("term found but filtered by group_after/group_before bounds")
+
+    # Check if row was found but no value
+    if failure_tracking["row_found_no_value"]:
+        error_parts.append("term found but no value extracted")
+
+    # Check if numeric candidates were nullified
+    if failure_tracking["numeric_candidates_nullified"]:
+        error_parts.append("numeric values found but all out of specified range")
+
+    # Check for low-score matches
+    if failure_tracking["low_score_rows"]:
+        best_low = max(failure_tracking["low_score_rows"], key=lambda x: x[0])
+        error_parts.append(f"best match score {best_low[0]:.2f} below threshold 0.6")
+
+    # Build final error message
+    if error_parts:
+        detailed_error = "Smart snap: " + "; ".join(error_parts)
+    else:
+        detailed_error = "Smart snap: no matching row/value"
+
     return MatchResult(
         pdf_file=pdf_path.name,
         serial_number=serial_number,
@@ -4393,7 +4463,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         row_label=None,
         column_label=None,
         text_source=None,
-        error_reason="Smart snap: no matching row/value",
+        error_reason=detailed_error,
         smart_snap_context=debug_context,
         smart_snap_type=debug_type,
         debug_group_after_page=debug_group_after_page_global,
@@ -6741,9 +6811,16 @@ def run_scan(
     except Exception:
         _xy_fuzz_debug = None
     try:
-        _ocr_row_eps_debug = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+        _ocr_row_eps_default = float(os.environ.get("OCR_ROW_EPS", "8.0"))
+        _ocr_row_eps_default = max(0.5, min(50.0, _ocr_row_eps_default))
     except Exception:
-        _ocr_row_eps_debug = None
+        _ocr_row_eps_default = None
+    try:
+        _ocr_dpi_default = int((os.environ.get("OCR_DPI") or "700").strip())
+        if _ocr_dpi_default < 1:
+            _ocr_dpi_default = 700
+    except Exception:
+        _ocr_dpi_default = 700
 
     # Step 3: For each PDF, scan for each term
     for pdf_path in sorted(pdfs):
@@ -6829,6 +6906,8 @@ def run_scan(
             # Add a concise metadata record for audit/JSON
             rows_count = len(ft_rows) if ft_rows is not None else 0
             term_label_ft = getattr(t, 'term_label', None) or getattr(t, 'term', '') or 'Full Table'
+            ft_ocr_row_eps = t.ocr_row_eps if t.ocr_row_eps is not None else _ocr_row_eps_default
+            ft_ocr_dpi = t.dpi if t.dpi is not None else _ocr_dpi_default
             meta_ft = {
                 "pdf_file": pdf_path.name,
                 "program_name": serial_meta[data_id].get("program_name"),
@@ -6861,7 +6940,8 @@ def run_scan(
                 "secondary_term": getattr(t, 'secondary_term', None),
                 "search_term": getattr(t, 'term', '') or 'Full Table',
                 "xy_fuzz": _xy_fuzz_debug,
-                "ocr_row_eps": _ocr_row_eps_debug,
+                "ocr_row_eps": ft_ocr_row_eps,
+                "ocr_dpi": ft_ocr_dpi,
             }
             metadata_rows.append(meta_ft)
             summary.append(meta_ft)
@@ -6879,6 +6959,8 @@ def run_scan(
             pass
 
         for idx, t in enumerate(scan_terms, start=1):
+            term_ocr_row_eps = t.ocr_row_eps if t.ocr_row_eps is not None else _ocr_row_eps_default
+            term_ocr_dpi = t.dpi if t.dpi is not None else _ocr_dpi_default
             mode = (t.mode or "").lower() if hasattr(t, 'mode') else ""
             if mode == "line":
                 res = scan_pdf_for_term_line(pdf_path, data_id, t, window_chars, case_sensitive)
@@ -7091,7 +7173,8 @@ def run_scan(
                 "smart_snap_context": getattr(res, 'smart_snap_context', None),
                 "search_term": res.term,
                 "xy_fuzz": _xy_fuzz_debug,
-                "ocr_row_eps": _ocr_row_eps_debug,
+                "ocr_row_eps": term_ocr_row_eps,
+                "ocr_dpi": term_ocr_dpi,
                 # Debug fields for Smart Position troubleshooting
                 "debug_ordered_boxes": getattr(res, 'debug_ordered_boxes', None),
                 "debug_fields_for_pos": getattr(res, 'debug_fields_for_pos', None),
@@ -7145,6 +7228,7 @@ def run_scan(
                     "search_term": debug_info["search_term"],
                     "xy_fuzz": debug_info["xy_fuzz"],
                     "ocr_row_eps": debug_info["ocr_row_eps"],
+                    "ocr_dpi": debug_info["ocr_dpi"],
                     "debug_ordered_boxes": debug_info["debug_ordered_boxes"],
                     "debug_fields_for_pos": debug_info["debug_fields_for_pos"],
                     "debug_smart_position_requested": debug_info["debug_smart_position_requested"],
@@ -7216,7 +7300,8 @@ def run_scan(
                 "units_hint_weight": 0.4,
                 "range_weight_full": 0.4,
                 "xy_fuzz": _xy_fuzz_debug,
-                "ocr_row_eps": _ocr_row_eps_debug,
+                "ocr_row_eps": _ocr_row_eps_default,
+                "ocr_dpi": _ocr_dpi_default,
             }
             with per_json.open("w", encoding="utf-8") as jf:
                 json.dump([_meta_to_json_row(row) for row in summary_pdf] + [match_summary_row], jf, ensure_ascii=False, indent=2)

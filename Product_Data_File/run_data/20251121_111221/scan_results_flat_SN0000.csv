@@ -1,2 +1,0 @@
-pdf_file,Program Name,Vehicle Number,Serial Component,Term Label,Data Group,Search Term,found,page,Extracted Value,units,Units Hint,Range Min,Range Max,Text Source,Smart Score,Smart Snap Type,Smart Conflict,Smart Secondary Found,Group After,Group Before,Error Reason
-FakeProgram_SV1_SN0000.pdf,FakeProgram,SV1,SN0000,LVDT-2 Pre-Trim,Calibration,LVDT-2 Pre-Trim,True,3,1.0040,,,,,pdf,,number,,,Sine Sweep,Severity,

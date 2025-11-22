@@ -1,3 +1,0 @@
-pdf_file,Program Name,Vehicle Number,Serial Component,Term Label,Data Group,Search Term,found,page,Extracted Value,units,Units Hint,Range Min,Range Max,Text Source,Smart Score,Smart Snap Type,Smart Conflict,Smart Secondary Found,Group After,Group Before,Error Reason
-FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,Thermal Margin Low,Performance KPI,Thermal Margin Low,True,2,8,,N|A,,,ocr,2.0064516129032257,number,,1.0,leak_check,Thermal Soak Low,
-FakeProgram_SV1_SN1111.pdf,FakeProgram,SV1,SN1111,LVDT-2 Post-Trim,Calibration,LVDT-2 Post-Trim,True,3,1.0040,,,,,ocr,,number,,,Sine Sweep,Severity,
