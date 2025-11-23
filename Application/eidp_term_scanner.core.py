@@ -483,7 +483,42 @@ def _effective_value_format(spec) -> Optional[str]:
         return raw
     smart_kind = (getattr(spec, "smart_snap_type", "") or "").strip().lower()
     return DEFAULT_SMART_FORMATS.get(smart_kind)
-TIME_REGEX = re.compile(r"\b(?:(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:[AP]M|[ap]m)?|(?:\d+\s*(?:ms|s|sec|mins?|minutes?|hrs?|hours?)))\b")
+TIME_REGEX = re.compile(
+    r"""
+    \b(?:
+        # Clock time format: HH:MM:SS or HH:MM with optional AM/PM
+        (?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:[AP]M|[ap]m)?
+        |
+        # Duration with units (supports decimals like 2.5 minutes)
+        [-+]?(?:\d+(?:\.\d+)?)\s*(?:
+            # Nanoseconds
+            ns|nsec|nanosec|nanosecond|nanoseconds
+            |
+            # Microseconds
+            us|usec|microsec|microsecond|microseconds|µs|μs
+            |
+            # Milliseconds
+            ms|msec|millisec|millisecond|milliseconds
+            |
+            # Seconds
+            s|sec|secs|second|seconds
+            |
+            # Minutes
+            m|min|mins|minute|minutes
+            |
+            # Hours
+            h|hr|hrs|hour|hours
+            |
+            # Days
+            d|day|days
+            |
+            # Weeks
+            w|wk|wks|week|weeks
+        )\b
+    )
+    """,
+    re.VERBOSE | re.IGNORECASE
+)
 
 
 def _format_score_breakdown(breakdown: Optional[Dict[str, Optional[float]]]) -> Optional[Dict[str, Optional[float]]]:
@@ -1831,6 +1866,24 @@ def _normalize_anchor_token(text: Optional[str]) -> str:
     if not text:
         return ""
     return re.sub(r"[^a-z0-9]", "", str(text).lower())
+
+
+def _fix_ocr_in_numbers(text: str) -> str:
+    """
+    Fix common OCR errors in numeric strings.
+    - O (letter) → 0 (zero) when preceded/followed by digits or decimal point
+    - l (lowercase L) → 1 when in numeric context
+    - I (capital i) → 1 when in numeric context
+    """
+    if not text:
+        return text
+    # Fix O → 0 when adjacent to digits or decimal points
+    # Pattern: digit.O or O.digit or .O or O. or digitO or Odigit
+    text = re.sub(r'(\d)O(?=\d|[a-z]|\s|$)', r'\g<1>0', text)  # digitO
+    text = re.sub(r'(^|\s|\.)O(?=\d)', r'\g<1>0', text)  # Odigit or .O
+    text = re.sub(r'(\d|\.)O(?=\D|$)', r'\g<1>0', text)  # digit.O or O at end
+    text = re.sub(r'\.O(?=[a-z])', '.0', text)  # .Opsig → .0psig
+    return text
 
 
 def _first_numeric(text: str) -> Optional[str]:
@@ -4069,11 +4122,13 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if has_smart_pos and fields_for_pos:
                                 if pos_n <= len(fields_for_pos):
                                     field_text = fields_for_pos[pos_n - 1]
-                                    cand_match = NUMBER_REGEX.search(field_text)
+                                    # Fix common OCR errors in numbers (O→0, l→1, I→1)
+                                    field_text_fixed = _fix_ocr_in_numbers(field_text)
+                                    cand_match = NUMBER_REGEX.search(field_text_fixed)
                                     if not cand_match:
                                         # Smart Position box has no numeric content; log and fall back to scoring logic below.
                                         if debug_mode:
-                                            print(f"[SMART DEBUG] smart_position box non-numeric dpi={dpi} page={p} pos={pos_n} field={field_text!r}", file=sys.stderr)
+                                            print(f"[SMART DEBUG] smart_position box non-numeric dpi={dpi} page={p} pos={pos_n} field={field_text!r} fixed={field_text_fixed!r}", file=sys.stderr)
                                         # Track this specific failure for better error reporting
                                         failure_tracking["row_found_no_value"] = True
                                         failure_tracking["smart_pos_non_numeric"] = field_text[:50]  # Store first 50 chars
