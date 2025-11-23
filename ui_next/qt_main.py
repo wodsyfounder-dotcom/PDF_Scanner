@@ -128,7 +128,7 @@ class RunProgressDialog(QtWidgets.QDialog):
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("Working...")
 
-        self.detail_label = QtWidgets.QLabel("Searching: 0 / 0 terms \u2022 Found: 0")
+        self.detail_label = QtWidgets.QLabel("Waiting for scanner progress\u2026")
         self.detail_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.detail_label.setStyleSheet("font-size: 12px; color: #e0e7f0;")
 
@@ -158,11 +158,15 @@ class RunProgressDialog(QtWidgets.QDialog):
         self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
         self.spinner_label.setText(self._spinner_frames[self._spinner_index])
 
+        # Base status text shown at the top of the dialog
+        self._base_status_text: str = ""
+
     def begin(self, status_text: str):
+        self._base_status_text = status_text
         self.lbl_status.setText(status_text)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setFormat("Working...")
-        self.detail_label.setText("Searching: 0 / 0 terms \u2022 Found: 0")
+        self.detail_label.setText("Waiting for scanner progress\u2026")
         self._spinner_index = 0
         self.spinner_label.setText(self._spinner_frames[0])
         self._anim_timer.start()
@@ -175,20 +179,55 @@ class RunProgressDialog(QtWidgets.QDialog):
         except Exception:
             pass
 
-    def update_progress(self, completed: int, total: int, found: int = 0):
+    def update_progress(
+        self,
+        completed: int,
+        total: int,
+        found: int = 0,
+        *,
+        current_file: str | None = None,
+        file_index: int | None = None,
+        file_total: int | None = None,
+    ):
         if total <= 0:
             if self.progress_bar.maximum() != 0:
                 self.progress_bar.setRange(0, 0)
                 self.progress_bar.setFormat("Working...")
-            self.detail_label.setText(f"Searching: {completed} terms \u2022 Found: {found}")
-            return
-        if self.progress_bar.maximum() == 0:
-            self.progress_bar.setRange(0, 100)
-        pct = max(0, min(100, int(round((completed * 100) / max(1, total)))))
-        remaining = max(0, total - completed)
-        self.progress_bar.setValue(pct)
-        self.progress_bar.setFormat(f"{pct}%")
-        self.detail_label.setText(f"Searching: {completed} / {total} terms \u2022 Found: {found}")
+            if completed <= 0:
+                terms_text = "Waiting for term counts"
+            else:
+                terms_text = f"Searching: {completed} term{'s' if completed != 1 else ''}"
+        else:
+            if self.progress_bar.maximum() == 0:
+                self.progress_bar.setRange(0, 100)
+            pct = max(0, min(100, int(round((completed * 100) / max(1, total)))))
+            self.progress_bar.setValue(pct)
+            self.progress_bar.setFormat(f"{pct}%")
+            terms_text = f"Searching: {completed} / {total} terms"
+        detail_parts = []
+        file_label = None
+        if current_file:
+            idx = (file_index or 0)
+            total_files = (file_total or 0)
+            if total_files > 0 and idx > 0:
+                file_label = f"{current_file} ({idx}/{total_files})"
+            elif idx > 0:
+                file_label = f"{current_file} ({idx})"
+            else:
+                file_label = current_file
+        elif file_total:
+            idx = (file_index or 0)
+            if idx > 0:
+                file_label = f"EIDPs: {idx}/{file_total}"
+            else:
+                file_label = f"EIDPs: {file_total}"
+        if file_label:
+            detail_parts.append(file_label)
+        if terms_text:
+            detail_parts.append(f"{terms_text} \u2022 Found: {found}")
+        if not detail_parts:
+            detail_parts.append(f"Found: {found}")
+        self.detail_label.setText(" \u2022 ".join(detail_parts))
 
     def finish(self, message: str, success: bool = True):
         self._anim_timer.stop()
@@ -1774,6 +1813,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_total = 0
         self._progress_completed = 0
         self._progress_found = 0
+        # File-level progress tracking
+        self._progress_file_total = 0
+        self._progress_file_index = 0
+        self._progress_file_name: str | None = None
+        # Track whether current worker is a missing-terms batch (driven by helper script)
+        self._is_missing_terms_batch = False
         self._progress_popup_active = False
         self._progress_was_canceled = False
         self._last_run_dir: Path | None = None
@@ -2821,6 +2866,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_worker_line(self, text: str):
         self._append_log(text)
         self._maybe_update_run_progress(text)
+        self._maybe_update_run_file(text)
         self._maybe_track_run_dir(text)
 
     def _maybe_update_run_progress(self, text: str):
@@ -2841,6 +2887,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_completed = max(0, min(completed, self._progress_total or completed))
         self._progress_found = max(0, found)
         self._update_progress_widgets()
+
+    def _maybe_update_run_file(self, text: str):
+        """Track which EIDP/PDF is currently being processed based on stdout."""
+        if not self._progress_popup_active:
+            return
+        # Missing-terms batch helper script emits a higher-level INFO line per EIDP.
+        if "[INFO] Starting missing-terms extraction for serial" in text:
+            self._is_missing_terms_batch = True
+            try:
+                # Example: "[INFO] Starting missing-terms extraction for serial ABC123 (file.pdf)"
+                if "(" in text and ")" in text:
+                    file_part = text.split("(", 1)[1].rsplit(")", 1)[0]
+                    current_file = file_part.strip()
+                else:
+                    current_file = text.rsplit(" ", 1)[-1].strip()
+            except Exception:
+                current_file = ""
+            if current_file:
+                self._progress_file_index = max(1, self._progress_file_index + 1)
+                self._progress_file_name = current_file
+                self._update_progress_widgets()
+            return
+        # Standard scanner runs (full folder / selected PDFs) emit:
+        # "[INFO] Scanning: <file>  [Data: <label>]"
+        if "[INFO] Scanning:" in text and not self._is_missing_terms_batch:
+            try:
+                _, tail = text.split("Scanning:", 1)
+                # Strip optional "[Data: ...]" suffix.
+                before_data = tail.split("[Data:", 1)[0]
+                current_file = before_data.strip()
+            except Exception:
+                current_file = ""
+            if current_file:
+                self._progress_file_index = max(1, self._progress_file_index + 1)
+                self._progress_file_name = current_file
+                self._update_progress_widgets()
 
     def _maybe_track_run_dir(self, text: str):
         if "Outputs will be saved under:" not in text:
@@ -2876,7 +2958,14 @@ class MainWindow(QtWidgets.QMainWindow):
         total = self._progress_total
         completed = min(self._progress_completed, total if total else self._progress_completed)
         found = self._progress_found
-        self._progress_dialog.update_progress(completed, total, found)
+        self._progress_dialog.update_progress(
+            completed,
+            total,
+            found,
+            current_file=self._progress_file_name,
+            file_index=self._progress_file_index,
+            file_total=self._progress_file_total,
+        )
 
     def _finalize_run_progress(self, success: bool):
         if not self._progress_popup_active:
@@ -2930,7 +3019,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_plot_series_after_worker = True
         self._start_worker(be.generate_plot_terms, status_msg=label)
 
-    def _start_worker(self, popen_factory, *, status_msg: str, show_run_progress: bool = False, refresh_plot_terms_after: bool = False):
+    def _start_worker(
+        self,
+        popen_factory,
+        *,
+        status_msg: str,
+        show_run_progress: bool = False,
+        refresh_plot_terms_after: bool = False,
+        total_files: int | None = None,
+    ):
         if self._worker is not None and self._worker.isRunning():
             return
         self._auto_update_plot_terms_on_success = bool(refresh_plot_terms_after)
@@ -2939,6 +3036,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._progress_total = 0
         self._progress_completed = 0
         self._progress_found = 0
+        self._progress_file_total = max(int(total_files or 0), 0)
+        self._progress_file_index = 0
+        self._progress_file_name = None
+        self._is_missing_terms_batch = False
         self._progress_popup_active = show_run_progress
         self._progress_was_canceled = False
         self._last_run_dir = None
@@ -2971,6 +3072,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._append_log(f"[INFO] Process finished with code {rc}")
         was_canceled = self._progress_was_canceled
         is_extraction = getattr(self, "_is_extraction_run", False)
+        self._is_missing_terms_batch = False
         self._finalize_run_progress(success=(rc == 0))
 
         # Show toast notification only for extraction runs
@@ -3308,11 +3410,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.information(dlg, "No Missing Terms", "All selected EIDPs already contain every schema term.")
                 return
             self._enrich_after_run = True
+            total_eidps = len(serials)
             self._start_worker(
                 lambda entries=entries, terms=terms: be.run_missing_terms_for_selected_pdfs(entries, terms),
                 status_msg=missing_status,
                 show_run_progress=True,
                 refresh_plot_terms_after=True,
+                total_files=total_eidps,
             )
             result["run"] = True
             dlg.accept()
@@ -3323,11 +3427,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.information(dlg, "Nothing to run", "No valid PDF paths were found.")
                 return
             self._enrich_after_run = True
+            total_eidps = len(paths)
             self._start_worker(
                 lambda paths=paths, terms=terms: be.run_selected_pdfs(paths, terms),
                 status_msg=full_status,
                 show_run_progress=True,
                 refresh_plot_terms_after=True,
+                total_files=total_eidps,
             )
             result["run"] = True
             dlg.accept()
@@ -3349,7 +3455,17 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         # Only enrich registry after a scan completes
         self._enrich_after_run = True
-        self._start_worker(lambda: be.run_scanner(terms, pdfs), status_msg="Scanning PDFs...", show_run_progress=True, refresh_plot_terms_after=True)
+        try:
+            total_files = sum(1 for _ in pdfs.glob("*.pdf"))
+        except Exception:
+            total_files = 0
+        self._start_worker(
+            lambda: be.run_scanner(terms, pdfs),
+            status_msg="Scanning PDFs...",
+            show_run_progress=True,
+            refresh_plot_terms_after=True,
+            total_files=total_files,
+        )
 
     def _act_stop_scan(self):
         try:
