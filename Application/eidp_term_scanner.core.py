@@ -16,8 +16,10 @@ EIDP Term Scanner (Matrix + Metadata)
 
 import argparse
 import csv
+import hashlib
 import json
 import os
+import pickle
 import re
 import shutil
 import sys
@@ -1316,6 +1318,14 @@ def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
+                # Try loading from persistent cache first
+                cached_result = _load_ocr_from_cache(pdf_path, p, 'pymupdf', _dpi)
+                if cached_result is not None:
+                    text, cached_dpi = cached_result
+                    out[p] = text
+                    continue
+
+                # Cache miss - perform OCR
                 page = doc.load_page(p - 1)
                 # Increase DPI to improve OCR fidelity on small text
                 pix = page.get_pixmap(dpi=_dpi)
@@ -1326,6 +1336,9 @@ def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                     error_notes.append(type(e).__name__)
                     text = ""
                 out[p] = text or ""
+
+                # Save to persistent cache
+                _save_ocr_to_cache(pdf_path, p, 'pymupdf', _dpi, text)
     finally:
         doc.close()
     if error_notes:
@@ -1348,21 +1361,39 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
         _dpi = 400
     _dpi = max(200, min(800, _dpi))
     _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
-    try:
-        images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages), last_page=max(pages))
-    except Exception as e:
-        return out, f"ocr_pdf2image:convert_error:{e}"
+
+    # Check cache for all pages first
     page_list = sorted(set(pages))
-    start = page_list[0]
-    error_notes: List[str] = []
-    for idx, img in enumerate(images, start=start):
-        if idx in page_list:
-            try:
-                text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
-            except Exception as e:
-                error_notes.append(type(e).__name__)
-                text = ""
-            out[idx] = text or ""
+    pages_to_ocr = []
+    for p in page_list:
+        cached_result = _load_ocr_from_cache(pdf_path, p, 'pdf2image', _dpi)
+        if cached_result is not None:
+            text, cached_dpi = cached_result
+            out[p] = text
+        else:
+            pages_to_ocr.append(p)
+
+    # Only OCR pages that weren't in cache
+    if pages_to_ocr:
+        try:
+            images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages_to_ocr), last_page=max(pages_to_ocr))
+        except Exception as e:
+            return out, f"ocr_pdf2image:convert_error:{e}"
+
+        start = pages_to_ocr[0]
+        error_notes: List[str] = []
+        for idx, img in enumerate(images, start=start):
+            if idx in pages_to_ocr:
+                try:
+                    text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+                except Exception as e:
+                    error_notes.append(type(e).__name__)
+                    text = ""
+                out[idx] = text or ""
+                # Save to persistent cache
+                _save_ocr_to_cache(pdf_path, idx, 'pdf2image', _dpi, text)
+    else:
+        error_notes = []
     if error_notes:
         return out, "ocr_pdf2image:error:" + ",".join(sorted(set(error_notes)))
     return out, "ocr_pdf2image"
@@ -1420,6 +1451,14 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
+                # Try loading from persistent cache first
+                cached_result = _load_ocr_from_cache(pdf_path, p, 'easyocr', dpi)
+                if cached_result is not None:
+                    text, cached_dpi = cached_result
+                    out[p] = text
+                    continue
+
+                # Cache miss - perform OCR
                 try:
                     page = doc.load_page(p - 1)
                     pix = page.get_pixmap(dpi=dpi)
@@ -1447,7 +1486,11 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                                 lines.append(t)
                         except Exception:
                             pass
-                    out[p] = "\n".join(lines)
+                    text = "\n".join(lines)
+                    out[p] = text
+
+                    # Save to persistent cache
+                    _save_ocr_to_cache(pdf_path, p, 'easyocr', dpi, text)
                 finally:
                     try:
                         import shutil as _sh
@@ -1472,6 +1515,96 @@ def _pdf_cache_key(pdf_path: Path) -> str:
         return str(pdf_path.resolve())
     except Exception:
         return str(pdf_path)
+
+
+# ============================================================================
+# Persistent OCR Cache (DPI-aware, per-EIDP)
+# ============================================================================
+
+def _get_ocr_cache_dir(pdf_path: Path) -> Path:
+    """Get the OCR cache directory for a given PDF.
+
+    Stores cache in a .ocr_cache directory next to the PDF file.
+    """
+    cache_dir = pdf_path.parent / ".ocr_cache" / pdf_path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _get_ocr_cache_key(pdf_path: Path, page: int, ocr_mode: str, dpi: int) -> str:
+    """Generate a cache key for OCR results.
+
+    Format: {pdf_hash}_{page}_{ocr_mode}_{dpi}.pkl
+    """
+    # Use PDF path hash to keep filenames short and avoid path issues
+    pdf_hash = hashlib.md5(str(pdf_path.resolve()).encode('utf-8')).hexdigest()[:12]
+    return f"{pdf_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl"
+
+
+def _load_ocr_from_cache(pdf_path: Path, page: int, ocr_mode: str, requested_dpi: int) -> Optional[Tuple[str, int]]:
+    """Load OCR result from persistent cache if available and DPI is sufficient.
+
+    Returns:
+        Tuple of (page_text, cached_dpi) if cache hit with sufficient DPI
+        None if no suitable cache found
+    """
+    try:
+        cache_dir = _get_ocr_cache_dir(pdf_path)
+        debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+
+        # Look for cached results with DPI >= requested_dpi
+        # Check exact match first, then higher DPIs
+        for check_dpi in range(requested_dpi, 2000, 100):  # Check up to DPI 2000
+            cache_key = _get_ocr_cache_key(pdf_path, page, ocr_mode, check_dpi)
+            cache_file = cache_dir / cache_key
+
+            if cache_file.exists():
+                with open(cache_file, 'rb') as f:
+                    cache_data = pickle.load(f)
+                    cached_text = cache_data.get('text', '')
+                    cached_dpi = cache_data.get('dpi', check_dpi)
+
+                    # Only use if cached DPI >= requested DPI
+                    if cached_dpi >= requested_dpi:
+                        if debug_mode:
+                            print(f"[OCR CACHE HIT] {pdf_path.name} page {page} @ DPI {cached_dpi} (requested {requested_dpi})", file=sys.stderr)
+                        return (cached_text, cached_dpi)
+
+        if debug_mode:
+            print(f"[OCR CACHE MISS] {pdf_path.name} page {page} @ DPI {requested_dpi} - performing OCR", file=sys.stderr)
+        return None
+    except Exception:
+        return None
+
+
+def _save_ocr_to_cache(pdf_path: Path, page: int, ocr_mode: str, dpi: int, text: str) -> None:
+    """Save OCR result to persistent cache.
+
+    Args:
+        pdf_path: Path to the PDF file
+        page: Page number (1-indexed)
+        ocr_mode: OCR mode used (e.g., 'pymupdf', 'easyocr')
+        dpi: DPI used for OCR
+        text: Extracted text
+    """
+    try:
+        cache_dir = _get_ocr_cache_dir(pdf_path)
+        cache_key = _get_ocr_cache_key(pdf_path, page, ocr_mode, dpi)
+        cache_file = cache_dir / cache_key
+
+        cache_data = {
+            'text': text,
+            'dpi': dpi,
+            'ocr_mode': ocr_mode,
+            'page': page,
+            'timestamp': str(os.path.getmtime(str(pdf_path))),  # Track PDF modification time
+        }
+
+        with open(cache_file, 'wb') as f:
+            pickle.dump(cache_data, f)
+    except Exception:
+        pass  # Silently fail on cache write errors
+
 
 def get_pdf_page_count(pdf_path: Path) -> int:
     """Best-effort page count using PyMuPDF or pypdf."""
@@ -2599,6 +2732,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 group_before_page: Optional[int] = None
                 group_after_text: Optional[str] = None
                 group_before_text: Optional[str] = None
+                # Flag to exit after completing the current page (for OCR caching efficiency)
+                exit_after_current_page = False
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -2722,6 +2857,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     debug_group_before_text_global = best_text
                                     if debug_group_region_applied_global is None:
                                         debug_group_region_applied_global = True
+                                # Signal to exit after completing the current page (allows full page OCR for caching)
+                                if spec.group_after and spec.group_before:
+                                    exit_after_current_page = True
+                                    if debug_mode:
+                                        print(f"[EARLY EXIT] Found group_before on page {p}, will exit after completing this page", file=sys.stderr)
+
                     # Enforce page-level group_after/group_before bounds
                     if spec.group_after and not group_after_seen:
                         # Haven't seen group_after anywhere yet (including this page); skip searching this page
@@ -3530,6 +3671,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                             best_components = row_components
                                             if debug_mode:
                                                 print(f"[SMART DEBUG][PDF] best_update(direct) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                    # Exit after current page if both group_after and group_before have been found
+                    # (allows full page to be OCR'd and cached before exiting)
+                    if exit_after_current_page:
+                        if debug_mode:
+                            print(f"[EARLY EXIT] Exiting page loop - both anchors found, skipping remaining pages", file=sys.stderr)
+                        break
             finally:
                 try:
                     doc.close()

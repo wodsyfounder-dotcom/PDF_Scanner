@@ -23,7 +23,8 @@
       "Bash(bash -c:*)",
       "Bash(temp_debug_source_bundle.txt)",
       "Bash(git add:*)",
-      "Bash(del \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_bad_char.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\check_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_all_bad_chars.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding2.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_simple.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_final.py\")"
+      "Bash(del \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_bad_char.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\check_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_all_bad_chars.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding2.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_simple.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_final.py\")",
+      "Bash(iconv:*)"
     ],
     "deny": [],
     "ask": []
