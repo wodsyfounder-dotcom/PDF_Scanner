@@ -1,0 +1,264 @@
+"""
+Master Cell State Management
+
+This module manages the single source of truth for extracted cell values.
+The state file (master_cell_state.json) is updated ONLY when the extractor runs.
+It is never modified by workspace sync or other operations.
+
+State Structure:
+{
+    "serial_component_id": {
+        "term_name": {
+            "value": "extracted_value",
+            "last_updated": "2025-01-15T10:30:00",
+            "run_folder": "20250115_103000"
+        },
+        ...
+    },
+    ...
+}
+"""
+
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional, Set
+import logging
+
+import pandas as pd
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
+
+logger = logging.getLogger(__name__)
+
+# Path to the state file
+STATE_FILE_PATH = Path("Product_Data_File/master_cell_state.json")
+MASTER_XLSX_PATH = Path("Product_Data_File/master.xlsx")
+
+
+def load_cell_state() -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    Load the master cell state from JSON file.
+
+    Returns:
+        Dictionary mapping serial_component -> term -> {value, last_updated, run_folder}
+        Returns empty dict if file doesn't exist.
+    """
+    if not STATE_FILE_PATH.exists():
+        logger.info(f"Cell state file not found at {STATE_FILE_PATH}, returning empty state")
+        return {}
+
+    try:
+        with open(STATE_FILE_PATH, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+        logger.info(f"Loaded cell state with {len(state)} serial components")
+        return state
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse cell state JSON: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Failed to load cell state: {e}")
+        return {}
+
+
+def save_cell_state(state: Dict[str, Dict[str, Dict[str, Any]]]) -> None:
+    """
+    Save the master cell state to JSON file atomically.
+
+    Args:
+        state: Dictionary mapping serial_component -> term -> {value, last_updated, run_folder}
+    """
+    try:
+        # Ensure parent directory exists
+        STATE_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to temp file first, then rename (atomic on most filesystems)
+        temp_path = STATE_FILE_PATH.with_suffix('.tmp')
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+
+        # Atomic rename
+        temp_path.replace(STATE_FILE_PATH)
+        logger.info(f"Saved cell state with {len(state)} serial components")
+
+    except Exception as e:
+        logger.error(f"Failed to save cell state: {e}")
+        raise
+
+
+def update_cell_state(
+    serial_component: str,
+    term_values: Dict[str, Any],
+    run_folder: str,
+    timestamp: Optional[str] = None
+) -> None:
+    """
+    Update the cell state for a specific serial component with new extracted values.
+
+    Args:
+        serial_component: The serial component ID (e.g., "SN123_PG456")
+        term_values: Dictionary mapping term names to extracted values
+        run_folder: The run folder name (e.g., "20250115_103000")
+        timestamp: ISO format timestamp, defaults to now
+    """
+    if timestamp is None:
+        timestamp = datetime.now().isoformat()
+
+    # Load current state
+    state = load_cell_state()
+
+    # Ensure serial_component exists in state
+    if serial_component not in state:
+        state[serial_component] = {}
+
+    # Update each term value
+    for term_name, value in term_values.items():
+        state[serial_component][term_name] = {
+            "value": value,
+            "last_updated": timestamp,
+            "run_folder": run_folder
+        }
+
+    # Save updated state
+    save_cell_state(state)
+    logger.info(f"Updated cell state for {serial_component} with {len(term_values)} terms")
+
+
+def get_cell_value(serial_component: str, term: str) -> Optional[Dict[str, Any]]:
+    """
+    Get the state for a specific cell.
+
+    Args:
+        serial_component: The serial component ID
+        term: The term name
+
+    Returns:
+        Dictionary with {value, last_updated, run_folder} or None if not found
+    """
+    state = load_cell_state()
+    return state.get(serial_component, {}).get(term)
+
+
+def get_referenced_run_folders() -> Set[str]:
+    """
+    Get all run folders that are referenced in the current cell state.
+    Used for cache clearing - only these runs should be preserved.
+
+    Returns:
+        Set of run folder names (e.g., {"20250115_103000", "20250116_140000"})
+    """
+    state = load_cell_state()
+    run_folders = set()
+
+    for serial_component, terms in state.items():
+        for term_name, cell_data in terms.items():
+            run_folder = cell_data.get("run_folder")
+            if run_folder:
+                run_folders.add(run_folder)
+
+    logger.info(f"Found {len(run_folders)} unique run folders referenced in cell state")
+    return run_folders
+
+
+def apply_state_to_master_incremental(serial_component: str, term_values: Dict[str, Any]) -> None:
+    """
+    Update ONLY the specified serial_component row in master.xlsx with the given term values.
+    All other rows and cells remain unchanged (preserves manual edits).
+
+    Uses openpyxl to modify in-place without rewriting the entire file.
+
+    Args:
+        serial_component: The serial component ID (row to update)
+        term_values: Dictionary mapping term names to values
+    """
+    if not MASTER_XLSX_PATH.exists():
+        logger.warning(f"master.xlsx not found at {MASTER_XLSX_PATH}, skipping incremental update")
+        return
+
+    try:
+        # Load workbook
+        wb = openpyxl.load_workbook(MASTER_XLSX_PATH)
+        ws = wb.active
+
+        # Find header row (assumed to be row 1)
+        headers = {}
+        for col_idx, cell in enumerate(ws[1], start=1):
+            if cell.value:
+                headers[cell.value] = col_idx
+
+        # Find the row for this serial_component
+        serial_col = headers.get("serial_component")
+        if not serial_col:
+            logger.error("Could not find 'serial_component' column in master.xlsx")
+            return
+
+        target_row = None
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=serial_col, max_row=ws.max_row), start=2):
+            if row[serial_col - 1].value == serial_component:
+                target_row = row_idx
+                break
+
+        if not target_row:
+            logger.warning(f"Serial component {serial_component} not found in master.xlsx, may need to add new row")
+            # TODO: Handle adding new rows if needed
+            # For now, just skip
+            return
+
+        # Update the cells for this row
+        updated_count = 0
+        for term_name, value in term_values.items():
+            if term_name in headers:
+                col_idx = headers[term_name]
+                ws.cell(row=target_row, column=col_idx, value=value)
+                updated_count += 1
+
+        # Save workbook
+        wb.save(MASTER_XLSX_PATH)
+        logger.info(f"Updated {updated_count} cells in master.xlsx for {serial_component}")
+
+    except Exception as e:
+        logger.error(f"Failed to apply incremental update to master.xlsx: {e}")
+        raise
+
+
+def build_dataframe_from_state() -> pd.DataFrame:
+    """
+    Build a pandas DataFrame from the cell state.
+    Used by the "Compile New Master Workbook" function to rebuild from scratch.
+
+    Returns:
+        DataFrame with columns: serial_component, program_name, vehicle_number, term1, term2, ...
+    """
+    state = load_cell_state()
+
+    if not state:
+        logger.warning("Cell state is empty, returning empty DataFrame")
+        return pd.DataFrame()
+
+    # Collect all unique terms across all serial components
+    all_terms = set()
+    for serial_component, terms in state.items():
+        all_terms.update(terms.keys())
+
+    all_terms = sorted(all_terms)
+
+    # Build rows
+    rows = []
+    for serial_component, terms in state.items():
+        row = {"serial_component": serial_component}
+
+        # Extract metadata if present (program_name, vehicle_number might be in terms or separate)
+        # For now, just extract all term values
+        for term_name in all_terms:
+            cell_data = terms.get(term_name)
+            row[term_name] = cell_data["value"] if cell_data else None
+
+        rows.append(row)
+
+    # Create DataFrame
+    columns = ["serial_component"] + all_terms
+    df = pd.DataFrame(rows, columns=columns)
+
+    logger.info(f"Built DataFrame from state with {len(df)} rows and {len(df.columns)} columns")
+    return df

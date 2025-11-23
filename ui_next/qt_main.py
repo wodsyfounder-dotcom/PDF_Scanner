@@ -2437,6 +2437,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_sync_workspace.clicked.connect(self._act_sync_workspace)
         upload_layout.addWidget(self.btn_sync_workspace)
 
+        # Compile New Master Workbook button
+        self.btn_compile_master = QtWidgets.QPushButton("📊  Compile New Master Workbook")
+        self.btn_compile_master.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+                border-radius: 6px;
+                background: #dc2626;
+                color: #ffffff;
+                border: 1px solid #dc2626;
+                font-size: 13px;
+                font-weight: 600;
+                margin-top: 8px;
+            }
+            QPushButton:hover {
+                background: #b91c1c;
+            }
+            QPushButton:disabled {
+                background: #fca5a5;
+                border-color: #fca5a5;
+            }
+        """)
+        self.btn_compile_master.setToolTip(
+            "Rebuild master.xlsx from cell state ONLY.\n"
+            "WARNING: This will overwrite master.xlsx and discard all manual edits!"
+        )
+        self.btn_compile_master.clicked.connect(self._act_compile_master_from_state)
+        upload_layout.addWidget(self.btn_compile_master)
+
         # Repository Root
         repo_label = QtWidgets.QLabel("Repository Root")
         repo_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500; margin-top: 8px;")
@@ -3686,12 +3714,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     "#syncBanner { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; border-radius: 6px; padding: 8px 12px; }"
                 )
             flagged = (new + pdf_newer + terms_newer)
-            # Optionally compile master when sync is user-initiated
-            if not auto:
-                try:
-                    self._start_worker(be.compile_master, status_msg="Compiling master workbook from registry...")
-                except Exception:
-                    pass
+            # NOTE: Workspace sync NO LONGER compiles master.xlsx automatically.
+            # Master is now updated incrementally when the extractor runs.
+            # Use the "Compile New Master Workbook" button to rebuild from state.
             if not auto:
                 self._append_log("[GUI] Workspace sync complete")
                 # Show toast notification for manual sync
@@ -3707,6 +3732,47 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _act_sync_workspace(self):
         self._sync_workspace(auto=False)
+
+    def _act_compile_master_from_state(self):
+        """
+        Rebuild master.xlsx from master_cell_state.json ONLY.
+        Shows confirmation dialog before proceeding.
+        """
+        # Show warning dialog
+        reply = QtWidgets.QMessageBox.warning(
+            self,
+            "Compile New Master Workbook",
+            "This will rebuild master.xlsx from extracted data ONLY.\n\n"
+            "All manual edits in master.xlsx will be LOST.\n\n"
+            "Are you sure you want to continue?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        # Run the compilation synchronously (it's fast - just reading JSON and writing Excel)
+        try:
+            self._append_log("[GUI] Compiling master workbook from cell state...")
+            self.status_bar.showMessage("Compiling new master workbook from cell state...")
+
+            # Call the backend function directly
+            be.compile_master_from_state()
+
+            self._append_log("[GUI] Master workbook compiled successfully!")
+            self.status_bar.showMessage("Master workbook compiled successfully!", 5000)
+            self._show_toast("Master workbook compiled successfully!")
+
+            # Refresh plot terms if needed
+            self._schedule_plot_terms_update("master compilation")
+
+        except Exception as e:
+            self._append_log(f"[ERROR] Failed to compile master workbook: {e}")
+            self.status_bar.showMessage(f"Failed to compile master: {e}", 5000)
+            self._show_toast(f"Failed to compile master: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _show_toast(self, message: str, duration: int = 5000):
         """Show a toast/cookie banner notification."""

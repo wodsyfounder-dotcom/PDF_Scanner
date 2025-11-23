@@ -589,6 +589,151 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
         raise RuntimeError(f"Failed to write master.xlsx: {e}") from e
 
 
+def build_master_from_state() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """
+    Rebuild master workbook from master_cell_state.json ONLY.
+
+    This is the ONLY way to reproduce the master workbook from extracted data.
+    It completely ignores any existing master.xlsx and rebuilds from scratch.
+    All manual edits will be lost.
+
+    Returns: (serials, term_rows, program_by_sn, sv_by_sn, data_by_sn)
+    """
+    from scripts.master_cell_state import load_cell_state
+
+    # Load cell state (single source of truth for extracted values)
+    state = load_cell_state()
+
+    if not state:
+        print("[WARN] Cell state is empty. No data to compile.")
+        return [], [], {}, {}, {}
+
+    # Load schema to get term metadata (units, min, max, data_group)
+    schema_units = _load_schema_units()
+
+    # Load schema to get full term details
+    schema_terms = _load_schema_terms()
+
+    # Get serial components from state
+    serials = sorted(state.keys())
+
+    # Collect all unique terms across all serial components
+    all_terms_set = set()
+    for serial_component, terms in state.items():
+        all_terms_set.update(terms.keys())
+
+    # Build term_rows (organized by term)
+    term_rows: List[Dict[str, Any]] = []
+    terms_order = sorted(all_terms_set)  # alphabetical order
+
+    for term_name in terms_order:
+        # Look up term metadata from schema
+        term_meta = schema_terms.get(term_name.lower(), {})
+
+        # Build values dict for this term across all serial components
+        values = {}
+        for serial_component in serials:
+            cell_data = state.get(serial_component, {}).get(term_name)
+            if cell_data:
+                values[serial_component] = cell_data.get("value")
+            else:
+                values[serial_component] = ""
+
+        # Create term row
+        row = {
+            "term_label": term_meta.get("term_label", term_name),
+            "data_group": term_meta.get("data_group", ""),
+            "units": term_meta.get("units", ""),
+            "range_min": term_meta.get("range_min", ""),
+            "range_max": term_meta.get("range_max", ""),
+            "values": values,
+        }
+        term_rows.append(row)
+
+    # Get metadata (program_name, vehicle_number) from run_registry
+    # since cell state doesn't track metadata
+    program_by_sn: Dict[str, str] = {}
+    sv_by_sn: Dict[str, str] = {}
+    data_by_sn: Dict[str, str] = {}
+
+    try:
+        reg = load_registry()
+        for sn, _rf, meta in reg:
+            if sn in serials:
+                program_by_sn[sn] = meta.get("program_name", "")
+                sv_by_sn[sn] = meta.get("vehicle_number", "")
+                data_by_sn[sn] = meta.get("serial_component", sn)
+    except Exception as e:
+        print(f"[WARN] Could not load metadata from registry: {e}")
+
+    print(f"[INFO] Built master from state: {len(serials)} serial components, {len(term_rows)} terms")
+    return serials, term_rows, program_by_sn, sv_by_sn, data_by_sn
+
+
+def _load_schema_terms() -> Dict[str, Dict[str, str]]:
+    """
+    Load term metadata from schema file.
+    Returns: {term_label_lower: {term_label, data_group, units, range_min, range_max}}
+    """
+    mapping: Dict[str, Dict[str, str]] = {}
+    if not TERMS_XLSX.exists():
+        return mapping
+
+    try:
+        import pandas as pd  # type: ignore
+        df = pd.read_excel(TERMS_XLSX, sheet_name=TERMS_SHEET)
+        df = df.fillna("")
+
+        for _, row in df.iterrows():
+            term_label = str(row.get("Term Label") or "").strip()
+            if not term_label:
+                continue
+
+            mapping[term_label.lower()] = {
+                "term_label": term_label,
+                "data_group": str(row.get("Data Group") or "").strip(),
+                "units": str(row.get("Units") or "").strip(),
+                "range_min": str(row.get("Min") or "").strip(),
+                "range_max": str(row.get("Max") or "").strip(),
+            }
+        return mapping
+    except Exception:
+        # Fallback to openpyxl
+        try:
+            from openpyxl import load_workbook  # type: ignore
+            wb = load_workbook(str(TERMS_XLSX), data_only=True)
+            ws = wb[TERMS_SHEET] if TERMS_SHEET in wb.sheetnames else wb.active
+
+            # Parse header
+            header = [str(v or "").strip() for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+            lookup = {name: idx for idx, name in enumerate(header)}
+
+            def val(row_vals, name: str) -> str:
+                idx = lookup.get(name)
+                if idx is None or idx >= len(row_vals):
+                    return ""
+                return str(row_vals[idx] or "").strip()
+
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                term_label = val(row, "Term Label")
+                if not term_label:
+                    continue
+
+                mapping[term_label.lower()] = {
+                    "term_label": term_label,
+                    "data_group": val(row, "Data Group"),
+                    "units": val(row, "Units"),
+                    "range_min": val(row, "Min"),
+                    "range_max": val(row, "Max"),
+                }
+
+            wb.close()
+        except Exception as e:
+            print(f"[WARN] Could not load schema terms: {e}")
+
+        return mapping
+
+
 def main() -> None:
     serials, rows, prog_map, sv_map, data_map = build_master()
     if not serials:

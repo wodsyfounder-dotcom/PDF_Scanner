@@ -207,6 +207,26 @@ def compile_master() -> subprocess.Popen:
     return run_script("scripts/compile_master.py")
 
 
+def compile_master_from_state() -> None:
+    """
+    Rebuild master.xlsx from master_cell_state.json ONLY.
+    This discards all manual edits and rebuilds from extracted data.
+
+    Unlike compile_master(), this runs synchronously in the current process.
+    """
+    from scripts.compile_master import build_master_from_state, write_master
+
+    # Build from state
+    serials, rows, prog_map, sv_map, data_map = build_master_from_state()
+
+    if not serials:
+        print("[WARN] No data in cell state to compile")
+        return
+
+    # Write the master workbook
+    write_master(serials, rows, program_by_sn=prog_map, sv_by_sn=sv_map, data_by_sn=data_map)
+
+
 def generate_plot_terms() -> subprocess.Popen:
     return run_script("scripts/generate_plot_terms.py")
 
@@ -1226,13 +1246,15 @@ def _resolve_run_folder(value: str) -> Path:
 
 
 def clear_stale_run_data() -> tuple[int, int]:
-    """Delete run_data subfolders not referenced by run_registry.
+    """Delete run_data subfolders not referenced by run_registry OR master_cell_state.json.
 
     Returns (deleted_count, kept_count).
     """
     runs_root = RUNS_DIR
     deleted = 0
     kept = 0
+
+    # Get referenced folders from run_registry
     try:
         reg = _read_run_registry_map()
     except Exception:
@@ -1249,6 +1271,19 @@ def clear_stale_run_data() -> tuple[int, int]:
             referenced.add(_resolve_run_folder(rf).resolve())
         except Exception:
             pass
+
+    # Also get referenced folders from master_cell_state.json
+    try:
+        from scripts.master_cell_state import get_referenced_run_folders
+        state_folders = get_referenced_run_folders()
+        for folder_name in state_folders:
+            try:
+                referenced.add(_resolve_run_folder(folder_name).resolve())
+            except Exception:
+                pass
+    except Exception:
+        # If cell state module isn't available, just use registry references
+        pass
     try:
         if not runs_root.exists():
             return (0, 0)

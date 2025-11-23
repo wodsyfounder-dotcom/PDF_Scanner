@@ -7851,6 +7851,35 @@ def run_scan(
     except Exception as e:
         print(f"[WARN] Could not update run registry: {e}")
 
+    # Update master cell state and master.xlsx incrementally for each serial component
+    try:
+        from scripts.master_cell_state import update_cell_state, apply_state_to_master_incremental
+        from datetime import datetime
+
+        # Get run folder name (e.g., "20250115_103000")
+        run_folder_name = run_dir.name
+        timestamp = datetime.now().isoformat()
+
+        # Process each serial component
+        for serial_component in run_ids:
+            # Collect all term values for this serial_component from results_matrix
+            term_values = {}
+            for term_name, sn_map in results_matrix.items():
+                value = sn_map.get(serial_component)
+                if value is not None:
+                    term_values[term_name] = value
+
+            if term_values:
+                # Update the cell state (single source of truth)
+                update_cell_state(serial_component, term_values, run_folder_name, timestamp)
+
+                # Immediately update master.xlsx with ONLY these cells (incremental update)
+                apply_state_to_master_incremental(serial_component, term_values)
+
+        print("[DONE] Master cell state and master.xlsx updated incrementally")
+    except Exception as e:
+        print(f"[WARN] Could not update master cell state: {e}")
+
     # --- Per-run snapshot note ---
     # No copy needed; all artifacts were written directly under run_dir.
     try:
