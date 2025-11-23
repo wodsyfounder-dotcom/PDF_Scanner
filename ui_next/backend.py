@@ -1236,13 +1236,23 @@ def open_run_registry() -> None:
 # --- Run-data maintenance helpers ---
 
 def _resolve_run_folder(value: str) -> Path:
+    """Resolve a run_folder value from registry or cell state to an absolute path.
+
+    - Absolute paths are returned as-is.
+    - Bare folder names like ``20250115_103000`` are treated as children of RUNS_DIR.
+    - Other relative paths are treated as ROOT-relative (e.g., ``Product_Data_File/run_data/...``).
+    """
     try:
         p = Path(value)
     except Exception:
         return RUNS_DIR
-    if not p.is_absolute():
-        p = ROOT / p
-    return p
+    if p.is_absolute():
+        return p
+    # Single path component -> interpret as a run_data subfolder name
+    if len(p.parts) == 1:
+        return RUNS_DIR / p
+    # Otherwise treat as ROOT-relative (e.g. "Product_Data_File/run_data/...")
+    return ROOT / p
 
 
 def clear_stale_run_data() -> tuple[int, int]:

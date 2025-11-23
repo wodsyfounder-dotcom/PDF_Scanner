@@ -2343,6 +2343,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         "row_found_no_value": False,      # Row matched but no value extracted
         "low_score_rows": [],              # List of (score, row_text) for rows with score < 0.6
         "numeric_candidates_nullified": False,  # All numeric candidates were out of range
+        "smart_pos_non_numeric": None,    # Text found at smart position when expecting number
     }
 
     # Helper to extract for one line
@@ -2742,6 +2743,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     pdf_best_line_y0 = float(entry.get('y0', 0.0))
                                 except Exception:
                                     pdf_best_line_y0 = float(entry['y0'])
+                                if debug_mode:
+                                    print(f"[SMART DEBUG][PDF] TERM MATCH page={p} score={score:.3f} term={row_name!r} line={line_text[:100]!r}", file=sys.stderr)
                         if row_name and (score < min_score or not anchor_tokens_ok):
                             # Track low-score rows for better error reporting
                             if score >= 0.3 and len(failure_tracking["low_score_rows"]) < 3:
@@ -2756,6 +2759,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         label_right_x = entry['x0']
                         anchor_end_index = -1
                         extracted_term = None
+                        if debug_mode and not anchor_span:
+                            print(f"[SMART DEBUG][PDF] WARNING: anchor_span is None for term={row_name!r} on line={line_text[:100]!r}", file=sys.stderr)
+                            print(f"[SMART DEBUG][PDF] tokens on this line: {texts[:10]}", file=sys.stderr)
                         if anchor_span:
                             _, j = anchor_span
                             # Extend label boundary to include continuous label components (e.g., "Serial / Component")
@@ -2775,6 +2781,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # For strings, use sequential tokens; for numbers, use X-filtered tokens
                         right_text_segment_sequential = ' '.join([t[4] for t in tokens_after_label]).strip() if tokens_after_label else ""
                         right_text_segment = ' '.join([t[4] for t in ordered_right_tokens]).strip() if ordered_right_tokens else ""
+                        if debug_mode:
+                            print(f"[SMART DEBUG][PDF] anchor_end_index={anchor_end_index}, tokens_after_label count={len(tokens_after_label)}, ordered_right_tokens count={len(ordered_right_tokens)}", file=sys.stderr)
+                            print(f"[SMART DEBUG][PDF] right_text_segment={right_text_segment!r}", file=sys.stderr)
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
                         # Capture label debug info for this row (PDF path)
                         current_label_used = row_name
@@ -3995,16 +4004,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # Capture debug fields for JSON output
                             current_debug_fields = [f"Position {idx}: '{field}'" for idx, field in enumerate(fields_for_pos, start=1)]
 
-                            if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
-                                print(f"[DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
-                                print(f"[DEBUG] fields_for_pos has {len(fields_for_pos)} fields:", file=sys.stderr)
+                            if debug_mode:
+                                print(f"[SMART DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
+                                print(f"[SMART DEBUG] fields_for_pos has {len(fields_for_pos)} fields:", file=sys.stderr)
                                 for field_str in current_debug_fields:
-                                    print(f"[DEBUG]   {field_str}", file=sys.stderr)
-                                print(f"[DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
+                                    print(f"[SMART DEBUG]   {field_str}", file=sys.stderr)
+                                print(f"[SMART DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
                                 if pos_n and 1 <= pos_n <= len(fields_for_pos):
-                                    print(f"[DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
+                                    print(f"[SMART DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
                                 else:
-                                    print(f"[DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
+                                    print(f"[SMART DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -4065,6 +4074,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         # Smart Position box has no numeric content; log and fall back to scoring logic below.
                                         if debug_mode:
                                             print(f"[SMART DEBUG] smart_position box non-numeric dpi={dpi} page={p} pos={pos_n} field={field_text!r}", file=sys.stderr)
+                                        # Track this specific failure for better error reporting
+                                        failure_tracking["row_found_no_value"] = True
+                                        failure_tracking["smart_pos_non_numeric"] = field_text[:50]  # Store first 50 chars
                                     else:
                                         cand_text = cand_match.group(0)
                                         nval = None
@@ -4739,7 +4751,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
     # Secondary failure: row found but no value extracted
     elif failure_tracking["row_found_no_value"]:
-        error_parts.append("term found but no value extracted")
+        base_msg = "term found but no value extracted"
+        if failure_tracking["smart_pos_non_numeric"]:
+            base_msg += f" (smart position found: '{failure_tracking['smart_pos_non_numeric']}')"
+        error_parts.append(base_msg)
 
     # Tertiary failure: numeric candidates nullified by range
     elif failure_tracking["numeric_candidates_nullified"]:
@@ -7863,10 +7878,58 @@ def run_scan(
         run_folder_name = run_dir.name
         timestamp = datetime.now().isoformat()
 
+        # Build per-serial, per-term debug map (ocr settings, match scores) for JSON inspection
+        per_serial_debug: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        try:
+            for row in summary:
+                if not isinstance(row, dict):
+                    continue
+                sc = str(row.get("serial_component") or row.get("serial_number") or "").strip()
+                if not sc:
+                    continue
+                term_name = str(row.get("term_label") or row.get("term") or "").strip()
+                if not term_name:
+                    continue
+                # Extract effective OCR settings and scores from flat or grouped views
+                debug_info = row.get("debug_info") or {}
+                smart_info = row.get("smart_info") or {}
+                if not isinstance(debug_info, dict):
+                    debug_info = {}
+                if not isinstance(smart_info, dict):
+                    smart_info = {}
+                ocr_row_eps = row.get("ocr_row_eps")
+                if ocr_row_eps is None:
+                    ocr_row_eps = debug_info.get("ocr_row_eps")
+                ocr_dpi = row.get("ocr_dpi")
+                if ocr_dpi is None:
+                    ocr_dpi = debug_info.get("ocr_dpi")
+                smart_score = row.get("smart_score")
+                if smart_score is None:
+                    smart_score = smart_info.get("smart_score")
+                fuzzy_score = debug_info.get("debug_fuzzy_match_score")
+                # Primary "match score" for quick debugging
+                match_score: Any = smart_score if isinstance(smart_score, (int, float)) else fuzzy_score
+                debug_fields = {}
+                if ocr_row_eps is not None:
+                    debug_fields["ocr_row_eps"] = ocr_row_eps
+                if ocr_dpi is not None:
+                    debug_fields["ocr_dpi"] = ocr_dpi
+                if smart_score is not None:
+                    debug_fields["smart_score"] = smart_score
+                if fuzzy_score is not None:
+                    debug_fields["fuzzy_score"] = fuzzy_score
+                if match_score is not None:
+                    debug_fields["match_score"] = match_score
+                if not debug_fields:
+                    continue
+                per_serial_debug.setdefault(sc, {})[term_name] = debug_fields
+        except Exception:
+            per_serial_debug = {}
+
         # Process each serial component
         for serial_component in run_ids:
             # Collect all term values for this serial_component from results_matrix
-            term_values = {}
+            term_values: Dict[str, Any] = {}
             for term_name, sn_map in results_matrix.items():
                 value = sn_map.get(serial_component)
                 if value is not None:
@@ -7874,8 +7937,13 @@ def run_scan(
 
             if term_values:
                 # Update the cell state (single source of truth)
-                update_cell_state(serial_component, term_values, run_folder_name, timestamp)
-
+                update_cell_state(
+                    serial_component,
+                    term_values,
+                    run_folder_name,
+                    timestamp,
+                    term_debug=per_serial_debug.get(serial_component),
+                )
                 # Immediately update master.xlsx with ONLY these cells (incremental update)
                 apply_state_to_master_incremental(serial_component, term_values)
 
@@ -7942,7 +8010,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 

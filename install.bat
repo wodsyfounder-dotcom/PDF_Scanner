@@ -30,6 +30,7 @@ echo [SETUP] Installing required Python packages (minimal + UI)...
   pymupdf ^
   pandas ^
   openpyxl ^
+  XlsxWriter ^
   matplotlib ^
   opencv-python-headless ^
   PySide6
@@ -54,9 +55,9 @@ rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv run
 set "LOCAL_SITE=%ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
 echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
-echo         pymupdf, pandas, openpyxl, matplotlib, opencv-python-headless, PySide6, easyocr, torch, torchvision
+echo         pymupdf, pandas, openpyxl, XlsxWriter, matplotlib, opencv-python-headless, PySide6, easyocr, torch, torchvision
 "%VPY%" -m pip install --upgrade --no-warn-script-location --target "%LOCAL_SITE%" ^
-  pymupdf pandas openpyxl matplotlib opencv-python-headless PySide6 easyocr
+  pymupdf pandas openpyxl XlsxWriter matplotlib opencv-python-headless PySide6 easyocr
 "%VPY%" -m pip install --upgrade --no-warn-script-location --index-url https://download.pytorch.org/whl/cpu --target "%LOCAL_SITE%" ^
   torch torchvision
 if errorlevel 1 (

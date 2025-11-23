@@ -11,7 +11,12 @@ State Structure:
         "term_name": {
             "value": "extracted_value",
             "last_updated": "2025-01-15T10:30:00",
-            "run_folder": "20250115_103000"
+            "run_folder": "20250115_103000",
+            "ocr_dpi": 500,                 # optional, effective OCR DPI used
+            "ocr_row_eps": 15.0,            # optional, effective line Y tolerance
+            "smart_score": 2.03,            # optional, Smart-Snap match score
+            "fuzzy_score": 0.99,            # optional, label fuzzy-match score
+            "match_score": 2.03             # optional, primary term match score
         },
         ...
     },
@@ -91,7 +96,8 @@ def update_cell_state(
     serial_component: str,
     term_values: Dict[str, Any],
     run_folder: str,
-    timestamp: Optional[str] = None
+    timestamp: Optional[str] = None,
+    term_debug: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> None:
     """
     Update the cell state for a specific serial component with new extracted values.
@@ -101,6 +107,8 @@ def update_cell_state(
         term_values: Dictionary mapping term names to extracted values
         run_folder: The run folder name (e.g., "20250115_103000")
         timestamp: ISO format timestamp, defaults to now
+        term_debug: Optional mapping term -> debug fields
+            (e.g., ocr_dpi, ocr_row_eps, smart_score, fuzzy_score, match_score)
     """
     if timestamp is None:
         timestamp = datetime.now().isoformat()
@@ -112,13 +120,21 @@ def update_cell_state(
     if serial_component not in state:
         state[serial_component] = {}
 
-    # Update each term value
+    # Update each term value (and optional debug metadata)
     for term_name, value in term_values.items():
-        state[serial_component][term_name] = {
-            "value": value,
-            "last_updated": timestamp,
-            "run_folder": run_folder
-        }
+        cell = state[serial_component].get(term_name, {})
+        # Core fields used by all consumers
+        cell["value"] = value
+        cell["last_updated"] = timestamp
+        cell["run_folder"] = run_folder
+        # Optional debug metadata for JSON inspection
+        if term_debug:
+            debug_fields = term_debug.get(term_name) or {}
+            for key, dbg_val in debug_fields.items():
+                # Only persist simple JSON-serializable scalars
+                if isinstance(dbg_val, (str, int, float, bool)) or dbg_val is None:
+                    cell[key] = dbg_val
+        state[serial_component][term_name] = cell
 
     # Save updated state
     save_cell_state(state)
