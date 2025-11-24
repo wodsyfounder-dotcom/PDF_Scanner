@@ -617,7 +617,7 @@ SN_REGEX = re.compile(
 
 # Extend units for aerospace contexts and override NUMBER_REGEX with a richer set.
 _AERO_UNITS = (
-    "%|ppm|ppb|ms|s|sec|kg|g|mg|ug|lb|lbm|lbf|lbs|"
+    "%|ppm|ppb|ms|s|sec|seconds|second|minutes|minute|hours|hour|kg|g|mg|ug|lb|lbm|lbf|lbs|"
     "N|kN|mN|Ns|bar|mbar|Pa|kPa|MPa|psi|psia|psig|"
     "mm|cm|m|in|ft|K|degC|degF|C|F"
 )
@@ -2004,24 +2004,45 @@ def _normalize_anchor_token(text: Optional[str]) -> str:
 def _fix_ocr_in_numbers(text: str) -> str:
     """
     Fix common OCR errors in numeric strings.
-    - O (letter) → 0 (zero) when preceded/followed by digits or decimal point
+    - O (letter) → 0 (zero) when in numeric context
     - l (lowercase L) → 1 when in numeric context
     - I (capital i) → 1 when in numeric context
     """
     if not text:
         return text
-    # Fix O → 0 when adjacent to digits or decimal points
-    # Pattern: digit.O or O.digit or .O or O. or digitO or Odigit
-    text = re.sub(r'(\d)O(?=\d|[a-z]|\s|$)', r'\g<1>0', text)  # digitO
-    text = re.sub(r'(^|\s|\.)O(?=\d)', r'\g<1>0', text)  # Odigit or .O
-    text = re.sub(r'(\d|\.)O(?=\D|$)', r'\g<1>0', text)  # digit.O or O at end
-    text = re.sub(r'\.O(?=[a-z])', '.0', text)  # .Opsig → .0psig
+
+    # Fix O → 0 in all numeric contexts
+    # Use multiple passes to catch all cases
+    prev = None
+    while prev != text:
+        prev = text
+        # O between digits: 12O5 → 1205, 12OO → 1200
+        text = re.sub(r'(\d)O(?=\d)', r'\g<1>0', text)
+        # O at start before digit: O12 → 012
+        text = re.sub(r'(^|\s)O(?=\d)', r'\g<1>0', text)
+        # O after digit before non-digit: 12O → 120
+        text = re.sub(r'(\d)O(?=\D|$)', r'\g<1>0', text)
+        # O in decimal context: .O → .0
+        text = re.sub(r'(\.)O', r'\g<1>0', text)
+        # O before decimal: O. → 0.
+        text = re.sub(r'O(?=\.)', '0', text)
+
+    # Fix lowercase l → 1 in numeric contexts
+    text = re.sub(r'(\d)l(?=\d)', r'\g<1>1', text)
+    text = re.sub(r'(^|\s)l(?=\d)', r'\g<1>1', text)
+
+    # Fix capital I → 1 in numeric contexts
+    text = re.sub(r'(\d)I(?=\d)', r'\g<1>1', text)
+    text = re.sub(r'(^|\s)I(?=\d)', r'\g<1>1', text)
+
     return text
 
 
 def _first_numeric(text: str) -> Optional[str]:
-    nums = [m.group(0) for m in NUMBER_REGEX.finditer(text)]
-    nums += [m.group(0) for m in DATE_REGEX.finditer(text)]
+    # Apply OCR fixes before searching for numbers
+    text_fixed = _fix_ocr_in_numbers(text)
+    nums = [m.group(0) for m in NUMBER_REGEX.finditer(text_fixed)]
+    nums += [m.group(0) for m in DATE_REGEX.finditer(text_fixed)]
     return nums[0] if nums else None
 
 
@@ -2614,7 +2635,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     continue
                 # Whole-line numeric search with range filtering:
                 # prefer the first value that falls within the configured range.
-                matches = list(NUMBER_REGEX.finditer(line_text))
+                line_text_fixed = _fix_ocr_in_numbers(line_text)
+                matches = list(NUMBER_REGEX.finditer(line_text_fixed))
                 if not matches:
                     continue
                 chosen_val: Optional[str] = None
@@ -2655,7 +2677,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             # Search within the preferred target text (right segment when provided,
             # otherwise the full line). This also enables whole-line searches for
             # alternate row scanning.
-            matches = list(NUMBER_REGEX.finditer(target_text))
+            target_text_fixed = _fix_ocr_in_numbers(target_text)
+            matches = list(NUMBER_REGEX.finditer(target_text_fixed))
             if not matches:
                 return None
             pick = None
