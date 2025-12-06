@@ -25,7 +25,9 @@
       "Bash(git add:*)",
       "Bash(del \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_bad_char.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\check_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\find_all_bad_chars.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_encoding2.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_simple.py\" \"c:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\fix_final.py\")",
       "Bash(iconv:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(pip show:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

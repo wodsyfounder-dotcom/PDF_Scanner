@@ -3805,6 +3805,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     be.rebuild_registry_from_run_data()
                 except Exception:
                     pass
+                # Sync cell state with master.xlsx (prune orphaned terms)
+                try:
+                    from scripts.master_cell_state import sync_cell_state_with_master
+                    sync_cell_state_with_master()
+                except Exception as e:
+                    self._append_log(f"[WARN] Cell state sync failed: {e}")
             summary, details = be.compute_workspace_sync(repo, terms)
             self._sync_summary = summary
             self._sync_details = details

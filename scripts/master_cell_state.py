@@ -278,3 +278,107 @@ def build_dataframe_from_state() -> pd.DataFrame:
 
     logger.info(f"Built DataFrame from state with {len(df)} rows and {len(df.columns)} columns")
     return df
+
+
+def sync_cell_state_with_master() -> None:
+    """
+    Prune cell_state.json to only contain terms and serial components that exist in master.xlsx.
+
+    Master.xlsx is the source of truth for which terms (rows) and serial components (columns) should exist.
+    - If a user deletes a row from master.xlsx, this removes that term from all serial components
+    - If a user deletes a column from master.xlsx, this removes that serial component entirely
+
+    This ensures deleted terms and serial components don't reappear when compiling from state.
+    """
+    # Load master.xlsx to determine which terms and serial components should exist
+    if not MASTER_XLSX_PATH.exists():
+        logger.warning(f"master.xlsx not found at {MASTER_XLSX_PATH}, cannot sync cell state")
+        return
+
+    try:
+        # Read master.xlsx to get list of term_labels and serial components
+        df = pd.read_excel(MASTER_XLSX_PATH, dtype=object, keep_default_na=False)
+
+        # Skip first 3 metadata rows (Program, Space Vehicle, Data)
+        # Term rows start at row 4 (index 3)
+        if len(df) < 4:
+            logger.warning("master.xlsx has fewer than 4 rows, cannot determine terms")
+            return
+
+        term_rows = df.iloc[3:]  # Skip metadata rows
+
+        # Extract term_labels from the "Term Label" column
+        if "Term Label" not in df.columns:
+            logger.error("master.xlsx does not have 'Term Label' column")
+            return
+
+        allowed_term_labels = set()
+        for term_label in term_rows["Term Label"]:
+            if term_label and str(term_label).strip():
+                allowed_term_labels.add(str(term_label).strip().lower())
+
+        logger.info(f"Found {len(allowed_term_labels)} terms in master.xlsx")
+
+        # Extract serial components from columns (skip first 5: Term Label, Data Group, Units, Min, Max)
+        metadata_columns = {"Term Label", "Data Group", "Units", "Min", "Max"}
+        allowed_serial_components = set()
+        for col in df.columns:
+            col_str = str(col).strip()
+            if col_str and col_str not in metadata_columns:
+                allowed_serial_components.add(col_str)
+
+        logger.info(f"Found {len(allowed_serial_components)} serial components in master.xlsx")
+
+        # Load cell state
+        state = load_cell_state()
+        if not state:
+            logger.info("Cell state is empty, nothing to sync")
+            return
+
+        # Load schema to map term_name -> term_label
+        from scripts.compile_master import _load_schema_terms
+        schema_terms = _load_schema_terms()
+
+        # Prune serial components that don't exist in master.xlsx
+        serial_components_to_remove = []
+        for serial_component in state.keys():
+            if serial_component not in allowed_serial_components:
+                serial_components_to_remove.append(serial_component)
+
+        for serial_component in serial_components_to_remove:
+            del state[serial_component]
+
+        # Prune terms from each remaining serial component
+        total_terms_pruned = 0
+        for serial_component, terms in state.items():
+            terms_to_remove = []
+
+            for term_name in terms.keys():
+                # Get term_label from schema
+                term_meta = schema_terms.get(term_name.lower(), {})
+                term_label = term_meta.get("term_label", term_name)
+
+                # Check if this term exists in master.xlsx
+                if term_label.lower() not in allowed_term_labels:
+                    terms_to_remove.append(term_name)
+
+            # Remove orphaned terms
+            for term_name in terms_to_remove:
+                del terms[term_name]
+                total_terms_pruned += 1
+
+        # Save pruned state
+        save_cell_state(state)
+
+        # Log results
+        total_removed = len(serial_components_to_remove)
+        if total_removed > 0 or total_terms_pruned > 0:
+            logger.info(f"Synced cell state with master.xlsx: removed {total_removed} serial components, {total_terms_pruned} orphaned term entries")
+            print(f"[INFO] Synced cell state: removed {total_removed} serial components, {total_terms_pruned} orphaned term entries")
+        else:
+            logger.info("Cell state already in sync with master.xlsx")
+            print("[INFO] Cell state already in sync with master.xlsx")
+
+    except Exception as e:
+        logger.error(f"Failed to sync cell state with master: {e}")
+        raise

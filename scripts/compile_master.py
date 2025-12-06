@@ -25,7 +25,7 @@ import sys
 import math
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Set
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -591,11 +591,12 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
 
 def build_master_from_state() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str], Dict[str, str]]:
     """
-    Rebuild master workbook from master_cell_state.json ONLY.
+    Rebuild master workbook from master_cell_state.json, respecting existing master.xlsx.
 
-    This is the ONLY way to reproduce the master workbook from extracted data.
-    It completely ignores any existing master.xlsx and rebuilds from scratch.
-    All manual edits will be lost.
+    Master.xlsx is the source of truth for which terms should exist.
+    - If master.xlsx exists: only include terms that are present in it
+    - If master.xlsx doesn't exist: include all terms from cell state
+    This ensures user deletions from master.xlsx are respected.
 
     Returns: (serials, term_rows, program_by_sn, sv_by_sn, data_by_sn)
     """
@@ -617,10 +618,41 @@ def build_master_from_state() -> Tuple[List[str], List[Dict[str, Any]], Dict[str
     # Get serial components from state
     serials = sorted(state.keys())
 
+    # Read existing master.xlsx to determine which terms should be included
+    # Master.xlsx is the source of truth - if user deleted a row, respect it
+    header_existing, rows_existing, master_mtime = _read_existing_master()
+    allowed_terms_set: Optional[Set[str]] = None
+
+    if rows_existing:
+        # Extract (term_label, data_group) keys from existing master
+        # Skip the first 3 metadata rows (Program, Space Vehicle, Data)
+        allowed_terms_set = set()
+        for row in rows_existing[3:]:  # Skip metadata rows
+            term_label = norm(row.get("Term Label", ""))
+            data_group = norm(row.get("Data Group", ""))
+            if term_label:
+                # Store term_name (from schema) - we'll match by term_label
+                allowed_terms_set.add(term_label.lower())
+        print(f"[INFO] Filtering to {len(allowed_terms_set)} terms from existing master.xlsx")
+    else:
+        print("[INFO] No existing master.xlsx found - including all terms from cell state")
+
     # Collect all unique terms across all serial components
     all_terms_set = set()
     for serial_component, terms in state.items():
         all_terms_set.update(terms.keys())
+
+    # Filter terms based on existing master.xlsx (if it exists)
+    if allowed_terms_set is not None:
+        # Match terms by their term_label from schema
+        filtered_terms = set()
+        for term_name in all_terms_set:
+            term_meta = schema_terms.get(term_name.lower(), {})
+            term_label = term_meta.get("term_label", term_name)
+            if term_label.lower() in allowed_terms_set:
+                filtered_terms.add(term_name)
+        all_terms_set = filtered_terms
+        print(f"[INFO] Filtered to {len(all_terms_set)} terms present in master.xlsx")
 
     # Build term_rows (organized by term)
     term_rows: List[Dict[str, Any]] = []

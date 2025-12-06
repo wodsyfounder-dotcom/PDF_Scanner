@@ -144,6 +144,15 @@ try:
 except Exception:
     _HAVE_EASYOCR = False
 
+# OpenCV for image preprocessing (optional)
+_HAVE_CV2 = False
+try:
+    import cv2
+    import numpy as np
+    _HAVE_CV2 = True
+except Exception:
+    pass
+
 
 # --- Optional: table extraction helper (scripts/extract_page_tables.py) ---
 def _import_tables_module():
@@ -3373,9 +3382,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.8  # 2.0 - 10% penalty
+                                        delta = 1.0  # Reduced bonus to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
@@ -4464,9 +4473,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.8  # 2.0 - 10% penalty
+                                        delta = 1.0  # Reduced bonus to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
@@ -7841,8 +7850,9 @@ def run_scan(
                 "_kind": "match_summary",
                 "description": (
                     "Smart Snap scoring: row smart_score is the best fuzzy match to the row anchor; "
-                    "numeric candidate ranking adds: +2.0 if value is between row min/max, "
-                    "+0.4 if units match Units Hint, up to +0.4 for values within configured Range, "
+                    "numeric candidate ranking adds: +2.0 if value is within range (±20% tolerance), "
+                    "+1.0 if value exactly matches range min/max (reduced to prefer non-boundary values), "
+                    "+0.4 if units match Units Hint, "
                     f"+{header_w:.2f} * secondary_header_alignment for X alignment with the Secondary Term header, "
                     "plus smaller adjustments based on distance to Value/Min/Max headers and distance from the label."
                 ),
