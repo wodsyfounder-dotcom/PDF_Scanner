@@ -179,13 +179,16 @@ def get_referenced_run_folders() -> Set[str]:
 
 def apply_state_to_master_incremental(serial_component: str, term_values: Dict[str, Any]) -> None:
     """
-    Update ONLY the specified serial_component row in master.xlsx with the given term values.
-    All other rows and cells remain unchanged (preserves manual edits).
+    Update ONLY the specified serial_component column in master.xlsx with the given term values.
+    ALWAYS OVERRIDES existing values - newly scanned values replace old ones.
 
-    Uses openpyxl to modify in-place without rewriting the entire file.
+    Master.xlsx structure:
+    - Row 1: Headers ["Term Label", "Data Group", "Units", "Min", "Max", "SN0000", "SN1111", ...]
+    - Row 2-4: Metadata rows (Program, Space Vehicle, Data)
+    - Row 5+: Term rows
 
     Args:
-        serial_component: The serial component ID (row to update)
+        serial_component: The serial component ID (column to update, e.g., "SN0000")
         term_values: Dictionary mapping term names to values
     """
     if not MASTER_XLSX_PATH.exists():
@@ -197,41 +200,53 @@ def apply_state_to_master_incremental(serial_component: str, term_values: Dict[s
         wb = openpyxl.load_workbook(MASTER_XLSX_PATH)
         ws = wb.active
 
-        # Find header row (assumed to be row 1)
-        headers = {}
+        # Find header row (row 1) - get column index for this serial_component
+        serial_col_idx = None
         for col_idx, cell in enumerate(ws[1], start=1):
-            if cell.value:
-                headers[cell.value] = col_idx
-
-        # Find the row for this serial_component
-        serial_col = headers.get("serial_component")
-        if not serial_col:
-            logger.error("Could not find 'serial_component' column in master.xlsx")
-            return
-
-        target_row = None
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=serial_col, max_row=ws.max_row), start=2):
-            if row[serial_col - 1].value == serial_component:
-                target_row = row_idx
+            if cell.value and str(cell.value).strip() == serial_component:
+                serial_col_idx = col_idx
                 break
 
-        if not target_row:
-            logger.warning(f"Serial component {serial_component} not found in master.xlsx, may need to add new row")
-            # TODO: Handle adding new rows if needed
-            # For now, just skip
+        if not serial_col_idx:
+            logger.warning(f"Serial component '{serial_component}' not found in master.xlsx headers")
             return
 
-        # Update the cells for this row
+        # Load schema to map term_name -> term_label
+        from scripts.compile_master import _load_schema_terms
+        schema_terms = _load_schema_terms()
+
+        # Build mapping of term_label (lowercase) -> row_idx
+        # Skip first 4 rows (header + 3 metadata rows), start at row 5
+        term_label_to_row = {}
+        for row_idx in range(5, ws.max_row + 1):
+            term_label_cell = ws.cell(row=row_idx, column=1)  # Column 1 is "Term Label"
+            if term_label_cell.value:
+                term_label = str(term_label_cell.value).strip().lower()
+                term_label_to_row[term_label] = row_idx
+
+        # Update cells for each term
         updated_count = 0
         for term_name, value in term_values.items():
-            if term_name in headers:
-                col_idx = headers[term_name]
-                ws.cell(row=target_row, column=col_idx, value=value)
+            # Get term_label from schema
+            term_meta = schema_terms.get(term_name.lower(), {})
+            term_label = term_meta.get("term_label", term_name)
+            term_label_lower = term_label.lower()
+
+            # Find the row for this term
+            if term_label_lower in term_label_to_row:
+                row_idx = term_label_to_row[term_label_lower]
+                # ALWAYS OVERRIDE - set the new value
+                ws.cell(row=row_idx, column=serial_col_idx, value=value)
                 updated_count += 1
+            else:
+                logger.debug(f"Term '{term_label}' not found in master.xlsx, skipping")
 
         # Save workbook
-        wb.save(MASTER_XLSX_PATH)
-        logger.info(f"Updated {updated_count} cells in master.xlsx for {serial_component}")
+        if updated_count > 0:
+            wb.save(MASTER_XLSX_PATH)
+            logger.info(f"Updated {updated_count} cells in master.xlsx for {serial_component} (overriding existing values)")
+        else:
+            logger.debug(f"No cells updated for {serial_component}")
 
     except Exception as e:
         logger.error(f"Failed to apply incremental update to master.xlsx: {e}")

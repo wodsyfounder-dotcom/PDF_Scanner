@@ -1,0 +1,79 @@
+# PDF Scanner Production Dependencies
+# Generated from .venv on 2025-12-07
+
+# Core PDF and Data Processing
+PyMuPDF==1.26.5              # PDF text extraction
+pandas==2.3.3                # Data manipulation and Excel I/O
+openpyxl==3.1.5              # Excel file handling
+xlsxwriter==3.2.9            # Excel file writing (alternative engine)
+
+# OCR (Optical Character Recognition)
+easyocr==1.7.2               # Main OCR engine
+opencv-python-headless==4.12.0.88  # Image preprocessing for OCR
+Pillow==11.3.0               # Image handling
+numpy==2.2.6                 # Array operations (used by OCR/image processing)
+
+# OCR Dependencies (required by easyocr)
+torch==2.9.0+cpu             # Deep learning framework (CPU version)
+torchvision==0.24.0+cpu      # Computer vision models
+scikit-image==0.25.2         # Image processing algorithms
+scipy==1.16.2                # Scientific computing
+PyYAML==6.0.3                # Configuration files
+python-bidi==0.6.7           # Bidirectional text support
+shapely==2.1.2               # Geometric operations
+pyclipper==1.3.0.post6       # Polygon clipping
+ninja==1.13.0                # Build system for torch
+
+# Plotting
+matplotlib==3.10.7           # Plot generation
+
+# GUI Framework
+PySide6==6.10.0              # Qt6 Python bindings
+PySide6_Addons==6.10.0       # Qt6 additional modules
+PySide6_Essentials==6.10.0   # Qt6 essential modules
+shiboken6==6.10.0            # Qt6 Python bindings generator
+
+# Utilities and Dependencies
+python-dateutil==2.9.0.post0 # Date/time utilities
+pytz==2025.2                 # Timezone support
+tzdata==2025.2               # Timezone database
+six==1.17.0                  # Python 2/3 compatibility
+typing_extensions==4.15.0    # Extended type hints
+
+# Matplotlib Dependencies
+contourpy==1.3.3             # Contour calculations
+cycler==0.12.1               # Color cycling
+fonttools==4.60.1            # Font handling
+kiwisolver==1.4.9            # Layout solver
+pyparsing==3.2.5             # Parsing library
+
+# Image Processing Dependencies
+imageio==2.37.0              # Image I/O
+lazy_loader==0.4             # Lazy module loading
+networkx==3.5                # Graph algorithms (used by scikit-image)
+tifffile==2025.10.16         # TIFF file handling
+
+# Archive/Compression Support
+py7zr==1.0.0                 # 7z archive support
+pybcj==1.0.6                 # BCJ filters
+pycryptodomex==3.23.0        # Cryptography
+pyppmd==1.2.0                # PPMd compression
+pyzstd==0.18.0               # Zstandard compression
+brotli==1.2.0                # Brotli compression
+inflate64==1.0.3             # Inflate64 decompression
+multivolumefile==0.2.3       # Multi-volume archive support
+
+# Math and Scientific
+sympy==1.14.0                # Symbolic mathematics (torch dependency)
+mpmath==1.3.0                # Arbitrary-precision arithmetic
+
+# Miscellaneous
+et_xmlfile==2.0.0            # Excel XML handling
+filelock==3.19.1             # File locking
+fsspec==2025.9.0             # Filesystem abstraction
+Jinja2==3.1.6                # Template engine (dependency)
+MarkupSafe==2.1.5            # String escaping (Jinja2 dependency)
+packaging==25.0              # Version parsing
+psutil==7.1.3                # System utilities
+setuptools==70.2.0           # Package installation
+texttable==1.7.0             # Text table formatting

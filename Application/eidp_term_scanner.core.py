@@ -1533,9 +1533,13 @@ def _pdf_cache_key(pdf_path: Path) -> str:
 def _get_ocr_cache_dir(pdf_path: Path) -> Path:
     """Get the OCR cache directory for a given PDF.
 
-    Stores cache in a .ocr_cache directory next to the PDF file.
+    Stores cache in a centralized 'cache/ocr' directory at the repo root.
+    Organizes by PDF filename to avoid collisions.
     """
-    cache_dir = pdf_path.parent / ".ocr_cache" / pdf_path.stem
+    # Get repo root (working directory)
+    repo_root = Path.cwd()
+    # Create centralized cache directory: cache/ocr/{pdf_stem}/
+    cache_dir = repo_root / "cache" / "ocr" / pdf_path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

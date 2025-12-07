@@ -38,6 +38,141 @@ TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 TERMS_SHEET = "Template"
 
 
+# ===== Intelligent Term Ordering Configuration =====
+
+# Data group ordering rules: (priority, keywords)
+# Lower priority = earlier in the list (front-loaded)
+DATA_GROUP_ORDER_RULES = [
+    (1, ["document", "profile", "info", "label", "id", "metadata", "component info"]),  # Identification
+    (2, ["pre", "initial", "baseline", "before", "as-received"]),  # Pre-test
+    (3, ["environmental", "test setup", "conditions", "ambient", "thermal", "vib"]),  # Test conditions
+    (4, ["performance", "kpi", "functional", "acceptance", "results", "output"]),  # Performance/Results
+    (5, ["calibration", "trim"]),  # Calibration (contains both pre and post)
+    (6, ["post", "final", "after"]),  # Post-test
+    (7, ["quality", "status", "compliance", "verification"]),  # Quality/Status
+]
+
+
+def _categorize_data_group(data_group: str) -> int:
+    """
+    Categorize a data group into priority buckets for intelligent ordering.
+    Lower number = earlier in the list (front-loaded).
+
+    Returns priority (1-7), with 4 as default for uncategorized groups.
+    """
+    dg_lower = data_group.lower()
+
+    for priority, keywords in DATA_GROUP_ORDER_RULES:
+        if any(kw in dg_lower for kw in keywords):
+            return priority
+
+    # Default: uncategorized groups go in the middle (after pre-test, before post-test)
+    return 4
+
+
+def _sort_data_group_key(data_group: str) -> tuple:
+    """
+    Generate sort key for data groups.
+    Returns (priority, alphabetical_name).
+    """
+    priority = _categorize_data_group(data_group)
+    return (priority, data_group.lower())
+
+
+def _extract_base_metric_name(term_label: str) -> str:
+    """
+    Extract the base metric name from a term label to group related terms.
+
+    Examples:
+    - "Thrust Nominal Value" → "thrust nominal"
+    - "Thrust Nominal Target" → "thrust nominal"
+    - "Power Draw Peak" → "power draw"
+    - "LVDT-2 Pre-Trim" → "lvdt"
+    """
+    tl_lower = term_label.lower()
+
+    # Remove common suffixes/modifiers
+    suffixes = [
+        'value', 'target', 'confidence', 'tolerance', 'actual',
+        'units', 'quality', 'status', 'source', 'over',
+        'pre-trim', 'post-trim', 'pre trim', 'post trim',
+        'high', 'low', 'max', 'min',
+        'duration', 'amplitude', 'path',
+    ]
+
+    # Remove numbered component suffixes (e.g., "-2", "-02")
+    base = re.sub(r'[-_]\d+', '', tl_lower).strip()
+
+    # Remove known suffixes
+    for suffix in suffixes:
+        if base.endswith(suffix):
+            base = base[:-len(suffix)].strip()
+
+    # Remove "nominal" if it's a modifier (e.g., "thrust nominal" → "thrust")
+    if base.endswith('nominal'):
+        base = base[:-7].strip()
+
+    return base if base else tl_lower
+
+
+def _sort_term_label_key(term_label: str) -> tuple:
+    """
+    Generate sort key for term labels within a data group.
+
+    Ordering rules:
+    1. Base metric name (groups related terms together)
+    2. Numerical component prefixes (TC-01, TC-02, LVDT-1, LVDT-2)
+    3. Pre before Post (for paired measurements)
+    4. Value → Target → Confidence → Units (metric hierarchy)
+    5. High → Low, Max → Min (range ordering)
+    6. Main field before Status/Quality
+    7. Alphabetical as final tiebreaker
+    """
+    tl_lower = term_label.lower()
+
+    # Extract base metric name to group related terms
+    base_name = _extract_base_metric_name(term_label)
+
+    # Extract numerical component prefix for sorting (e.g., "TC-02" → 2, "LVDT-1" → 1)
+    component_num = 0
+    match = re.search(r'[-_](\d+)', term_label)
+    if match:
+        component_num = int(match.group(1))
+
+    # Pre/Post ordering (Pre=0, neither=1, Post=2)
+    pre_post_order = 0
+    if 'pre' in tl_lower:
+        pre_post_order = 0
+    elif 'post' in tl_lower:
+        pre_post_order = 2
+    else:
+        pre_post_order = 1
+
+    # Metric hierarchy ordering
+    metric_order = 1
+    if 'value' in tl_lower or 'actual' in tl_lower:
+        metric_order = 0
+    elif 'target' in tl_lower:
+        metric_order = 1
+    elif 'confidence' in tl_lower or 'tolerance' in tl_lower:
+        metric_order = 2
+    elif 'units' in tl_lower:
+        metric_order = 3
+
+    # Status/Quality goes last (within the base metric group)
+    status_order = 1 if any(kw in tl_lower for kw in ['status', 'quality']) else 0
+
+    # Range ordering (High before Low)
+    range_order = 0
+    if 'high' in tl_lower or 'max' in tl_lower:
+        range_order = 0
+    elif 'low' in tl_lower or 'min' in tl_lower:
+        range_order = 1
+
+    # Sort priority: base_name, component_num, status (last!), pre_post, metric, range, alphabetical
+    return (base_name, component_num, status_order, pre_post_order, metric_order, range_order, tl_lower)
+
+
 def norm(value: Any) -> str:
     if value is None:
         return ""
@@ -489,10 +624,22 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
                 if rng_max and not entry["range_max"]:
                     entry["range_max"] = rng_max
 
-                current_val = norm(entry["values"].get(sn, ""))
-                # Preserve any existing value (user override or prior accepted value).
-                if not current_val:
-                    entry["values"][sn] = value
+                # ALWAYS OVERRIDE with latest scan result
+                # Newest scanned values replace old ones
+                entry["values"][sn] = value
+
+    # Apply intelligent ordering to terms
+    # Group by data_group, sort groups intelligently, then sort terms within each group
+    def _sort_term_key(key: Tuple[str, str]) -> tuple:
+        term_label_lower, data_group_lower = key
+        # Get the actual term_label and data_group from term_map
+        info = term_map.get(key, {})
+        term_label = info.get("term_label", term_label_lower)
+        data_group = info.get("data_group", data_group_lower)
+        # Sort by: (data_group_priority, data_group_name, term_label_priority)
+        return _sort_data_group_key(data_group) + _sort_term_label_key(term_label)
+
+    terms_order = sorted(terms_order, key=_sort_term_key)
 
     term_rows: List[Dict[str, Any]] = []
     for key in terms_order:
@@ -654,9 +801,20 @@ def build_master_from_state() -> Tuple[List[str], List[Dict[str, Any]], Dict[str
         all_terms_set = filtered_terms
         print(f"[INFO] Filtered to {len(all_terms_set)} terms present in master.xlsx")
 
+    # Apply intelligent ordering to terms
+    # Group by data_group, sort groups intelligently, then sort terms within each group
+    def _sort_term_name_key(term_name: str) -> tuple:
+        # Get term metadata from schema
+        term_meta = schema_terms.get(term_name.lower(), {})
+        term_label = term_meta.get("term_label", term_name)
+        data_group = term_meta.get("data_group", "")
+        # Sort by: (data_group_priority, data_group_name, term_label_priority)
+        return _sort_data_group_key(data_group) + _sort_term_label_key(term_label)
+
+    terms_order = sorted(all_terms_set, key=_sort_term_name_key)
+
     # Build term_rows (organized by term)
     term_rows: List[Dict[str, Any]] = []
-    terms_order = sorted(all_terms_set)  # alphabetical order
 
     for term_name in terms_order:
         # Look up term metadata from schema
