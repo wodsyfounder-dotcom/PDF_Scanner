@@ -1533,13 +1533,23 @@ def _pdf_cache_key(pdf_path: Path) -> str:
 def _get_ocr_cache_dir(pdf_path: Path) -> Path:
     """Get the OCR cache directory for a given PDF.
 
-    Stores cache in a centralized 'cache/ocr' directory at the repo root.
+    Stores cache in a centralized 'cache/ocr' directory at the project root.
     Organizes by PDF filename to avoid collisions.
+
+    Works correctly whether running as script or frozen executable.
     """
-    # Get repo root (working directory)
-    repo_root = Path.cwd()
+    # Determine project root: supports both development and frozen (PyInstaller) environments
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable (PyInstaller)
+        # sys._MEIPASS is temp extraction dir, sys.executable is the .exe location
+        # We want the directory where the .exe lives
+        project_root = Path(sys.executable).parent
+    else:
+        # Running as Python script - go up one level from Application/ to project root
+        project_root = Path(__file__).resolve().parent.parent
+
     # Create centralized cache directory: cache/ocr/{pdf_stem}/
-    cache_dir = repo_root / "cache" / "ocr" / pdf_path.stem
+    cache_dir = project_root / "cache" / "ocr" / pdf_path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 
@@ -1548,9 +1558,11 @@ def _get_ocr_cache_key(pdf_path: Path, page: int, ocr_mode: str, dpi: int) -> st
     """Generate a cache key for OCR results.
 
     Format: {pdf_hash}_{page}_{ocr_mode}_{dpi}.pkl
+
+    Uses PDF filename (not full path) so cache is portable across machines.
     """
-    # Use PDF path hash to keep filenames short and avoid path issues
-    pdf_hash = hashlib.md5(str(pdf_path.resolve()).encode('utf-8')).hexdigest()[:12]
+    # Use PDF filename hash (not full path) to keep cache portable
+    pdf_hash = hashlib.md5(pdf_path.name.encode('utf-8')).hexdigest()[:12]
     return f"{pdf_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl"
 
 
@@ -2706,13 +2718,20 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pick = matches[0]
             cand = pick.group(0)
             units_value = extract_units(cand)
-            # Range check
+            # Range check with >50% nullifier
             try:
                 nclean = numeric_only(cand)
                 nval = float(nclean) if nclean is not None else None
             except Exception:
                 nval = None
             if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                # NULLIFIER: reject values >50% outside range (likely wrong extraction)
+                if spec.range_min is not None and spec.range_max is not None:
+                    range_span = spec.range_max - spec.range_min
+                    tolerance_50 = 0.5 * range_span
+                    if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                        return None  # Reject - no viable candidate
+                # Within 50% tolerance but outside strict range - annotate
                 bad = False
                 if spec.range_min is not None and nval < spec.range_min:
                     bad = True
@@ -3167,7 +3186,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 except Exception:
                                     nval = None
                                 units_value = extract_units(cand_text) or units_value
+                                # Range check with >50% nullifier
                                 if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                    # NULLIFIER: reject values >50% outside range (skip this candidate)
+                                    if spec.range_min is not None and spec.range_max is not None:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance_50 = 0.5 * range_span
+                                        if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                            continue  # Skip this row - value too far out of range
+                                    # Within 50% tolerance but outside strict range - annotate
                                     bad = False
                                     if spec.range_min is not None and nval < spec.range_min:
                                         bad = True
@@ -3224,14 +3251,23 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
-                                            bad = False
-                                            if spec.range_min is not None and nval < spec.range_min:
-                                                bad = True
-                                            if spec.range_max is not None and nval > spec.range_max:
-                                                bad = True
-                                            if bad and not cand_text.rstrip().endswith('(range violation)'):
-                                                cand_text = f"{cand_text} (range violation)"
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    # Reject this value - treat as if no numeric match found
+                                                    cand_match = None
+                                            if cand_match:  # Only annotate if not nullified
+                                                bad = False
+                                                if spec.range_min is not None and nval < spec.range_min:
+                                                    bad = True
+                                                if spec.range_max is not None and nval > spec.range_max:
+                                                    bad = True
+                                                if bad and not cand_text.rstrip().endswith('(range violation)'):
+                                                    cand_text = f"{cand_text} (range violation)"
                                     # Only accept compatible numeric values for Smart Position;
                                     # if no numeric content is present, fall back to scoring logic below.
                                     if cand_match:
@@ -3257,7 +3293,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    continue  # Skip this row - value too far out of range
                                             bad = False
                                             if spec.range_min is not None and nval < spec.range_min:
                                                 bad = True
@@ -3273,10 +3316,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                         best_extracted_term = current_extracted_term
                                     continue
-                        unitful_candidates = [c for c in numeric_cands if c.get('unit_neighbor')]
-                        if unitful_candidates:
-                            numeric_cands = unitful_candidates
-                        has_units_match = bool(unitful_candidates)
                         if smart_kind == 'number' and numeric_cands and not has_smart_pos:
                             # Score candidates using middle-of-line (between min/max), units hints, range, and secondary-term header alignment.
                             # Secondary vertical sweep is ignored; only header alignment contributes.
@@ -3348,7 +3387,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
                                     "format_match": 0.0,
-                                    "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
@@ -3388,7 +3426,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         # Don't add any score for nullified candidates
                                     # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.0  # Reduced bonus to discourage boundary values
+                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
@@ -3411,13 +3449,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         s += delta
                                         comp["format_match"] += delta
 
-                                # 5. UNITS HINT (0.4 points)
-                                if units_hint_set and c.get('units') in units_hint_set:
-                                    delta = 0.4
-                                    s += delta
-                                    comp["units_hint"] += delta
-
-                                # 6. LABEL PROXIMITY (0.1 points)
+                                # 5. LABEL PROXIMITY (0.1 points)
                                 dx = max(0.0, c['x0'] - label_right_x)
                                 delta = 0.1 * (1.0 / (1.0 + dx/10.0))
                                 s += delta
@@ -3439,13 +3471,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
-                                candidate_pool = scored
-                                if units_hint_set and has_units_match:
-                                    prioritized = [t for t in candidate_pool if t[1].get('units') in units_hint_set]
-                                    if prioritized:
-                                        candidate_pool = prioritized
-                                top_score = candidate_pool[0][0]
-                                top = [t for t in candidate_pool if t[0] >= top_score - 0.1]
+                                top_score = scored[0][0]
+                                top = [t for t in scored if t[0] >= top_score - 0.1]
                                 if len(top) > 1:
                                     conflict_reason = 'multiple candidates with similar scores'
                                 chosen = top[0][1]
@@ -4259,7 +4286,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 except Exception:
                                     nval = None
                                 units_value = extract_units(cand_text) or units_value
+                                # Range check with >50% nullifier
                                 if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                    # NULLIFIER: reject values >50% outside range (skip this candidate)
+                                    if spec.range_min is not None and spec.range_max is not None:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance_50 = 0.5 * range_span
+                                        if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                            continue  # Skip this row - value too far out of range
+                                    # Within 50% tolerance but outside strict range - annotate
                                     bad = False
                                     if spec.range_min is not None and nval < spec.range_min:
                                         bad = True
@@ -4360,7 +4395,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    continue  # Skip this row - value too far out of range
                                             bad = False
                                             if spec.range_min is not None and nval < spec.range_min:
                                                 bad = True
@@ -4438,7 +4480,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
                                     "format_match": 0.0,
-                                    "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
@@ -4479,7 +4520,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         # Don't add any score for nullified candidates
                                     # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.0  # Reduced bonus to discourage boundary values
+                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
