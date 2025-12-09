@@ -2399,7 +2399,7 @@ class MainWindow(QtWidgets.QMainWindow):
         table_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600; margin-top: 4px;")
         inputs_layout.addWidget(table_label)
 
-        self.btn_extract_tables = QtWidgets.QPushButton("\U0001F4CA  Extract Tables from PDFs")
+        self.btn_extract_tables = QtWidgets.QPushButton("\U0001F4CA  Extract Tables by Keywords")
         self.btn_extract_tables.setStyleSheet("""
             QPushButton {
                 padding: 12px 20px;
@@ -4851,7 +4851,7 @@ class MainWindow(QtWidgets.QMainWindow):
             all_pdfs = [(d.get("pdf"), d.get("serial_component", ""), d.get("reason", "")) for d in details if d.get("pdf")]
 
             dlg = QtWidgets.QDialog(self)
-            dlg.setWindowTitle("Extract Tables from Data Packages")
+            dlg.setWindowTitle("Extract Tables by Keywords")
             dlg.resize(1200, 700)
             dlg.setStyleSheet("""
                 QDialog {
@@ -4877,11 +4877,11 @@ class MainWindow(QtWidgets.QMainWindow):
             main_layout.setSpacing(16)
 
             # Title
-            title = QtWidgets.QLabel("Extract Tables from Data Packages")
+            title = QtWidgets.QLabel("Extract Tables by Keywords")
             title.setStyleSheet("font-size: 18px; font-weight: 700; color: #111827;")
             main_layout.addWidget(title)
 
-            desc = QtWidgets.QLabel("Select documents and configure table extraction parameters")
+            desc = QtWidgets.QLabel("Select documents, provide keywords, and extract matching tables")
             desc.setStyleSheet("font-size: 13px; color: #6b7280;")
             main_layout.addWidget(desc)
 
@@ -5038,65 +5038,41 @@ class MainWindow(QtWidgets.QMainWindow):
             form_layout.setSpacing(16)
             form_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
-            # Pages (required)
-            pages_input = QtWidgets.QLineEdit("1")
-            pages_input.setPlaceholderText("e.g., 1,3-5,7")
-            pages_input.setToolTip("Page range (1-indexed). Examples: 1 or 1,3-5 or 1-10")
+            # Keywords (required)
+            keywords_input = QtWidgets.QLineEdit()
+            keywords_input.setPlaceholderText("e.g., Program, Build Revision")
+            keywords_input.setToolTip("Comma-separated keywords to anchor table extraction")
+            keywords_input.setStyleSheet(input_style)
+            form_layout.addRow(make_label("Keywords*:"), keywords_input)
+
+            # Pages (optional)
+            pages_input = QtWidgets.QLineEdit("")
+            pages_input.setPlaceholderText("e.g., 1,3-5 (blank = all pages)")
+            pages_input.setToolTip("Page range (1-indexed). Leave blank to scan all pages.")
             pages_input.setStyleSheet(input_style)
-            form_layout.addRow(make_label("Pages* (required):"), pages_input)
+            form_layout.addRow(make_label("Pages:"), pages_input)
 
-            # Fixed column count
-            num_cols_input = QtWidgets.QLineEdit("0")
-            num_cols_input.setPlaceholderText("0 = Auto-detect")
-            num_cols_input.setToolTip("Set exact number of columns (0 = auto-detect, range: 0-20)")
-            num_cols_input.setStyleSheet(input_style)
-            num_cols_input.setMaxLength(2)
-            form_layout.addRow(make_label("Fixed Columns:"), num_cols_input)
+            # Max columns
+            max_cols_input = QtWidgets.QLineEdit("6")
+            max_cols_input.setPlaceholderText("Default: 6")
+            max_cols_input.setToolTip("Maximum expected columns for detection (range: 2-12)")
+            max_cols_input.setStyleSheet(input_style)
+            max_cols_input.setMaxLength(2)
+            form_layout.addRow(make_label("Max Columns:"), max_cols_input)
 
-            # Min columns
-            min_cols_input = QtWidgets.QLineEdit("2")
-            min_cols_input.setPlaceholderText("Default: 2")
-            min_cols_input.setToolTip("Minimum columns required (auto-detect mode only, range: 1-20)")
-            min_cols_input.setStyleSheet(input_style)
-            min_cols_input.setMaxLength(2)
-            form_layout.addRow(make_label("Min Columns:"), min_cols_input)
-
-            # Min rows
-            min_rows_input = QtWidgets.QLineEdit("3")
-            min_rows_input.setPlaceholderText("Default: 3")
-            min_rows_input.setToolTip("Minimum consecutive rows to form a table (range: 1-50)")
-            min_rows_input.setStyleSheet(input_style)
-            min_rows_input.setMaxLength(2)
-            form_layout.addRow(make_label("Min Rows:"), min_rows_input)
-
-            # Match threshold
-            threshold_input = QtWidgets.QLineEdit("0.5")
-            threshold_input.setPlaceholderText("Default: 0.5")
-            threshold_input.setToolTip("Type matching threshold for column alignment (range: 0.0-1.0)")
-            threshold_input.setStyleSheet(input_style)
-            threshold_input.setMaxLength(4)
-            form_layout.addRow(make_label("Match Threshold:"), threshold_input)
-
-            # OCR mode
-            ocr_checkbox = QtWidgets.QCheckBox("Force OCR mode")
-            ocr_checkbox.setToolTip("Use EasyOCR instead of PyMuPDF text extraction")
-            ocr_checkbox.setStyleSheet("font-size: 13px; color: #374151;")
-            form_layout.addRow(make_label(""), ocr_checkbox)
-
-            # DPI
+            # OCR DPI
             dpi_input = QtWidgets.QLineEdit("300")
             dpi_input.setPlaceholderText("Default: 300")
-            dpi_input.setToolTip("DPI for OCR rendering if OCR mode enabled (range: 150-800)")
+            dpi_input.setToolTip("DPI for OCR rendering (used when OCR fallback triggers)")
             dpi_input.setStyleSheet(input_style)
             dpi_input.setMaxLength(3)
             form_layout.addRow(make_label("OCR DPI:"), dpi_input)
 
-            # Delimiter
-            delimiter_input = QtWidgets.QLineEdit()
-            delimiter_input.setPlaceholderText("Auto-detect")
-            delimiter_input.setToolTip("Field delimiter (leave empty for auto-detect)")
-            delimiter_input.setStyleSheet(input_style)
-            form_layout.addRow(make_label("Delimiter:"), delimiter_input)
+            # Best-only
+            best_only_checkbox = QtWidgets.QCheckBox("Return only best-matching table")
+            best_only_checkbox.setChecked(True)
+            best_only_checkbox.setStyleSheet("font-size: 13px; color: #374151;")
+            form_layout.addRow(make_label(""), best_only_checkbox)
 
             form_scroll.setWidget(form_container)
             right_layout.addWidget(form_scroll, 1)
@@ -5104,9 +5080,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # Help text
             help_text = QtWidgets.QLabel(
                 "<b>Tips:</b><br>"
-                "• Fixed Columns: Set to exact column count for smart alignment<br>"
-                "• Match Threshold: Higher = stricter type matching<br>"
-                "• Output saved to Data Packages/<filename>_table.xlsx"
+                "• Keywords drive which table is returned (e.g., 'Program, Build Revision')<br>"
+                "• Pages blank = all pages; limit pages to speed up extraction<br>"
+                "• Output saved next to the PDF as <pdf-stem>_keywords.csv"
             )
             help_text.setStyleSheet("color: #6b7280; font-size: 11px; padding: 8px; background: #f9fafb; border-radius: 4px;")
             help_text.setWordWrap(True)
@@ -5162,29 +5138,16 @@ class MainWindow(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.warning(dlg, "No Selection", "Please select at least one PDF")
                     return
 
-                pages = pages_input.text().strip()
-                if not pages:
-                    QtWidgets.QMessageBox.warning(dlg, "Missing Pages", "Please specify page range (e.g., 1 or 1,3-5)")
+                keywords = keywords_input.text().strip()
+                if not keywords:
+                    QtWidgets.QMessageBox.warning(dlg, "Missing Keywords", "Please provide at least one keyword (comma-separated)")
                     return
 
                 # Extract and validate parameters
                 try:
-                    num_cols_val = int(num_cols_input.text().strip() or "0")
-                    if not (0 <= num_cols_val <= 20):
-                        raise ValueError("Fixed Columns must be between 0 and 20")
-                    num_cols = num_cols_val if num_cols_val > 0 else None
-
-                    min_cols = int(min_cols_input.text().strip() or "2")
-                    if not (1 <= min_cols <= 20):
-                        raise ValueError("Min Columns must be between 1 and 20")
-
-                    min_rows = int(min_rows_input.text().strip() or "3")
-                    if not (1 <= min_rows <= 50):
-                        raise ValueError("Min Rows must be between 1 and 50")
-
-                    match_threshold = float(threshold_input.text().strip() or "0.5")
-                    if not (0.0 <= match_threshold <= 1.0):
-                        raise ValueError("Match Threshold must be between 0.0 and 1.0")
+                    max_cols = int(max_cols_input.text().strip() or "6")
+                    if not (2 <= max_cols <= 12):
+                        raise ValueError("Max Columns must be between 2 and 12")
 
                     dpi = int(dpi_input.text().strip() or "300")
                     if not (150 <= dpi <= 800):
@@ -5194,8 +5157,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.warning(dlg, "Invalid Input", str(e))
                     return
 
-                ocr = ocr_checkbox.isChecked()
-                delimiter = delimiter_input.text().strip() or None
+                pages = pages_input.text().strip()
+                best_only = best_only_checkbox.isChecked()
 
                 dlg.accept()
 
@@ -5204,16 +5167,15 @@ class MainWindow(QtWidgets.QMainWindow):
                     pdf_path = Path(cb.property("pdf_path"))
                     try:
                         self._start_worker(
-                            lambda p=pdf_path: be.extract_csv_tables(
-                                p, pages, num_cols, min_cols, min_rows,
-                                match_threshold, ocr, dpi, delimiter
+                            lambda p=pdf_path: be.extract_tables_by_keywords(
+                                p, keywords, pages or None, max_cols, dpi, best_only
                             ),
-                            status_msg=f"Extracting tables from {pdf_path.name}..."
+                            status_msg=f"Extracting keyword tables from {pdf_path.name}..."
                         )
                     except Exception as e:
                         QtWidgets.QMessageBox.critical(self, "Extraction Error", f"Failed to extract from {pdf_path.name}:\n{e}")
 
-                self._show_toast(f"Table extraction started for {len(selected)} document(s)")
+                self._show_toast(f"Keyword table extraction started for {len(selected)} document(s)")
 
             btn_extract.clicked.connect(extract_tables)
             btn_cancel.clicked.connect(dlg.reject)

@@ -272,6 +272,26 @@ def extract_csv_tables(pdf: Path, pages: str, num_cols: Optional[int] = None,
     return run_script("scripts/extract_table_csv_lines.py", *args)
 
 
+def extract_tables_by_keywords(pdf: Path, keywords: str, pages: str | None = None,
+                               max_cols: int = 6, ocr_dpi: int = 300,
+                               best_only: bool = True, output: Optional[Path] = None) -> subprocess.Popen:
+    """
+    Extract tables using the geometry/keyword-driven extractor.
+    """
+    args = ["--pdf", str(pdf), "--keywords", keywords]
+    if pages:
+        args += ["--pages", pages]
+    if max_cols != 6:
+        args += ["--max-cols", str(max_cols)]
+    if ocr_dpi != 300:
+        args += ["--ocr-dpi", str(ocr_dpi)]
+    if best_only:
+        args += ["--best-only"]
+    if output:
+        args += ["--out", str(output)]
+    return run_script("scripts/extract_tables_by_keywords.py", *args)
+
+
 def open_path(p: Path) -> None:
     if sys.platform.startswith("win"):
         os.startfile(str(p))  # type: ignore[attr-defined]
