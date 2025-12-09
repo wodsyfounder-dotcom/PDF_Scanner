@@ -96,7 +96,7 @@ def extract_words_from_page(pdf_path: Path, page_num: int, dpi: int = 300) -> Tu
         words_raw = page.get_text("words")
         if words_raw:
             words = [
-                Word(text=w[4].strip(), x0=w[0], y0=w[1], x1=w[2], y1=w[3])
+                Word(text=w[4].strip(), x0=float(w[0]), y0=float(w[1]), x1=float(w[2]), y1=float(w[3]))
                 for w in words_raw
                 if w[4].strip()
             ]
@@ -107,7 +107,7 @@ def extract_words_from_page(pdf_path: Path, page_num: int, dpi: int = 300) -> Tu
         import numpy as np
         from PIL import Image
 
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
         img_np = np.array(img)
         results = reader.readtext(img_np)
         words: List[Word] = []
@@ -120,10 +120,10 @@ def extract_words_from_page(pdf_path: Path, page_num: int, dpi: int = 300) -> Tu
             words.append(
                 Word(
                     text=text,
-                    x0=min(xs),
-                    y0=min(ys),
-                    x1=max(xs),
-                    y1=max(ys),
+                    x0=min(x for x in xs if isinstance(x, (int, float))),
+                    y0=min(y for y in ys if isinstance(y, (int, float))),
+                    x1=max(x for x in xs if isinstance(x, (int, float))),
+                    y1=max(y for y in ys if isinstance(y, (int, float))),
                 )
             )
         return words, (pix.width, pix.height), "easyocr"
