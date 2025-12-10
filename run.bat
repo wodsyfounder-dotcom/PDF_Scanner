@@ -2,19 +2,20 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
+set "APP_ROOT=%ROOT%EIDAT_App_Files\"
 
 rem Prefer local venv if present
-set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
+set "VENV_PY=%APP_ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
-  set "PATH=%ROOT%.venv\Scripts;%PATH%"
+  set "PATH=%APP_ROOT%.venv\Scripts;%PATH%"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
 )
 
 rem Make vendored packages available when not installed system-wide
-set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+set "PYTHONPATH=%APP_ROOT%Lib\site-packages;%PYTHONPATH%"
 
 rem Detect terms file and scaffold if missing (Smart Snap default)
 set "TERMS_SMART=%ROOT%user_inputs\terms.schema.smartsnap.xlsx"
@@ -34,7 +35,7 @@ if exist "%TERMS_LEGACY%" (
 
 echo [WARN] No Smart-Snap terms file found.
 echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
-"%PY%" "%ROOT%scripts\generate_terms_schema_smartsnap.py"
+"%PY%" "%APP_ROOT%scripts\generate_terms_schema_smartsnap.py"
 if errorlevel 1 exit /b 1
 echo Open and edit: "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" and re-run.
 exit /b 1
@@ -73,7 +74,7 @@ if exist "%CFG%" (
 )
 
 rem Ensure vendored packages path is prepended even if PYTHONPATH was overridden in scanner.env
-set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+set "PYTHONPATH=%APP_ROOT%Lib\site-packages;%PYTHONPATH%"
 
 rem Optional venv override via scanner.env
 if defined VENV_DIR (
@@ -108,7 +109,7 @@ if not defined OCR_MODE set "OCR_MODE=fallback"
 set "QUIET_FLAG="
 if /I "%QUIET%"=="1" set "QUIET_FLAG=--quiet"
 
-"%PY%" "%ROOT%Application\eidp_term_scanner.py" ^
+"%PY%" "%APP_ROOT%Application\eidp_term_scanner.py" ^
   --input "%TERMS%" ^
   --pdf-folder "%IN_DIR%" ^
   --output-xlsx "%OUT_XLSX%" ^

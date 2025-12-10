@@ -31,7 +31,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = ROOT / "Product_Data_File"
 PLOTS_DIR = EXPORTS / "plots"
 MASTER_XLSX = EXPORTS / "master.xlsx"

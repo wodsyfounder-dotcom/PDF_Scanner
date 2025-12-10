@@ -902,7 +902,7 @@ def main() -> None:
     else:
         # Default to Data Packages folder
         from pathlib import Path as P
-        root = P(__file__).resolve().parents[1]
+        root = P(__file__).resolve().parents[2]
         data_packages = root / "Data Packages"
         output_path = data_packages / f"{pdf_path.stem}_table.xlsx"
 

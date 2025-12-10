@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any, Set
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = ROOT / "Product_Data_File"
 REG_XLSX = EXPORTS / "run_registry.xlsx"
 REG_CSV = EXPORTS / "run_registry.csv"
@@ -933,4 +933,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

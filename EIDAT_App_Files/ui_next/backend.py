@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional
 
 
-ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = Path(__file__).resolve().parents[1]
+ROOT = APP_ROOT.parent  # repository root that holds user data folders
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PROPOSED_PLOTS_JSON = ROOT / "user_inputs" / "proposed_plots.json"
@@ -18,7 +19,7 @@ DEFAULT_PROPOSED_PLOTS_JSON = ROOT / "user_inputs" / "proposed_plots.json"
 DEFAULT_REPO_ROOT = ROOT / "Data Packages"
 DEFAULT_PDF_DIR = DEFAULT_REPO_ROOT
 SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
-APP_ENTRY = ROOT / "Application" / "eidp_term_scanner.py"
+APP_ENTRY = APP_ROOT / "Application" / "eidp_term_scanner.py"
 RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
 PLOTS_DIR = ROOT / "Product_Data_File" / "plots"
 TERMS_TEMPLATE_SHEET = "Template"
@@ -142,7 +143,7 @@ def resolve_project_python() -> str:
         cand = _venv_python_from(Path(vdir))
         if cand.exists():
             return str(cand)
-    cand = _venv_python_from(ROOT / ".venv")
+    cand = _venv_python_from(APP_ROOT / ".venv")
     if cand.exists():
         return str(cand)
     return sys.executable
@@ -153,8 +154,12 @@ def _base_env() -> Dict[str, str]:
     # Merge scanner.env values for direct Python invocations
     env.update(parse_scanner_env(SCANNER_ENV))
     # Ensure vendored site-packages are importable as fallback
-    env["PYTHONPATH"] = str(ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(APP_ROOT / "Lib" / "site-packages") + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("QUIET", "1")
+    # Force cache to always be in project root, not executable location
+    # This ensures cache is consistent whether running as script or frozen exe
+    if "CACHE_ROOT" not in env and "OCR_CACHE_ROOT" not in env:
+        env["CACHE_ROOT"] = str(ROOT)
     return env
 
 
@@ -193,7 +198,7 @@ def run_scanner(terms: Path, pdf_dir: Path) -> subprocess.Popen:
 
 def run_script(script_rel_path: str, *args: str) -> subprocess.Popen:
     py = resolve_project_python()
-    script = ROOT / script_rel_path
+    script = APP_ROOT / script_rel_path
     if not script.exists():
         raise FileNotFoundError(f"Missing script: {script}")
     return spawn([py, str(script), *args])

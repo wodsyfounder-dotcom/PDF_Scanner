@@ -20,7 +20,7 @@ def main() -> None:
         print("[ERROR] openpyxl is required to generate the template. Install with: py -m pip install openpyxl", file=sys.stderr)
         sys.exit(1)
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     out_dir = root / 'user_inputs'
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / 'terms.schema.xlsx'

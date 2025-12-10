@@ -1,10 +1,27 @@
-# Ignore only environment/build artifacts so data files are tracked
-/Lib/
-/.venv/
+# App runtime (kept local per machine)
+/EIDAT_App_Files/.venv/
+/EIDAT_App_Files/Lib/
+/EIDAT_App_Files/.tmp_ocrify/
+
+# User data/output folders
+/Data Packages/
 /Product_Data_File/
+/user_inputs/
+/cache/
+
+# Generated/ephemeral files
 __pycache__/
 **/__pycache__/
 *.pyc
-/cache/
-/Data Packages/
-/user_inputs/
+*.pyo
+*.pyd
+debug_output*.txt
+nul
+
+# Local tool configs
+/.claude/
+
+# Backups not needed for runtime
+EIDAT_App_Files/Application/*.bak
+EIDAT_App_Files/Application/*.backup
+EIDAT_App_Files/ui_next/qt_main.py.backup-*

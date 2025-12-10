@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import List
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = ROOT / "Product_Data_File"
 PLOTS_DIR = EXPORTS / "plots"
 OUT_XLSX = PLOTS_DIR / "plots_summary.xlsx"

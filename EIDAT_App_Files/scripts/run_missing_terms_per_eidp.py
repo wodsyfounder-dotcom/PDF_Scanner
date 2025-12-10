@@ -11,9 +11,9 @@ from typing import Dict, List, Tuple
 def _load_backend():
     """Import ui_next.backend with a stable ROOT reference."""
     here = Path(__file__).resolve()
-    root = here.parents[1]
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    app_root = here.parents[1]
+    if str(app_root) not in sys.path:
+        sys.path.insert(0, str(app_root))
     import ui_next.backend as be  # type: ignore
 
     return be
@@ -181,4 +181,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

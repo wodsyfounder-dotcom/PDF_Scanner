@@ -4,7 +4,8 @@ chcp 65001 >nul
 
 rem Emit a full text snapshot of key project files into a repo-local .txt file.
 
-set "ROOT=%~dp0..\"
+set "APP_ROOT=%~dp0..\"
+set "ROOT=%APP_ROOT%..\"
 set "OUT=%ROOT%full_snapshot.txt"
 if not "%~1"=="" set "OUT=%~1"
 if exist "%OUT%" del /q "%OUT%" 2>nul
@@ -21,20 +22,20 @@ call :PRINT_PACKAGE_SECTION "Core runtime" "%CORE_PY_PACKAGES%"
 call :PRINT_PACKAGE_SECTION "OCR fallback" "%OCR_PY_PACKAGES%"
 >> "%OUT%" echo.
 
-call :PRINT_FILE "README_EIDP_Term_Scanner.md"
-call :PRINT_FILE "install.bat"
-call :PRINT_FILE "run.bat"
-call :PRINT_FILE "run_gui.bat"
+call :PRINT_FILE "%ROOT%README_EIDP_Term_Scanner.md"
+call :PRINT_FILE "%ROOT%install.bat"
+call :PRINT_FILE "%ROOT%run.bat"
+call :PRINT_FILE "%ROOT%run_gui.bat"
 rem New Qt-based UI
-call :PRINT_FILE "ui_next\qt_main.py"
-call :PRINT_FILE "ui_next\backend.py"
-call :PRINT_FILE "ui_next\requirements-ui.txt"
-call :PRINT_FILE "Application\eidp_term_scanner.py"
-call :PRINT_FILE "Application\eidp_term_scanner.core.py"
-call :PRINT_FILE "user_inputs\scanner.env"
-call :PRINT_FILE "scripts\ocr_page_to_excel.py"
+call :PRINT_FILE "%APP_ROOT%ui_next\qt_main.py"
+call :PRINT_FILE "%APP_ROOT%ui_next\backend.py"
+call :PRINT_FILE "%APP_ROOT%ui_next\requirements-ui.txt"
+call :PRINT_FILE "%APP_ROOT%Application\eidp_term_scanner.py"
+call :PRINT_FILE "%APP_ROOT%Application\eidp_term_scanner.core.py"
+call :PRINT_FILE "%ROOT%user_inputs\scanner.env"
+call :PRINT_FILE "%APP_ROOT%scripts\ocr_page_to_excel.py"
 
-for %%F in ("scripts\*.py") do (
+for %%F in ("%APP_ROOT%scripts\*.py") do (
   if /I not "%%~nxF"=="ocr_page_to_excel.py" (
     call :PRINT_FILE "%%~fF"
   )

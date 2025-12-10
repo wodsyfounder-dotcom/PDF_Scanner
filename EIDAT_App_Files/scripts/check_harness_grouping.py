@@ -3,9 +3,9 @@ import importlib.util
 
 
 def _load_core():
-    root = Path(__file__).resolve().parents[1]
-    wrapper_path = root / "Application" / "eidp_term_scanner.py"
-    core_path = root / "Application" / "eidp_term_scanner.core.py"
+    app_root = Path(__file__).resolve().parents[1]
+    wrapper_path = app_root / "Application" / "eidp_term_scanner.py"
+    core_path = app_root / "Application" / "eidp_term_scanner.core.py"
 
     spec = importlib.util.spec_from_file_location("eidp_wrapper", wrapper_path)
     if spec is None or spec.loader is None:
@@ -21,9 +21,10 @@ def _load_core():
 def main() -> None:
     core = _load_core()
 
-    terms_path = Path("user_inputs/terms.schema.smartsnap.xlsx")
-    pdf_sn0000 = Path("Data Packages") / "FakeProgram_SV1_SN0000.pdf"
-    pdf_sn1111 = Path("Data Packages") / "FakeProgram_SV1_SN1111.pdf"
+    root = Path(__file__).resolve().parents[2]
+    terms_path = root / "user_inputs" / "terms.schema.smartsnap.xlsx"
+    pdf_sn0000 = root / "Data Packages" / "FakeProgram_SV1_SN0000.pdf"
+    pdf_sn1111 = root / "Data Packages" / "FakeProgram_SV1_SN1111.pdf"
 
     terms = core.load_terms(terms_path)
     harness_terms = [

@@ -19,7 +19,7 @@ import sys
 from datetime import datetime
 
 # Add parent directory to path for imports
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.master_cell_state import save_cell_state, load_cell_state

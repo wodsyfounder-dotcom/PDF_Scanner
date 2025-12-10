@@ -2,19 +2,20 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
+set "APP_ROOT=%ROOT%EIDAT_App_Files\"
 
 rem Prefer local venv if present
-set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
+set "VENV_PY=%APP_ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
-  set "PATH=%ROOT%.venv\Scripts;%PATH%"
+  set "PATH=%APP_ROOT%.venv\Scripts;%PATH%"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
 )
 
 rem Make vendored packages available when not installed system-wide
-set "PYTHONPATH=%ROOT%Lib\site-packages;%PYTHONPATH%"
+set "PYTHONPATH=%APP_ROOT%Lib\site-packages;%PYTHONPATH%"
 
 rem Load optional scanner config (user_inputs\scanner.env) as KEY=VALUE lines
 set "CFG=%ROOT%user_inputs\scanner.env"
@@ -56,6 +57,6 @@ if not "%QUIET%"=="1" (
   echo [RUN] Python: "%PY%"
 )
 
-"%PY%" "%ROOT%ui_next\qt_main.py" %*
+"%PY%" "%APP_ROOT%ui_next\qt_main.py" %*
 set "RC=%ERRORLEVEL%"
 endlocal & exit /b %RC%

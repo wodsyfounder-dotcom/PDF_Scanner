@@ -2,10 +2,11 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
+set "APP_ROOT=%ROOT%EIDAT_App_Files\"
 set "PY=py"
-rem Optional first arg: custom venv directory. Defaults to %ROOT%.venv
+rem Optional first arg: custom venv directory. Defaults to %APP_ROOT%.venv
 set "VENV_DIR=%~1"
-if "%VENV_DIR%"=="" set "VENV_DIR=%ROOT%.venv"
+if "%VENV_DIR%"=="" set "VENV_DIR=%APP_ROOT%.venv"
 where %PY% >nul 2>nul || set "PY=python"
 
 echo [SETUP] Creating local virtual environment: "%VENV_DIR%" ...
@@ -52,7 +53,7 @@ if errorlevel 1 (
 )
 
 rem Also vendor runtime deps into repo-local Lib\site-packages (for non-venv runs)
-set "LOCAL_SITE=%ROOT%Lib\site-packages"
+set "LOCAL_SITE=%APP_ROOT%Lib\site-packages"
 if not exist "%LOCAL_SITE%" mkdir "%LOCAL_SITE%"
 echo [SETUP] Vendoring Python deps to Lib\site-packages (minimal):
 echo         pymupdf, pandas, openpyxl, XlsxWriter, matplotlib, opencv-python-headless, PySide6, easyocr, torch, torchvision
@@ -71,7 +72,7 @@ if not exist "%ROOT%Product_Data_File" mkdir "%ROOT%Product_Data_File"
 if not exist "%ROOT%Product_Data_File\run_data" mkdir "%ROOT%Product_Data_File\run_data"
 if not exist "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" (
   echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
-  "%VPY%" "%ROOT%scripts\generate_terms_schema_smartsnap.py"
+  "%VPY%" "%APP_ROOT%scripts\generate_terms_schema_smartsnap.py"
 ) else (
   echo [INFO] Smart-Snap template already present.
 )
@@ -81,7 +82,7 @@ if not exist "%ROOT%user_inputs\scanner.env" (
   echo [SETUP] Creating default user_inputs\scanner.env
   >  "%ROOT%user_inputs\scanner.env" echo # Scanner configuration (KEY=VALUE)
   >> "%ROOT%user_inputs\scanner.env" echo QUIET=1
-  >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%ROOT%.venv
+  >> "%ROOT%user_inputs\scanner.env" echo #VENV_DIR=%APP_ROOT%.venv
   >> "%ROOT%user_inputs\scanner.env" echo #OCR_MODE=fallback   ^# fallback|ocr_only|no_ocr
   >> "%ROOT%user_inputs\scanner.env" echo #OCR_DPI=600
   >> "%ROOT%user_inputs\scanner.env" echo #EASYOCR_LANGS=en
@@ -96,6 +97,6 @@ echo.
 echo Next steps:
 echo   1) Point the app at your PDF repository (default: "Data Packages")
 echo   2) Edit user_inputs\terms.xlsx (or .csv)
-echo   3) Run: run.bat   or  "%VENV_DIR%\Scripts\python.exe" ui_next\qt_main.py
+echo   3) Run: run.bat   or  "%VENV_DIR%\Scripts\python.exe" EIDAT_App_Files\ui_next\qt_main.py
 
 endlocal & exit /b 0

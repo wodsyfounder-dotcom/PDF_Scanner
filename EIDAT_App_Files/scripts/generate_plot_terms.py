@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = ROOT / "Product_Data_File"
 MASTER_XLSX = EXPORTS / "master.xlsx"
 MASTER_CSV = EXPORTS / "master.csv"

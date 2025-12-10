@@ -48,7 +48,7 @@ def main() -> None:
         )
         sys.exit(1)
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     out_dir = root / "user_inputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "terms.schema.smartsnap.xlsx"

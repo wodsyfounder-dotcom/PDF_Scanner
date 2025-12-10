@@ -16,8 +16,10 @@ EIDP Term Scanner (Matrix + Metadata)
 
 import argparse
 import csv
+import hashlib
 import json
 import os
+import pickle
 import re
 import shutil
 import sys
@@ -47,9 +49,12 @@ def _should_emit_text(text: str, is_stderr: bool) -> bool:
             return False
         if text.startswith("[CLEANUP]"):
             return False
-        # Allow [PROGRESS] messages even in quiet mode (needed for UI progress tracking)
-        # if text.startswith("[PROGRESS]"):
-        #     return False
+        # Allow key informational lines needed by the GUI even in quiet mode.
+        if text.startswith("[INFO] Outputs will be saved under:"):
+            return True
+        if text.startswith("[INFO] Scanning:"):
+            return True
+        # Hide noisier INFO chatter while quiet
         if text.startswith("[INFO] Pre-extracted"):
             return False
         if text.startswith("[INFO]"):
@@ -138,6 +143,15 @@ try:
     _HAVE_EASYOCR = True
 except Exception:
     _HAVE_EASYOCR = False
+
+# OpenCV for image preprocessing (optional)
+_HAVE_CV2 = False
+try:
+    import cv2
+    import numpy as np
+    _HAVE_CV2 = True
+except Exception:
+    pass
 
 
 # --- Optional: table extraction helper (scripts/extract_page_tables.py) ---
@@ -480,7 +494,42 @@ def _effective_value_format(spec) -> Optional[str]:
         return raw
     smart_kind = (getattr(spec, "smart_snap_type", "") or "").strip().lower()
     return DEFAULT_SMART_FORMATS.get(smart_kind)
-TIME_REGEX = re.compile(r"\b(?:(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:[AP]M|[ap]m)?|(?:\d+\s*(?:ms|s|sec|mins?|minutes?|hrs?|hours?)))\b")
+TIME_REGEX = re.compile(
+    r"""
+    \b(?:
+        # Clock time format: HH:MM:SS or HH:MM with optional AM/PM
+        (?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\s*(?:[AP]M|[ap]m)?
+        |
+        # Duration with units (supports decimals like 2.5 minutes)
+        [-+]?(?:\d+(?:\.\d+)?)\s*(?:
+            # Nanoseconds
+            ns|nsec|nanosec|nanosecond|nanoseconds
+            |
+            # Microseconds
+            us|usec|microsec|microsecond|microseconds|µs|μs
+            |
+            # Milliseconds
+            ms|msec|millisec|millisecond|milliseconds
+            |
+            # Seconds
+            s|sec|secs|second|seconds
+            |
+            # Minutes
+            m|min|mins|minute|minutes
+            |
+            # Hours
+            h|hr|hrs|hour|hours
+            |
+            # Days
+            d|day|days
+            |
+            # Weeks
+            w|wk|wks|week|weeks
+        )\b
+    )
+    """,
+    re.VERBOSE | re.IGNORECASE
+)
 
 
 def _format_score_breakdown(breakdown: Optional[Dict[str, Optional[float]]]) -> Optional[Dict[str, Optional[float]]]:
@@ -577,7 +626,7 @@ SN_REGEX = re.compile(
 
 # Extend units for aerospace contexts and override NUMBER_REGEX with a richer set.
 _AERO_UNITS = (
-    "%|ppm|ppb|ms|s|sec|kg|g|mg|ug|lb|lbm|lbf|lbs|"
+    "%|ppm|ppb|ms|s|sec|seconds|second|minutes|minute|hours|hour|kg|g|mg|ug|lb|lbm|lbf|lbs|"
     "N|kN|mN|Ns|bar|mbar|Pa|kPa|MPa|psi|psia|psig|"
     "mm|cm|m|in|ft|K|degC|degF|C|F"
 )
@@ -888,7 +937,7 @@ def load_terms(input_path: Path) -> List[TermSpec]:
     wb = openpyxl.load_workbook(str(input_path), data_only=True)
     ws = wb.active
 
-    # Build a map of header name ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ column index
+    # Build a map of header name -> column index
     header_map: Dict[str, int] = {}
     for col_idx, cell in enumerate(ws[1], start=1):
         key = (str(cell.value) if cell.value is not None else "").strip().lower()
@@ -1278,6 +1327,14 @@ def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
+                # Try loading from persistent cache first
+                cached_result = _load_ocr_from_cache(pdf_path, p, 'pymupdf', _dpi)
+                if cached_result is not None:
+                    text, cached_dpi = cached_result
+                    out[p] = text
+                    continue
+
+                # Cache miss - perform OCR
                 page = doc.load_page(p - 1)
                 # Increase DPI to improve OCR fidelity on small text
                 pix = page.get_pixmap(dpi=_dpi)
@@ -1288,6 +1345,9 @@ def ocr_pages_with_pymupdf(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                     error_notes.append(type(e).__name__)
                     text = ""
                 out[p] = text or ""
+
+                # Save to persistent cache
+                _save_ocr_to_cache(pdf_path, p, 'pymupdf', _dpi, text)
     finally:
         doc.close()
     if error_notes:
@@ -1310,21 +1370,39 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
         _dpi = 400
     _dpi = max(200, min(800, _dpi))
     _tess_cfg = os.environ.get('TESSERACT_ARGS', '--psm 6')
-    try:
-        images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages), last_page=max(pages))
-    except Exception as e:
-        return out, f"ocr_pdf2image:convert_error:{e}"
+
+    # Check cache for all pages first
     page_list = sorted(set(pages))
-    start = page_list[0]
-    error_notes: List[str] = []
-    for idx, img in enumerate(images, start=start):
-        if idx in page_list:
-            try:
-                text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
-            except Exception as e:
-                error_notes.append(type(e).__name__)
-                text = ""
-            out[idx] = text or ""
+    pages_to_ocr = []
+    for p in page_list:
+        cached_result = _load_ocr_from_cache(pdf_path, p, 'pdf2image', _dpi)
+        if cached_result is not None:
+            text, cached_dpi = cached_result
+            out[p] = text
+        else:
+            pages_to_ocr.append(p)
+
+    # Only OCR pages that weren't in cache
+    if pages_to_ocr:
+        try:
+            images = convert_from_path(str(pdf_path), dpi=_dpi, first_page=min(pages_to_ocr), last_page=max(pages_to_ocr))
+        except Exception as e:
+            return out, f"ocr_pdf2image:convert_error:{e}"
+
+        start = pages_to_ocr[0]
+        error_notes: List[str] = []
+        for idx, img in enumerate(images, start=start):
+            if idx in pages_to_ocr:
+                try:
+                    text = pytesseract.image_to_string(img, lang='eng', config=_tess_cfg)
+                except Exception as e:
+                    error_notes.append(type(e).__name__)
+                    text = ""
+                out[idx] = text or ""
+                # Save to persistent cache
+                _save_ocr_to_cache(pdf_path, idx, 'pdf2image', _dpi, text)
+    else:
+        error_notes = []
     if error_notes:
         return out, "ocr_pdf2image:error:" + ",".join(sorted(set(error_notes)))
     return out, "ocr_pdf2image"
@@ -1382,6 +1460,14 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
+                # Try loading from persistent cache first
+                cached_result = _load_ocr_from_cache(pdf_path, p, 'easyocr', dpi)
+                if cached_result is not None:
+                    text, cached_dpi = cached_result
+                    out[p] = text
+                    continue
+
+                # Cache miss - perform OCR
                 try:
                     page = doc.load_page(p - 1)
                     pix = page.get_pixmap(dpi=dpi)
@@ -1400,16 +1486,85 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                         results = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
                     except Exception:
                         results = []
+
+                    # Estimate typical character geometry so we can detect borders misread as "1"
+                    heights: List[float] = []
+                    char_widths: List[float] = []
+                    for item in results:
+                        try:
+                            bbox, t, _ = item
+                            xs = [p[0] for p in bbox]
+                            ys = [p[1] for p in bbox]
+                            w = max(xs) - min(xs)
+                            h = max(ys) - min(ys)
+                            if h > 0:
+                                heights.append(float(h))
+                            if w > 0 and isinstance(t, str) and t:
+                                char_widths.append(float(w) / max(len(t), 1))
+                        except Exception:
+                            pass
+                    def _median(vals: List[float]) -> Optional[float]:
+                        if not vals:
+                            return None
+                        vals = sorted(vals)
+                        mid = len(vals) // 2
+                        if len(vals) % 2:
+                            return vals[mid]
+                        return 0.5 * (vals[mid - 1] + vals[mid])
+                    median_height = _median(heights)
+                    median_char_w = _median(char_widths)
+
+                    # Env opt-out if someone wants the raw OCR untouched
+                    try:
+                        _keep_skinny_ones = (os.environ.get("OCR_KEEP_SKINNY_ONES") or "").strip().lower() in ("1", "true", "yes")
+                    except Exception:
+                        _keep_skinny_ones = False
+
+                    def _is_spurious_vertical_line(bbox, t: str, conf: float, median_h: Optional[float], median_w: Optional[float]) -> bool:
+                        """Filter out false '1' detections from cell borders using shape and relative height/width."""
+                        if _keep_skinny_ones:
+                            return False
+                        try:
+                            if not t or t.strip() not in {"1", "I", "|"}:
+                                return False
+                            xs = [p[0] for p in bbox]
+                            ys = [p[1] for p in bbox]
+                            w = max(xs) - min(xs)
+                            h = max(ys) - min(ys)
+                            if h <= 0:
+                                return False
+                            aspect = w / h
+                            # Require thin stroke and taller-than-typical text height to classify as spurious
+                            thin_enough = aspect < 0.25
+                            tall_enough = (median_h and h > median_h * 1.35)
+                            very_tall = (median_h and h > median_h * 1.8)
+                            skinny_char = (median_w and (w < median_w * 0.55))
+                            low_conf = conf < 0.75
+                            if (thin_enough and skinny_char and tall_enough and low_conf) or (thin_enough and very_tall and conf < 0.9):
+                                return True
+                            # Fallback when no medians are available
+                            if not median_h and not median_w and aspect < 0.18 and conf < 0.65:
+                                return True
+                        except Exception:
+                            return False
+                        return False
+
                     # Join text lines in reading order
                     lines: List[str] = []
                     for item in results:
                         try:
-                            _, t, c = item
+                            bbox, t, c = item
+                            if _is_spurious_vertical_line(bbox, t, float(c) if c is not None else 0.0, median_height, median_char_w):
+                                continue
                             if isinstance(t, str) and t.strip():
                                 lines.append(t)
                         except Exception:
                             pass
-                    out[p] = "\n".join(lines)
+                    text = "\n".join(lines)
+                    out[p] = text
+
+                    # Save to persistent cache
+                    _save_ocr_to_cache(pdf_path, p, 'easyocr', dpi, text)
                 finally:
                     try:
                         import shutil as _sh
@@ -1434,6 +1589,186 @@ def _pdf_cache_key(pdf_path: Path) -> str:
         return str(pdf_path.resolve())
     except Exception:
         return str(pdf_path)
+
+
+# ============================================================================
+# Persistent OCR Cache (DPI-aware, per-EIDP)
+# ============================================================================
+
+def _resolve_cache_root() -> Path:
+    """Return the project-root cache base (default: <repo>/cache)."""
+    # Explicit override (lets advanced deployments relocate, but still under one root)
+    try:
+        env_root = os.environ.get("OCR_CACHE_ROOT") or os.environ.get("CACHE_ROOT")
+        if env_root:
+            root = Path(env_root).expanduser()
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+    except Exception:
+        pass
+
+    # Project root: parent of this Application folder, or the executable location if frozen
+    try:
+        root = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+    except Exception:
+        # If creation fails, surface a best-effort path within the repo tree
+        return Path(__file__).resolve().parent.parent
+
+
+def _legacy_ocr_cache_dirs(pdf_path: Path) -> List[Path]:
+    """Return possible legacy cache locations to preserve backwards compatibility."""
+    dirs: List[Path] = []
+    # Legacy: alongside PDFs in a hidden .ocr_cache folder
+    try:
+        dirs.append(pdf_path.parent / ".ocr_cache" / pdf_path.stem)
+    except Exception:
+        pass
+    try:
+        # Legacy: cache located under Data Packages/.ocr_cache when run from repo root
+        root = Path(__file__).resolve().parent.parent
+        dirs.append(root / "Data Packages" / ".ocr_cache" / pdf_path.stem)
+    except Exception:
+        pass
+    return [d for i, d in enumerate(dirs) if d not in dirs[:i]]
+
+
+def _legacy_ocr_cache_keys(pdf_path: Path, page: int, ocr_mode: str, dpi: int) -> List[str]:
+    """Older builds hashed the full path; keep looking for them so cache survives upgrades."""
+    keys: List[str] = []
+    try:
+        full_hash = hashlib.md5(str(pdf_path.resolve()).encode("utf-8")).hexdigest()[:12]
+        keys.append(f"{full_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl")
+    except Exception:
+        pass
+    try:
+        rel_hash = hashlib.md5(str(pdf_path).encode("utf-8")).hexdigest()[:12]
+        if rel_hash not in {k.split("_p", 1)[0] for k in keys}:
+            keys.append(f"{rel_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl")
+    except Exception:
+        pass
+    return keys
+
+
+def _get_ocr_cache_dir(pdf_path: Path) -> Path:
+    """Get the OCR cache directory for a given PDF.
+
+    Stores cache in a centralized 'cache/ocr' directory at the project root.
+    Organizes by PDF filename to avoid collisions.
+
+    Works correctly whether running as script or frozen executable.
+    """
+    root = _resolve_cache_root()
+    cache_dir = root / "cache" / "ocr" / pdf_path.stem
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Leave creation errors to caller; fallback directories will be tried in _load/_save
+        pass
+    return cache_dir
+
+
+def _get_ocr_cache_key(pdf_path: Path, page: int, ocr_mode: str, dpi: int) -> str:
+    """Generate a cache key for OCR results.
+
+    Format: {pdf_hash}_{page}_{ocr_mode}_{dpi}.pkl
+
+    Uses PDF filename (not full path) so cache is portable across machines.
+    """
+    # Use PDF filename hash (not full path) to keep cache portable
+    pdf_hash = hashlib.md5(pdf_path.name.encode('utf-8')).hexdigest()[:12]
+    return f"{pdf_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl"
+
+
+def _load_ocr_from_cache(pdf_path: Path, page: int, ocr_mode: str, requested_dpi: int) -> Optional[Tuple[str, int]]:
+    """Load OCR result from persistent cache if available and DPI is sufficient.
+
+    Returns:
+        Tuple of (page_text, cached_dpi) if cache hit with sufficient DPI
+        None if no suitable cache found
+    """
+    try:
+        primary_dir = _get_ocr_cache_dir(pdf_path)
+        cache_dirs = [primary_dir] + _legacy_ocr_cache_dirs(pdf_path)
+        debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+
+        # Look for cached results with DPI >= requested_dpi
+        # Check exact match first, then higher DPIs
+        for check_dpi in range(requested_dpi, 2000, 100):  # Check up to DPI 2000
+            candidate_keys = [_get_ocr_cache_key(pdf_path, page, ocr_mode, check_dpi)]
+            candidate_keys += _legacy_ocr_cache_keys(pdf_path, page, ocr_mode, check_dpi)
+
+            for cache_dir in cache_dirs:
+                cache_file = cache_dir / candidate_keys[0]
+                if not cache_file.exists():
+                    # Try legacy key shapes if present
+                    for legacy_key in candidate_keys[1:]:
+                        legacy_file = cache_dir / legacy_key
+                        if legacy_file.exists():
+                            cache_file = legacy_file
+                            break
+                if cache_file.exists():
+                    with open(cache_file, 'rb') as f:
+                        cache_data = pickle.load(f)
+                        cached_text = cache_data.get('text', '')
+                        cached_dpi = cache_data.get('dpi', check_dpi)
+
+                        # Only use if cached DPI >= requested DPI
+                        if cached_dpi >= requested_dpi:
+                            if debug_mode:
+                                print(f"[OCR CACHE HIT] {pdf_path.name} page {page} @ DPI {cached_dpi} (requested {requested_dpi})", file=sys.stderr)
+                            # If we hit a legacy key/dir, mirror it into the primary slot for future runs
+                            try:
+                                target = primary_dir / candidate_keys[0]
+                                if not target.exists():
+                                    target.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(str(cache_file), str(target))
+                            except Exception:
+                                pass
+                            return (cached_text, cached_dpi)
+
+        if debug_mode:
+            print(f"[OCR CACHE MISS] {pdf_path.name} page {page} @ DPI {requested_dpi} - performing OCR", file=sys.stderr)
+        return None
+    except Exception:
+        return None
+
+
+def _save_ocr_to_cache(pdf_path: Path, page: int, ocr_mode: str, dpi: int, text: str) -> None:
+    """Save OCR result to persistent cache.
+
+    Args:
+        pdf_path: Path to the PDF file
+        page: Page number (1-indexed)
+        ocr_mode: OCR mode used (e.g., 'pymupdf', 'easyocr')
+        dpi: DPI used for OCR
+        text: Extracted text
+    """
+    debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+    try:
+        cache_dir = _get_ocr_cache_dir(pdf_path)
+        cache_key = _get_ocr_cache_key(pdf_path, page, ocr_mode, dpi)
+        cache_file = cache_dir / cache_key
+
+        cache_data = {
+            'text': text,
+            'dpi': dpi,
+            'ocr_mode': ocr_mode,
+            'page': page,
+            'timestamp': str(os.path.getmtime(str(pdf_path))),  # Track PDF modification time
+        }
+
+        with open(cache_file, 'wb') as f:
+            pickle.dump(cache_data, f)
+
+        if debug_mode:
+            print(f"[OCR CACHE SAVE] {pdf_path.name} page {page} @ DPI {dpi} -> {cache_file}", file=sys.stderr)
+    except Exception as e:
+        if debug_mode:
+            print(f"[OCR CACHE SAVE ERROR] {pdf_path.name} page {page}: {type(e).__name__}: {e}", file=sys.stderr)
+        pass  # Silently fail on cache write errors
+
 
 def get_pdf_page_count(pdf_path: Path) -> int:
     """Best-effort page count using PyMuPDF or pypdf."""
@@ -1830,9 +2165,48 @@ def _normalize_anchor_token(text: Optional[str]) -> str:
     return re.sub(r"[^a-z0-9]", "", str(text).lower())
 
 
+def _fix_ocr_in_numbers(text: str) -> str:
+    """
+    Fix common OCR errors in numeric strings.
+    - O (letter) → 0 (zero) when in numeric context
+    - l (lowercase L) → 1 when in numeric context
+    - I (capital i) → 1 when in numeric context
+    """
+    if not text:
+        return text
+
+    # Fix O → 0 in all numeric contexts
+    # Use multiple passes to catch all cases
+    prev = None
+    while prev != text:
+        prev = text
+        # O between digits: 12O5 → 1205, 12OO → 1200
+        text = re.sub(r'(\d)O(?=\d)', r'\g<1>0', text)
+        # O at start before digit: O12 → 012
+        text = re.sub(r'(^|\s)O(?=\d)', r'\g<1>0', text)
+        # O after digit before non-digit: 12O → 120
+        text = re.sub(r'(\d)O(?=\D|$)', r'\g<1>0', text)
+        # O in decimal context: .O → .0
+        text = re.sub(r'(\.)O', r'\g<1>0', text)
+        # O before decimal: O. → 0.
+        text = re.sub(r'O(?=\.)', '0', text)
+
+    # Fix lowercase l → 1 in numeric contexts
+    text = re.sub(r'(\d)l(?=\d)', r'\g<1>1', text)
+    text = re.sub(r'(^|\s)l(?=\d)', r'\g<1>1', text)
+
+    # Fix capital I → 1 in numeric contexts
+    text = re.sub(r'(\d)I(?=\d)', r'\g<1>1', text)
+    text = re.sub(r'(^|\s)I(?=\d)', r'\g<1>1', text)
+
+    return text
+
+
 def _first_numeric(text: str) -> Optional[str]:
-    nums = [m.group(0) for m in NUMBER_REGEX.finditer(text)]
-    nums += [m.group(0) for m in DATE_REGEX.finditer(text)]
+    # Apply OCR fixes before searching for numbers
+    text_fixed = _fix_ocr_in_numbers(text)
+    nums = [m.group(0) for m in NUMBER_REGEX.finditer(text_fixed)]
+    nums += [m.group(0) for m in DATE_REGEX.finditer(text_fixed)]
     return nums[0] if nums else None
 
 
@@ -2340,6 +2714,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         "row_found_no_value": False,      # Row matched but no value extracted
         "low_score_rows": [],              # List of (score, row_text) for rows with score < 0.6
         "numeric_candidates_nullified": False,  # All numeric candidates were out of range
+        "smart_pos_non_numeric": None,    # Text found at smart position when expecting number
     }
 
     # Helper to extract for one line
@@ -2424,7 +2799,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                     continue
                 # Whole-line numeric search with range filtering:
                 # prefer the first value that falls within the configured range.
-                matches = list(NUMBER_REGEX.finditer(line_text))
+                line_text_fixed = _fix_ocr_in_numbers(line_text)
+                matches = list(NUMBER_REGEX.finditer(line_text_fixed))
                 if not matches:
                     continue
                 chosen_val: Optional[str] = None
@@ -2465,7 +2841,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             # Search within the preferred target text (right segment when provided,
             # otherwise the full line). This also enables whole-line searches for
             # alternate row scanning.
-            matches = list(NUMBER_REGEX.finditer(target_text))
+            target_text_fixed = _fix_ocr_in_numbers(target_text)
+            matches = list(NUMBER_REGEX.finditer(target_text_fixed))
             if not matches:
                 return None
             pick = None
@@ -2480,13 +2857,20 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 pick = matches[0]
             cand = pick.group(0)
             units_value = extract_units(cand)
-            # Range check
+            # Range check with >50% nullifier
             try:
                 nclean = numeric_only(cand)
                 nval = float(nclean) if nclean is not None else None
             except Exception:
                 nval = None
             if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                # NULLIFIER: reject values >50% outside range (likely wrong extraction)
+                if spec.range_min is not None and spec.range_max is not None:
+                    range_span = spec.range_max - spec.range_min
+                    tolerance_50 = 0.5 * range_span
+                    if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                        return None  # Reject - no viable candidate
+                # Within 50% tolerance but outside strict range - annotate
                 bad = False
                 if spec.range_min is not None and nval < spec.range_min:
                     bad = True
@@ -2542,6 +2926,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 group_before_page: Optional[int] = None
                 group_after_text: Optional[str] = None
                 group_before_text: Optional[str] = None
+                # Flag to exit after completing the current page (for OCR caching efficiency)
+                exit_after_current_page = False
                 # prepare optional grouping thresholds based on anchors
                 def _line_anchor_score(text: str, anchor: str) -> float:
                     if not anchor:
@@ -2665,6 +3051,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     debug_group_before_text_global = best_text
                                     if debug_group_region_applied_global is None:
                                         debug_group_region_applied_global = True
+                                # Signal to exit after completing the current page (allows full page OCR for caching)
+                                if spec.group_after and spec.group_before:
+                                    exit_after_current_page = True
+                                    if debug_mode:
+                                        print(f"[EARLY EXIT] Found group_before on page {p}, will exit after completing this page", file=sys.stderr)
+
                     # Enforce page-level group_after/group_before bounds
                     if spec.group_after and not group_after_seen:
                         # Haven't seen group_after anywhere yet (including this page); skip searching this page
@@ -2739,6 +3131,8 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     pdf_best_line_y0 = float(entry.get('y0', 0.0))
                                 except Exception:
                                     pdf_best_line_y0 = float(entry['y0'])
+                                if debug_mode:
+                                    print(f"[SMART DEBUG][PDF] TERM MATCH page={p} score={score:.3f} term={row_name!r} line={line_text[:100]!r}", file=sys.stderr)
                         if row_name and (score < min_score or not anchor_tokens_ok):
                             # Track low-score rows for better error reporting
                             if score >= 0.3 and len(failure_tracking["low_score_rows"]) < 3:
@@ -2753,6 +3147,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         label_right_x = entry['x0']
                         anchor_end_index = -1
                         extracted_term = None
+                        if debug_mode and not anchor_span:
+                            print(f"[SMART DEBUG][PDF] WARNING: anchor_span is None for term={row_name!r} on line={line_text[:100]!r}", file=sys.stderr)
+                            print(f"[SMART DEBUG][PDF] tokens on this line: {texts[:10]}", file=sys.stderr)
                         if anchor_span:
                             _, j = anchor_span
                             # Extend label boundary to include continuous label components (e.g., "Serial / Component")
@@ -2772,6 +3169,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # For strings, use sequential tokens; for numbers, use X-filtered tokens
                         right_text_segment_sequential = ' '.join([t[4] for t in tokens_after_label]).strip() if tokens_after_label else ""
                         right_text_segment = ' '.join([t[4] for t in ordered_right_tokens]).strip() if ordered_right_tokens else ""
+                        if debug_mode:
+                            print(f"[SMART DEBUG][PDF] anchor_end_index={anchor_end_index}, tokens_after_label count={len(tokens_after_label)}, ordered_right_tokens count={len(ordered_right_tokens)}", file=sys.stderr)
+                            print(f"[SMART DEBUG][PDF] right_text_segment={right_text_segment!r}", file=sys.stderr)
                         smart_kind = _detect_smart_type(spec.smart_snap_type, right_text_segment)
                         # Capture label debug info for this row (PDF path)
                         current_label_used = row_name
@@ -2925,7 +3325,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 except Exception:
                                     nval = None
                                 units_value = extract_units(cand_text) or units_value
+                                # Range check with >50% nullifier
                                 if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                    # NULLIFIER: reject values >50% outside range (skip this candidate)
+                                    if spec.range_min is not None and spec.range_max is not None:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance_50 = 0.5 * range_span
+                                        if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                            continue  # Skip this row - value too far out of range
+                                    # Within 50% tolerance but outside strict range - annotate
                                     bad = False
                                     if spec.range_min is not None and nval < spec.range_min:
                                         bad = True
@@ -2982,14 +3390,23 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
-                                            bad = False
-                                            if spec.range_min is not None and nval < spec.range_min:
-                                                bad = True
-                                            if spec.range_max is not None and nval > spec.range_max:
-                                                bad = True
-                                            if bad and not cand_text.rstrip().endswith('(range violation)'):
-                                                cand_text = f"{cand_text} (range violation)"
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    # Reject this value - treat as if no numeric match found
+                                                    cand_match = None
+                                            if cand_match:  # Only annotate if not nullified
+                                                bad = False
+                                                if spec.range_min is not None and nval < spec.range_min:
+                                                    bad = True
+                                                if spec.range_max is not None and nval > spec.range_max:
+                                                    bad = True
+                                                if bad and not cand_text.rstrip().endswith('(range violation)'):
+                                                    cand_text = f"{cand_text} (range violation)"
                                     # Only accept compatible numeric values for Smart Position;
                                     # if no numeric content is present, fall back to scoring logic below.
                                     if cand_match:
@@ -3015,7 +3432,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    continue  # Skip this row - value too far out of range
                                             bad = False
                                             if spec.range_min is not None and nval < spec.range_min:
                                                 bad = True
@@ -3031,10 +3455,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         best_info = (p, line_text, right_text_segment, val, smart_kind, line_min_txt, line_max_txt, None, None)
                                         best_extracted_term = current_extracted_term
                                     continue
-                        unitful_candidates = [c for c in numeric_cands if c.get('unit_neighbor')]
-                        if unitful_candidates:
-                            numeric_cands = unitful_candidates
-                        has_units_match = bool(unitful_candidates)
                         if smart_kind == 'number' and numeric_cands and not has_smart_pos:
                             # Score candidates using middle-of-line (between min/max), units hints, range, and secondary-term header alignment.
                             # Secondary vertical sweep is ignored; only header alignment contributes.
@@ -3106,7 +3526,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
                                     "format_match": 0.0,
-                                    "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
@@ -3144,9 +3563,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.8  # 2.0 - 10% penalty
+                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
@@ -3169,13 +3588,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         s += delta
                                         comp["format_match"] += delta
 
-                                # 5. UNITS HINT (0.4 points)
-                                if units_hint_set and c.get('units') in units_hint_set:
-                                    delta = 0.4
-                                    s += delta
-                                    comp["units_hint"] += delta
-
-                                # 6. LABEL PROXIMITY (0.1 points)
+                                # 5. LABEL PROXIMITY (0.1 points)
                                 dx = max(0.0, c['x0'] - label_right_x)
                                 delta = 0.1 * (1.0 / (1.0 + dx/10.0))
                                 s += delta
@@ -3197,17 +3610,33 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             scored = [t for t in scored if not t[3]]
                             scored.sort(key=lambda t: t[0], reverse=True)
                             if scored:
-                                candidate_pool = scored
-                                if units_hint_set and has_units_match:
-                                    prioritized = [t for t in candidate_pool if t[1].get('units') in units_hint_set]
-                                    if prioritized:
-                                        candidate_pool = prioritized
-                                top_score = candidate_pool[0][0]
-                                top = [t for t in candidate_pool if t[0] >= top_score - 0.1]
+                                top_score = scored[0][0]
+                                top = [t for t in scored if t[0] >= top_score - 0.1]
                                 if len(top) > 1:
                                     conflict_reason = 'multiple candidates with similar scores'
-                                chosen = top[0][1]
-                                chosen_sec_score = top[0][2]
+                                # Prefer in-range value over boundary when scores are close (within 1.0)
+                                chosen_tuple = top[0]
+                                if spec.range_min is not None and spec.range_max is not None:
+                                    boundary = None
+                                    inside = None
+                                    for tscore, tcand, tsec, _ in scored:
+                                        nval = tcand.get('nval')
+                                        if nval is None:
+                                            continue
+                                        if nval == spec.range_min or nval == spec.range_max:
+                                            if boundary is None:
+                                                boundary = (tscore, tcand, tsec)
+                                        elif spec.range_min <= nval <= spec.range_max:
+                                            if inside is None:
+                                                inside = (tscore, tcand, tsec)
+                                        if boundary and inside:
+                                            break
+                                    if boundary and inside and inside[0] >= boundary[0] - 1.0:
+                                        chosen_tuple = (inside[0], inside[1], inside[2], False)
+                                        if conflict_reason is None:
+                                            conflict_reason = 'preferred_in_range_over_boundary'
+                                chosen = chosen_tuple[1]
+                                chosen_sec_score = chosen_tuple[2]
                                 row_components = score_components.get(id(chosen))
                                 units_value = chosen.get('units') or units_value
                                 # Build output value text with possible range violation annotation
@@ -3465,6 +3894,12 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                             best_components = row_components
                                             if debug_mode:
                                                 print(f"[SMART DEBUG][PDF] best_update(direct) page={p} score={score:.3f} val={val!r}", file=sys.stderr)
+                    # Exit after current page if both group_after and group_before have been found
+                    # (allows full page to be OCR'd and cached before exiting)
+                    if exit_after_current_page:
+                        if debug_mode:
+                            print(f"[EARLY EXIT] Exiting page loop - both anchors found, skipping remaining pages", file=sys.stderr)
+                        break
             finally:
                 try:
                     doc.close()
@@ -3992,16 +4427,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # Capture debug fields for JSON output
                             current_debug_fields = [f"Position {idx}: '{field}'" for idx, field in enumerate(fields_for_pos, start=1)]
 
-                            if debug_mode and 'thermal' in row_name.lower() and 'soak' in row_name.lower():
-                                print(f"[DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
-                                print(f"[DEBUG] fields_for_pos has {len(fields_for_pos)} fields:", file=sys.stderr)
+                            if debug_mode:
+                                print(f"[SMART DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
+                                print(f"[SMART DEBUG] fields_for_pos has {len(fields_for_pos)} fields:", file=sys.stderr)
                                 for field_str in current_debug_fields:
-                                    print(f"[DEBUG]   {field_str}", file=sys.stderr)
-                                print(f"[DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
+                                    print(f"[SMART DEBUG]   {field_str}", file=sys.stderr)
+                                print(f"[SMART DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
                                 if pos_n and 1 <= pos_n <= len(fields_for_pos):
-                                    print(f"[DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
+                                    print(f"[SMART DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
                                 else:
-                                    print(f"[DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
+                                    print(f"[SMART DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
                         if smart_kind == 'number' and column_text_for_pos:
                             cand_match = NUMBER_REGEX.search(column_text_for_pos)
                             if cand_match:
@@ -4011,7 +4446,15 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 except Exception:
                                     nval = None
                                 units_value = extract_units(cand_text) or units_value
+                                # Range check with >50% nullifier
                                 if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                    # NULLIFIER: reject values >50% outside range (skip this candidate)
+                                    if spec.range_min is not None and spec.range_max is not None:
+                                        range_span = spec.range_max - spec.range_min
+                                        tolerance_50 = 0.5 * range_span
+                                        if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                            continue  # Skip this row - value too far out of range
+                                    # Within 50% tolerance but outside strict range - annotate
                                     bad = False
                                     if spec.range_min is not None and nval < spec.range_min:
                                         bad = True
@@ -4057,11 +4500,16 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if has_smart_pos and fields_for_pos:
                                 if pos_n <= len(fields_for_pos):
                                     field_text = fields_for_pos[pos_n - 1]
-                                    cand_match = NUMBER_REGEX.search(field_text)
+                                    # Fix common OCR errors in numbers (O→0, l→1, I→1)
+                                    field_text_fixed = _fix_ocr_in_numbers(field_text)
+                                    cand_match = NUMBER_REGEX.search(field_text_fixed)
                                     if not cand_match:
                                         # Smart Position box has no numeric content; log and fall back to scoring logic below.
                                         if debug_mode:
-                                            print(f"[SMART DEBUG] smart_position box non-numeric dpi={dpi} page={p} pos={pos_n} field={field_text!r}", file=sys.stderr)
+                                            print(f"[SMART DEBUG] smart_position box non-numeric dpi={dpi} page={p} pos={pos_n} field={field_text!r} fixed={field_text_fixed!r}", file=sys.stderr)
+                                        # Track this specific failure for better error reporting
+                                        failure_tracking["row_found_no_value"] = True
+                                        failure_tracking["smart_pos_non_numeric"] = field_text[:50]  # Store first 50 chars
                                     else:
                                         cand_text = cand_match.group(0)
                                         nval = None
@@ -4107,7 +4555,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         except Exception:
                                             nval = None
                                         units_value = extract_units(cand_text) or units_value
+                                        # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                                            # NULLIFIER: reject values >50% outside range
+                                            if spec.range_min is not None and spec.range_max is not None:
+                                                range_span = spec.range_max - spec.range_min
+                                                tolerance_50 = 0.5 * range_span
+                                                if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                                                    continue  # Skip this row - value too far out of range
                                             bad = False
                                             if spec.range_min is not None and nval < spec.range_min:
                                                 bad = True
@@ -4185,7 +4640,6 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 s = 0.0
                                 comp: Dict[str, Optional[float]] = {
                                     "format_match": 0.0,
-                                    "units_hint": 0.0,
                                     "range_validation": 0.0,
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
@@ -4224,9 +4678,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - 10% penalty (might be grabbing range header)
+                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.8  # 2.0 - 10% penalty
+                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
                                         s += delta
                                         comp["range_validation"] += delta
                                     # Between 20% and 50% outside range - 10% penalty
@@ -4281,8 +4735,29 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 top = [t for t in scored if t[0] >= top_score - 0.1]
                                 if len(top) > 1:
                                     conflict_reason = 'multiple candidates with similar scores'
-                                chosen = top[0][1]
-                                chosen_sec_score = top[0][2]
+                                # Prefer in-range value over boundary when scores are close (within 1.0)
+                                chosen_tuple = top[0]
+                                if spec.range_min is not None and spec.range_max is not None:
+                                    boundary = None
+                                    inside = None
+                                    for tscore, tcand, tsec, _ in scored:
+                                        nval = tcand.get('nval')
+                                        if nval is None:
+                                            continue
+                                        if nval == spec.range_min or nval == spec.range_max:
+                                            if boundary is None:
+                                                boundary = (tscore, tcand, tsec)
+                                        elif spec.range_min <= nval <= spec.range_max:
+                                            if inside is None:
+                                                inside = (tscore, tcand, tsec)
+                                        if boundary and inside:
+                                            break
+                                    if boundary and inside and inside[0] >= boundary[0] - 1.0:
+                                        chosen_tuple = (inside[0], inside[1], inside[2], False)
+                                        if conflict_reason is None:
+                                            conflict_reason = 'preferred_in_range_over_boundary'
+                                chosen = chosen_tuple[1]
+                                chosen_sec_score = chosen_tuple[2]
                                 row_components = score_components.get(id(chosen))
                                 units_value = chosen.get('units') or units_value
                                 cand = chosen['text']
@@ -4736,7 +5211,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
     # Secondary failure: row found but no value extracted
     elif failure_tracking["row_found_no_value"]:
-        error_parts.append("term found but no value extracted")
+        base_msg = "term found but no value extracted"
+        if failure_tracking["smart_pos_non_numeric"]:
+            base_msg += f" (smart position found: '{failure_tracking['smart_pos_non_numeric']}')"
+        error_parts.append(base_msg)
 
     # Tertiary failure: numeric candidates nullified by range
     elif failure_tracking["numeric_candidates_nullified"]:
@@ -5292,7 +5770,7 @@ def _normalize_text_for_search(s: str) -> str:
     if not s:
         return ""
     s = s.replace("\u00A0", " ")
-    s = s.replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“", "-").replace("ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", "-")
+    s = s.replace("\u2013", "-").replace("\u2014", "-")  # en-dash, em-dash
     s = s.replace("|", " ")
     s = re.sub(r"[ \t\f\r]+", " ", s)
     return s
@@ -7076,7 +7554,7 @@ def run_scan(
     # Reroute output paths into the run_dir regardless of CLI-provided paths.
     output_json = run_dir / "scan_results.json"
     output_xlsx = run_dir / "scan_results_flat.xlsx"
-    print(f"[INFO] Outputs will be saved under: {run_dir}")
+    print(f"[INFO] Outputs will be saved under: {run_dir}", flush=True)
 
     # Helper for safe filename tokens (for per-EIDP outputs)
     def _safe_token(s: Optional[str]) -> str:
@@ -7149,7 +7627,7 @@ def run_scan(
             label = serial_meta[data_id]["serial_component"] or data_id
         except Exception:
             label = data_id
-        print(f"[INFO] Scanning: {pdf_path.name}  [Data: {label}]")
+        print(f"[INFO] Scanning: {pdf_path.name}  [Data: {label}]", flush=True)
 
         # Per-PDF accumulation for outputs
         summary_pdf: List[Dict] = []
@@ -7259,7 +7737,7 @@ def run_scan(
         prev_pct = -1
         # Initial progress line
         try:
-            print(f"[PROGRESS] Terms: 0% (0/{total_terms}) | Found: 0")
+            print(f"[PROGRESS] Terms: 0% (0/{total_terms}) | Found: 0", flush=True)
         except Exception:
             pass
 
@@ -7569,7 +8047,7 @@ def run_scan(
                 pct = int((completed * 100) / max(1, total_terms))
                 # Print at meaningful increments to avoid flooding the console
                 if pct != prev_pct and (total_terms <= 20 or pct % 5 == 0 or completed == total_terms):
-                    print(f"[PROGRESS] Terms: {pct}% ({completed}/{total_terms}) | Found: {found_count}")
+                    print(f"[PROGRESS] Terms: {pct}% ({completed}/{total_terms}) | Found: {found_count}", flush=True)
                     prev_pct = pct
             except Exception:
                 pass
@@ -7598,8 +8076,9 @@ def run_scan(
                 "_kind": "match_summary",
                 "description": (
                     "Smart Snap scoring: row smart_score is the best fuzzy match to the row anchor; "
-                    "numeric candidate ranking adds: +2.0 if value is between row min/max, "
-                    "+0.4 if units match Units Hint, up to +0.4 for values within configured Range, "
+                    "numeric candidate ranking adds: +2.0 if value is within range (±20% tolerance), "
+                    "+1.0 if value exactly matches range min/max (reduced to prefer non-boundary values), "
+                    "+0.4 if units match Units Hint, "
                     f"+{header_w:.2f} * secondary_header_alignment for X alignment with the Secondary Term header, "
                     "plus smaller adjustments based on distance to Value/Min/Max headers and distance from the label."
                 ),
@@ -7658,7 +8137,7 @@ def run_scan(
             print(f"[WARN] Could not write per-PDF CSV for {safe_id}: {e}")
         # Finalize per-PDF terms progress to 100%
         try:
-            print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms}) | Found: {found_count}")
+            print(f"[PROGRESS] Terms: 100% ({total_terms}/{total_terms}) | Found: {found_count}", flush=True)
         except Exception:
             pass
 
@@ -7851,6 +8330,88 @@ def run_scan(
     except Exception as e:
         print(f"[WARN] Could not update run registry: {e}")
 
+    # Update master cell state and master.xlsx incrementally for each serial component
+    try:
+        from scripts.master_cell_state import update_cell_state, apply_state_to_master_incremental
+        from datetime import datetime
+
+        # Get run folder name (e.g., "20250115_103000")
+        run_folder_name = run_dir.name
+        timestamp = datetime.now().isoformat()
+
+        # Build per-serial, per-term debug map (ocr settings, match scores) for JSON inspection
+        per_serial_debug: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        try:
+            for row in summary:
+                if not isinstance(row, dict):
+                    continue
+                sc = str(row.get("serial_component") or row.get("serial_number") or "").strip()
+                if not sc:
+                    continue
+                term_name = str(row.get("term_label") or row.get("term") or "").strip()
+                if not term_name:
+                    continue
+                # Extract effective OCR settings and scores from flat or grouped views
+                debug_info = row.get("debug_info") or {}
+                smart_info = row.get("smart_info") or {}
+                if not isinstance(debug_info, dict):
+                    debug_info = {}
+                if not isinstance(smart_info, dict):
+                    smart_info = {}
+                ocr_row_eps = row.get("ocr_row_eps")
+                if ocr_row_eps is None:
+                    ocr_row_eps = debug_info.get("ocr_row_eps")
+                ocr_dpi = row.get("ocr_dpi")
+                if ocr_dpi is None:
+                    ocr_dpi = debug_info.get("ocr_dpi")
+                smart_score = row.get("smart_score")
+                if smart_score is None:
+                    smart_score = smart_info.get("smart_score")
+                fuzzy_score = debug_info.get("debug_fuzzy_match_score")
+                # Primary "match score" for quick debugging
+                match_score: Any = smart_score if isinstance(smart_score, (int, float)) else fuzzy_score
+                debug_fields = {}
+                if ocr_row_eps is not None:
+                    debug_fields["ocr_row_eps"] = ocr_row_eps
+                if ocr_dpi is not None:
+                    debug_fields["ocr_dpi"] = ocr_dpi
+                if smart_score is not None:
+                    debug_fields["smart_score"] = smart_score
+                if fuzzy_score is not None:
+                    debug_fields["fuzzy_score"] = fuzzy_score
+                if match_score is not None:
+                    debug_fields["match_score"] = match_score
+                if not debug_fields:
+                    continue
+                per_serial_debug.setdefault(sc, {})[term_name] = debug_fields
+        except Exception:
+            per_serial_debug = {}
+
+        # Process each serial component
+        for serial_component in run_ids:
+            # Collect all term values for this serial_component from results_matrix
+            term_values: Dict[str, Any] = {}
+            for term_name, sn_map in results_matrix.items():
+                value = sn_map.get(serial_component)
+                if value is not None:
+                    term_values[term_name] = value
+
+            if term_values:
+                # Update the cell state (single source of truth)
+                update_cell_state(
+                    serial_component,
+                    term_values,
+                    run_folder_name,
+                    timestamp,
+                    term_debug=per_serial_debug.get(serial_component),
+                )
+                # Immediately update master.xlsx with ONLY these cells (incremental update)
+                apply_state_to_master_incremental(serial_component, term_values)
+
+        print("[DONE] Master cell state and master.xlsx updated incrementally")
+    except Exception as e:
+        print(f"[WARN] Could not update master cell state: {e}")
+
     # --- Per-run snapshot note ---
     # No copy needed; all artifacts were written directly under run_dir.
     try:
@@ -7896,6 +8457,15 @@ def main() -> None:
         global _QUIET  # type: ignore[global-variable-not-assigned]
         _QUIET = True
 
+    # Debug: show cache location if DEBUG_MODE is enabled
+    debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+    if debug_mode:
+        cache_root = _resolve_cache_root()
+        cache_ocr_dir = cache_root / "cache" / "ocr"
+        print(f"[DEBUG] OCR Cache Root: {cache_root}", file=sys.stderr)
+        print(f"[DEBUG] OCR Cache Directory: {cache_ocr_dir}", file=sys.stderr)
+        print(f"[DEBUG] Cache directory exists: {cache_ocr_dir.exists()}", file=sys.stderr)
+
     # Kick off the pipeline
     run_scan(
         input_path=input_path,
@@ -7910,10 +8480,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
 
 

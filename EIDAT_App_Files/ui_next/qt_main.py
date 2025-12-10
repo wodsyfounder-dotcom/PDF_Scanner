@@ -2210,26 +2210,27 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.setRowStretch(2, 1)
 
     def _setup_tab_process(self):
-        # Main container with two columns
-        main_layout = QtWidgets.QHBoxLayout(self.tab_process)
-        main_layout.setContentsMargins(24, 24, 24, 24)
-        main_layout.setSpacing(16)
+        main_layout = QtWidgets.QVBoxLayout(self.tab_process)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
+        main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
 
-        # Left column
-        left_column = QtWidgets.QVBoxLayout()
-        left_column.setSpacing(16)
+        intro = QtWidgets.QLabel(
+            "Work through the guided steps: confirm your workspace, prepare inputs, run extraction, and update the database."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #374151; font-size: 12px;")
+        main_layout.addWidget(intro)
 
-        # === Master Database Section ===
-        grp_master = QtWidgets.QGroupBox("Master Database")
-        grp_master.setStyleSheet("""
+        card_style = """
             QGroupBox {
                 font-weight: 900;
-                font-size: 24px;
+                font-size: 18px;
                 border: 1px solid #e5e7eb;
                 border-radius: 8px;
-                margin-top: 16px;
+                margin-top: 6px;
                 background: #ffffff;
-                padding: 16px;
+                padding: 12px;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -2237,23 +2238,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 4px 8px;
                 color: #111827;
             }
-        """)
-        master_layout = QtWidgets.QVBoxLayout(grp_master)
-        master_layout.setSpacing(12)
+        """
+        button_min_h = 38
 
-        master_desc = QtWidgets.QLabel("Access and manage the central EIDAT database")
-        master_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
+        # Master Database reference (moved to top)
+        grp_master = QtWidgets.QGroupBox("Master Database")
+        grp_master.setStyleSheet(card_style)
+        master_layout = QtWidgets.QVBoxLayout(grp_master)
+        master_layout.setSpacing(10)
+
+        master_desc = QtWidgets.QLabel("Open and manage the central EIDAT master database workbook.")
+        master_desc.setWordWrap(True)
+        master_desc.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 400;")
         master_layout.addWidget(master_desc)
 
-        self.btn_open_master_tab = QtWidgets.QPushButton("\U0001F5C4  Open Master Database")
+        self.btn_open_master_tab = QtWidgets.QPushButton("🗄  Open Master Database")
+        self.btn_open_master_tab.setMinimumHeight(button_min_h)
         self.btn_open_master_tab.setStyleSheet("""
             QPushButton {
-                padding: 10px 20px;
+                padding: 8px 16px;
                 border-radius: 6px;
                 background: #ffffff;
                 color: #374151;
                 border: 1px solid #d1d5db;
-                font-size: 13px;
+                font-size: 12px;
                 text-align: center;
             }
             QPushButton:hover {
@@ -2264,43 +2272,124 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_open_master_tab.clicked.connect(lambda: self._safe_open(be.open_master_workbook))
         master_layout.addWidget(self.btn_open_master_tab)
 
-        left_column.addWidget(grp_master)
+        main_layout.addWidget(grp_master)
 
-        # === Processing Controls Section (formerly Define Inputs) ===
-        grp_inputs = QtWidgets.QGroupBox("Processing Controls")
-        grp_inputs.setStyleSheet("""
-            QGroupBox {
-                font-weight: 900;
-                font-size: 24px;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                margin-top: 16px;
+        # Two-column container for steps
+        columns = QtWidgets.QHBoxLayout()
+        columns.setSpacing(12)
+
+        left_column = QtWidgets.QVBoxLayout()
+        left_column.setSpacing(12)
+        right_column = QtWidgets.QVBoxLayout()
+        right_column.setSpacing(12)
+
+        # Step 1: Workspace & Sync
+        grp_workspace = QtWidgets.QGroupBox("Step 1: Workspace & Sync")
+        grp_workspace.setStyleSheet(card_style)
+        workspace_layout = QtWidgets.QVBoxLayout(grp_workspace)
+        workspace_layout.setSpacing(10)
+
+        workspace_desc = QtWidgets.QLabel("Point to your EIDP repository and sync the workspace before processing.")
+        workspace_desc.setWordWrap(True)
+        workspace_desc.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 400;")
+        workspace_layout.addWidget(workspace_desc)
+
+        repo_label = QtWidgets.QLabel("Repository Root")
+        repo_label.setStyleSheet("color: #374151; font-size: 12px; font-weight: 600; margin-top: 2px;")
+        workspace_layout.addWidget(repo_label)
+
+        repo_row = QtWidgets.QHBoxLayout()
+        repo_row.setSpacing(6)
+        self.ed_repo = QtWidgets.QLineEdit(str(getattr(be, "get_repo_root", lambda: be.DEFAULT_REPO_ROOT)()))
+        self.ed_repo.setMinimumHeight(32)
+        self.ed_repo.setStyleSheet("""
+            QLineEdit {
                 background: #ffffff;
-                padding: 16px;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 6px 10px;
+                color: #374151;
+                font-size: 12px;
             }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 4px 8px;
-                color: #111827;
+            QLineEdit:focus {
+                border-color: #2563eb;
             }
         """)
-        inputs_layout = QtWidgets.QVBoxLayout(grp_inputs)
-        inputs_layout.setSpacing(12)
-
-        inputs_desc = QtWidgets.QLabel("Configure extraction terms and execute processing operations")
-        inputs_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
-        inputs_layout.addWidget(inputs_desc)
-
-        self.btn_terms_edit = QtWidgets.QPushButton("\u270E  Edit Smart-Snap Terms")
-        self.btn_terms_edit.setStyleSheet("""
+        btn_repo = QtWidgets.QPushButton("Browse...")
+        btn_repo.setMinimumHeight(button_min_h)
+        btn_repo.setStyleSheet("""
             QPushButton {
-                padding: 10px 20px;
+                padding: 6px 12px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        btn_repo.clicked.connect(lambda: self._browse_folder(self.ed_repo, be.DEFAULT_PDF_DIR))
+        repo_row.addWidget(self.ed_repo, 1)
+        repo_row.addWidget(btn_repo)
+        workspace_layout.addLayout(repo_row)
+
+        self.btn_sync_workspace = QtWidgets.QPushButton("⭳  Sync Workspace Now")
+        self.btn_sync_workspace.setMinimumHeight(button_min_h)
+        self.btn_sync_workspace.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
                 border-radius: 6px;
                 background: #2563eb;
                 color: #ffffff;
                 border: 1px solid #2563eb;
-                font-size: 13px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #1d4ed8;
+            }
+            QPushButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+            }
+        """)
+        self.btn_sync_workspace.clicked.connect(self._act_sync_workspace)
+        workspace_layout.addWidget(self.btn_sync_workspace)
+
+        self.lbl_sync_banner = QtWidgets.QLabel("No sync run yet.")
+        self.lbl_sync_banner.setObjectName("syncBanner")
+        self.lbl_sync_banner.setWordWrap(True)
+        self.lbl_sync_banner.setStyleSheet(
+            "background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 8px 10px; font-size: 11px;"
+        )
+        workspace_layout.addWidget(self.lbl_sync_banner)
+
+        left_column.addWidget(grp_workspace)
+
+        # Step 2: Prepare Inputs
+        grp_inputs = QtWidgets.QGroupBox("Step 2: Prepare Inputs")
+        grp_inputs.setStyleSheet(card_style)
+        inputs_layout = QtWidgets.QVBoxLayout(grp_inputs)
+        inputs_layout.setSpacing(10)
+
+        inputs_desc = QtWidgets.QLabel("Define Smart-Snap terms and refresh the spreadsheet that drives extraction.")
+        inputs_desc.setWordWrap(True)
+        inputs_desc.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 400;")
+        inputs_layout.addWidget(inputs_desc)
+
+        self.btn_terms_edit = QtWidgets.QPushButton("✎  Edit Smart-Snap Terms")
+        self.btn_terms_edit.setMinimumHeight(button_min_h)
+        self.btn_terms_edit.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 6px;
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid #2563eb;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -2314,15 +2403,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_terms_edit.clicked.connect(self._open_terms_editor)
         inputs_layout.addWidget(self.btn_terms_edit)
 
-        self.btn_terms_refresh = QtWidgets.QPushButton("\U0001F4C4  Create/Refresh Input Spreadsheet")
+        self.btn_terms_refresh = QtWidgets.QPushButton("📄  Create/Refresh Input Spreadsheet")
+        self.btn_terms_refresh.setMinimumHeight(button_min_h)
         self.btn_terms_refresh.setStyleSheet("""
             QPushButton {
-                padding: 10px 20px;
+                padding: 8px 16px;
                 border-radius: 6px;
                 background: #ffffff;
                 color: #374151;
                 border: 1px solid #d1d5db;
-                font-size: 13px;
+                font-size: 12px;
             }
             QPushButton:hover {
                 background: #f9fafb;
@@ -2332,26 +2422,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_terms_refresh.clicked.connect(self._act_generate_terms)
         inputs_layout.addWidget(self.btn_terms_refresh)
 
-        # Add separator
-        separator = QtWidgets.QFrame()
-        separator.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-        separator.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
-        inputs_layout.addWidget(separator)
+        left_column.addWidget(grp_inputs)
+        left_column.addStretch(1)
 
-        # Smart Processing Controls (moved from bottom)
-        proc_label = QtWidgets.QLabel("Batch Processing")
-        proc_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600; margin-top: 4px;")
-        inputs_layout.addWidget(proc_label)
+        # Step 3: Run & Update (combined)
+        grp_run = QtWidgets.QGroupBox("Step 3: Run & Update")
+        grp_run.setStyleSheet(card_style)
+        run_layout = QtWidgets.QVBoxLayout(grp_run)
+        run_layout.setSpacing(10)
 
-        self.btn_start = QtWidgets.QPushButton("\u25B6  Extract and Update All")
+        run_desc = QtWidgets.QLabel("Process PDFs with current terms, extract tables, then push updates and clean up.")
+        run_desc.setWordWrap(True)
+        run_desc.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 400;")
+        run_layout.addWidget(run_desc)
+
+        self.btn_start = QtWidgets.QPushButton("▶  Extract and Update All")
+        self.btn_start.setMinimumHeight(button_min_h)
         self.btn_start.setStyleSheet("""
             QPushButton {
-                padding: 12px 20px;
+                padding: 10px 18px;
                 border-radius: 6px;
                 background: #2563eb;
                 color: #ffffff;
                 border: 1px solid #2563eb;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -2362,52 +2456,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-color: #93c5fd;
             }
         """)
-        self.btn_start.clicked.connect(self._show_extraction_options)  # Updated to show options
-        inputs_layout.addWidget(self.btn_start)
+        self.btn_start.clicked.connect(self._show_extraction_options)
+        run_layout.addWidget(self.btn_start)
 
-        proc_secondary = QtWidgets.QHBoxLayout()
-        proc_secondary.setSpacing(8)
-
-        self.btn_open_run_data = QtWidgets.QPushButton("\U0001F4C2  Open Run Data Folder")
-        self.btn_open_run_data.setStyleSheet("""
-            QPushButton {
-                padding: 10px 16px;
-                border-radius: 6px;
-                background: #ffffff;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
-        self.btn_open_run_data.clicked.connect(lambda: self._safe_open(be.open_run_data_root))
-
-        proc_secondary.addWidget(self.btn_open_run_data)
-        proc_secondary.addStretch(1)
-        inputs_layout.addLayout(proc_secondary)
-
-        # Table Extraction Section
-        separator2 = QtWidgets.QFrame()
-        separator2.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-        separator2.setStyleSheet("background-color: #e5e7eb; margin: 8px 0;")
-        inputs_layout.addWidget(separator2)
-
-        table_label = QtWidgets.QLabel("Table Extraction")
-        table_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600; margin-top: 4px;")
-        inputs_layout.addWidget(table_label)
-
-        self.btn_extract_tables = QtWidgets.QPushButton("\U0001F4CA  Extract Tables by Keywords")
+        self.btn_extract_tables = QtWidgets.QPushButton("📊  Extract Tables by Keywords")
+        self.btn_extract_tables.setMinimumHeight(button_min_h)
         self.btn_extract_tables.setStyleSheet("""
             QPushButton {
-                padding: 12px 20px;
+                padding: 10px 18px;
                 border-radius: 6px;
                 background: #10b981;
                 color: #ffffff;
                 border: 1px solid #10b981;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -2419,81 +2480,115 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         self.btn_extract_tables.clicked.connect(self._show_table_extraction_dialog)
-        inputs_layout.addWidget(self.btn_extract_tables)
 
-        # Keep internal fields for logic
-        self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
-        self.ed_terms.setVisible(False)
-        self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
-        self.ed_pdfs.setVisible(False)
-
-        left_column.addWidget(grp_inputs)
-        left_column.addStretch(1)
-
-        # Right column
-        right_column = QtWidgets.QVBoxLayout()
-        right_column.setSpacing(16)
-
-        # === Data Upload Section ===
-        grp_upload = QtWidgets.QGroupBox("Data Controls and Status")
-        grp_upload.setStyleSheet("""
-            QGroupBox {
-                font-weight: 900;
-                font-size: 24px;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                margin-top: 16px;
+        self.btn_open_run_data = QtWidgets.QPushButton("📂  Open Run Data Folder")
+        self.btn_open_run_data.setMinimumHeight(button_min_h)
+        self.btn_open_run_data.setStyleSheet("""
+            QPushButton {
+                padding: 8px 14px;
+                border-radius: 6px;
                 background: #ffffff;
-                padding: 16px;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 12px;
             }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 4px 8px;
-                color: #111827;
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
             }
         """)
-        upload_layout = QtWidgets.QVBoxLayout(grp_upload)
-        upload_layout.setSpacing(12)
+        self.btn_open_run_data.clicked.connect(lambda: self._safe_open(be.open_run_data_root))
 
-        upload_desc = QtWidgets.QLabel("Sync workspace and update the EIDAT database")
-        upload_desc.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 400;")
-        upload_layout.addWidget(upload_desc)
+        run_secondary = QtWidgets.QHBoxLayout()
+        run_secondary.setSpacing(8)
+        run_secondary.addWidget(self.btn_extract_tables, 1)
+        run_secondary.addWidget(self.btn_open_run_data)
+        run_layout.addLayout(run_secondary)
 
-        self.btn_sync_workspace = QtWidgets.QPushButton("\u2B73  Sync Workspace Now")
-        self.btn_sync_workspace.setStyleSheet("""
+        # Update & review section inside the same card
+        divider = QtWidgets.QFrame()
+        divider.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        divider.setStyleSheet("background-color: #e5e7eb; margin: 6px 0;")
+        run_layout.addWidget(divider)
+
+        self.btn_view_outdated = QtWidgets.QPushButton("📋  View Data Package List and Update EIDAT Database")
+        self.btn_view_outdated.setMinimumHeight(button_min_h)
+        self.btn_view_outdated.setStyleSheet("""
             QPushButton {
-                padding: 10px 20px;
+                padding: 10px 18px;
                 border-radius: 6px;
                 background: #2563eb;
                 color: #ffffff;
                 border: 1px solid #2563eb;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
                 background: #1d4ed8;
             }
-            QPushButton:disabled {
-                background: #93c5fd;
-                border-color: #93c5fd;
+        """)
+        self.btn_view_outdated.clicked.connect(self._show_outdated_popup)
+        run_layout.addWidget(self.btn_view_outdated)
+
+        secondary_row = QtWidgets.QHBoxLayout()
+        secondary_row.setSpacing(8)
+
+        self.btn_view_registry2 = QtWidgets.QPushButton("📖  View Registry")
+        self.btn_view_registry2.setMinimumHeight(button_min_h)
+        self.btn_view_registry2.setStyleSheet("""
+            QPushButton {
+                padding: 8px 14px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
             }
         """)
-        self.btn_sync_workspace.clicked.connect(self._act_sync_workspace)
-        upload_layout.addWidget(self.btn_sync_workspace)
+        self.btn_view_registry2.clicked.connect(self._act_view_registry)
 
-        # Compile New Master Workbook button
+        self.btn_clear_old_runs = QtWidgets.QPushButton("🗑  Clear Old Run Cache")
+        self.btn_clear_old_runs.setMinimumHeight(button_min_h)
+        self.btn_clear_old_runs.setStyleSheet("""
+            QPushButton {
+                padding: 8px 14px;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #374151;
+                border: 1px solid #d1d5db;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #f9fafb;
+                border-color: #9ca3af;
+            }
+        """)
+        self.btn_clear_old_runs.clicked.connect(self._act_clear_old_runs)
+
+        secondary_row.addWidget(self.btn_view_registry2)
+        secondary_row.addWidget(self.btn_clear_old_runs)
+        run_layout.addLayout(secondary_row)
+
+        advanced_label = QtWidgets.QLabel("Advanced: rebuild the master workbook from state (overwrites manual edits).")
+        advanced_label.setWordWrap(True)
+        advanced_label.setStyleSheet("color: #b91c1c; font-size: 11px; font-weight: 600;")
+        run_layout.addWidget(advanced_label)
+
         self.btn_compile_master = QtWidgets.QPushButton("📊  Compile New Master Workbook")
+        self.btn_compile_master.setMinimumHeight(button_min_h)
         self.btn_compile_master.setStyleSheet("""
             QPushButton {
-                padding: 10px 20px;
+                padding: 8px 16px;
                 border-radius: 6px;
                 background: #dc2626;
                 color: #ffffff;
                 border: 1px solid #dc2626;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
-                margin-top: 8px;
             }
             QPushButton:hover {
                 background: #b91c1c;
@@ -2508,124 +2603,21 @@ class MainWindow(QtWidgets.QMainWindow):
             "WARNING: This will overwrite master.xlsx and discard all manual edits!"
         )
         self.btn_compile_master.clicked.connect(self._act_compile_master_from_state)
-        upload_layout.addWidget(self.btn_compile_master)
+        run_layout.addWidget(self.btn_compile_master)
 
-        # Repository Root
-        repo_label = QtWidgets.QLabel("Repository Root")
-        repo_label.setStyleSheet("color: #374151; font-size: 13px; font-weight: 500; margin-top: 8px;")
-        upload_layout.addWidget(repo_label)
-
-        repo_row = QtWidgets.QHBoxLayout()
-        repo_row.setSpacing(8)
-        self.ed_repo = QtWidgets.QLineEdit(str(getattr(be, 'get_repo_root', lambda: be.DEFAULT_REPO_ROOT)()))
-        self.ed_repo.setStyleSheet("""
-            QLineEdit {
-                background: #ffffff;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #374151;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border-color: #2563eb;
-            }
-        """)
-        btn_repo = QtWidgets.QPushButton("Browse...")
-        btn_repo.setStyleSheet("""
-            QPushButton {
-                padding: 8px 16px;
-                border-radius: 6px;
-                background: #ffffff;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
-        btn_repo.clicked.connect(lambda: self._browse_folder(self.ed_repo, be.DEFAULT_PDF_DIR))
-        repo_row.addWidget(self.ed_repo, 1)
-        repo_row.addWidget(btn_repo)
-        upload_layout.addLayout(repo_row)
-
-        # Sync banner/status
-        self.lbl_sync_banner = QtWidgets.QLabel("No sync run yet.")
-        self.lbl_sync_banner.setObjectName("syncBanner")
-        self.lbl_sync_banner.setWordWrap(True)
-        self.lbl_sync_banner.setStyleSheet(
-            "background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 10px 12px; font-size: 12px;"
-        )
-        upload_layout.addWidget(self.lbl_sync_banner)
-
-        self.btn_view_outdated = QtWidgets.QPushButton("\U0001F4CB  View Data Package List and Update EIDAT Database")
-        self.btn_view_outdated.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                border-radius: 6px;
-                background: #2563eb;
-                color: #ffffff;
-                border: 1px solid #2563eb;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: #1d4ed8;
-            }
-        """)
-        self.btn_view_outdated.clicked.connect(self._show_outdated_popup)
-        upload_layout.addWidget(self.btn_view_outdated)
-
-        # Secondary buttons row
-        secondary_row = QtWidgets.QHBoxLayout()
-        secondary_row.setSpacing(8)
-
-        self.btn_view_registry2 = QtWidgets.QPushButton("\U0001F4D6  View Registry")
-        self.btn_view_registry2.setStyleSheet("""
-            QPushButton {
-                padding: 8px 16px;
-                border-radius: 6px;
-                background: #ffffff;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
-        self.btn_view_registry2.clicked.connect(self._act_view_registry)
-
-        self.btn_clear_old_runs = QtWidgets.QPushButton("\U0001F5D1  Clear Old Run Cache")
-        self.btn_clear_old_runs.setStyleSheet("""
-            QPushButton {
-                padding: 8px 16px;
-                border-radius: 6px;
-                background: #ffffff;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
-        self.btn_clear_old_runs.clicked.connect(self._act_clear_old_runs)
-
-        secondary_row.addWidget(self.btn_view_registry2)
-        secondary_row.addWidget(self.btn_clear_old_runs)
-        upload_layout.addLayout(secondary_row)
-
-        right_column.addWidget(grp_upload)
+        right_column.addWidget(grp_run)
         right_column.addStretch(1)
 
-        # Add columns to main layout
-        main_layout.addLayout(left_column, 1)
-        main_layout.addLayout(right_column, 1)
+        columns.addLayout(left_column, 1)
+        columns.addLayout(right_column, 1)
+        main_layout.addLayout(columns)
+        main_layout.addStretch(1)
+
+        # Keep internal fields for logic
+        self.ed_terms = QtWidgets.QLineEdit(str(be.DEFAULT_TERMS_XLSX))
+        self.ed_terms.setVisible(False)
+        self.ed_pdfs = QtWidgets.QLineEdit(str(be.DEFAULT_PDF_DIR))
+        self.ed_pdfs.setVisible(False)
     def _setup_tab_plot(self):
         main_layout = QtWidgets.QVBoxLayout(self.tab_plot)
         main_layout.setContentsMargins(24, 24, 24, 24)

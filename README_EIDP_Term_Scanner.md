@@ -10,9 +10,8 @@ Scan a folder of EIDP PDFs for a list of terms (from CSV/XLSX), find the closest
 ## Install (Windows)
 
 - No admin / no PATH changes (recommended):
-  - Run `install.bat` to create a local `.venv` and install Python packages there.
+  - Run `install.bat` to create a local `.venv` under `EIDAT_App_Files` and install Python packages there.
   - All OCR is handled inside Python (EasyOCR). No external executables are required.
-  - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
   - Optional custom venv location: `install.bat C:\\Path\\To\\PDF_Scanner.venv` or set `VENV_DIR` in `user_inputs\\scanner.env`.
 - System-wide (if allowed):
   - `py -m pip install --upgrade pip`
@@ -29,18 +28,18 @@ Notes:
 
 ## Super Simple Run
 
-- One-time setup: `install.bat` scaffolds `user_inputs` and drops a sample terms file if none exists (`user_inputs\terms.xlsx` or `.csv` with headers `Term, Pages`).
+- One-time setup: `install.bat` scaffolds `user_inputs` and drops `user_inputs\terms.schema.smartsnap.xlsx` if none exists (legacy `terms.xlsx` still works).
 - Point the GUI/CLI at the folder that already contains your EIDP PDFs (default `Data Packages`, but any path works).
-- Edit `user_inputs\terms.xlsx` or `user_inputs\terms.csv`.
+- Edit `user_inputs\terms.schema.smartsnap.xlsx` (or your `.csv`).
 - Optional: set runtime knobs in `user_inputs\scanner.env` (KEY=VALUE lines).
 - Run one of:
   - Windows: double-click `run.bat`
-  - Python: `py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder ".\Data Packages" --window-chars 400`
+  - Python: `py .\EIDAT_App_Files\Application\eidp_term_scanner.py --input .\user_inputs\terms.schema.smartsnap.xlsx --pdf-folder ".\Data Packages" --window-chars 400`
 
-Minimal transfer (work PC): copy `Application\eidp_term_scanner.py`, `Application\eidp_term_scanner.core.py`, `run.bat`, `install.bat`, and `user_inputs` (or at least `user_inputs\scanner.env` and your `terms.xlsx`). Point the scanner at your existing PDF repository (e.g., `Data Packages`). Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
+Minimal transfer (work PC): copy the `EIDAT_App_Files` folder (contains `Application`, `ui_next`, `scripts`, vendored `Lib`, and optional `.venv`) plus `run.bat`, `run_gui.bat`, and `install.bat`. Bring your own `user_inputs` and `Data Packages` folders or let `install.bat` scaffold them. Point the scanner at your existing PDF repository (e.g., `Data Packages`). Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
 Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 - A persistent run registry is maintained at `Product_Data_File\run_registry.xlsx` (CSV fallback if Excel not available).
-- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `scripts/compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
+- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `EIDAT_App_Files\scripts\compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
 
 ---
 
@@ -60,7 +59,7 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 
 ## GUI Launcher
 
-- Start with the GUI via `run_gui.bat` (uses the project `.venv`) or `py ui_next\qt_main.py`.
+- Start with the GUI via `run_gui.bat` (uses the project `.venv`) or `py EIDAT_App_Files\ui_next\qt_main.py`.
   - Choose your Terms file and PDFs folder.
   - The GUI streams scanner logs and provides shortcuts to open the last run folder, run registry, and compile/open the master workbook.
   - The GUI runs in quiet mode by default to reduce log noise.
@@ -79,14 +78,14 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
 ## Packaging (Single-File Installer)
 
 - Option A: Zip-based installer (smaller payload)
-- Create a single `install.bat` using: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_single_installer.ps1`
+- Create a single `install.bat` using: `powershell -NoProfile -ExecutionPolicy Bypass -File EIDAT_App_Files\scripts\make_single_installer.ps1`
   - Output: `dist\install.bat`
   - On a clean machine: copy `install.bat` to an empty folder and run it.
   - It extracts the app files and automatically runs project setup (creates a venv, installs deps, scaffolds folders, and generates `scanner.env`).
   - Optional: pass a custom venv location: `install.bat C:\\MyVenvs\\PDF_Scanner.venv` (equivalent to calling the internal setup with that argument).
 
 - Option B: Full-text installer (no embedded zip)
-  - Generate with: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make_full_text_installer.ps1`
+  - Generate with: `powershell -NoProfile -ExecutionPolicy Bypass -File EIDAT_App_Files\scripts\make_full_text_installer.ps1`
   - Output: `dist\full_installer.bat`
   - This single BAT embeds file contents as Base64 and reconstructs the project via PowerShell only (no certutil/zip required).
   - Usage on a clean machine: run `full_installer.bat` (optionally pass venv path like above). It writes all files, then runs the internal setup.
@@ -161,7 +160,7 @@ Behavior
 
 Examples:
 ```
-py .\Application\eidp_term_scanner.py --input .\user_inputs\terms.xlsx --pdf-folder ".\Data Packages" --window-chars 240 --case-sensitive
+py .\EIDAT_App_Files\Application\eidp_term_scanner.py --input .\user_inputs\terms.schema.smartsnap.xlsx --pdf-folder ".\Data Packages" --window-chars 240 --case-sensitive
 ```
 
 Line mode example
