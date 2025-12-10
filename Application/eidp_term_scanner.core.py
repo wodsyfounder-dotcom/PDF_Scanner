@@ -1486,11 +1486,55 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                         results = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
                     except Exception:
                         results = []
+
+                    # Estimate a typical character height so we can detect tall borders misread as "1"
+                    heights: List[float] = []
+                    for item in results:
+                        try:
+                            bbox, _, _ = item
+                            ys = [p[1] for p in bbox]
+                            h = max(ys) - min(ys)
+                            if h > 0:
+                                heights.append(float(h))
+                        except Exception:
+                            pass
+                    if heights:
+                        hs = sorted(heights)
+                        mid = len(hs) // 2
+                        median_height = hs[mid] if len(hs) % 2 else 0.5 * (hs[mid - 1] + hs[mid])
+                    else:
+                        median_height = None
+
+                    def _is_spurious_vertical_line(bbox, t: str, conf: float, median_h: Optional[float]) -> bool:
+                        """Filter out false '1' detections from cell borders using shape and relative height."""
+                        try:
+                            if not t or t.strip() not in {"1", "I", "|"}:
+                                return False
+                            xs = [p[0] for p in bbox]
+                            ys = [p[1] for p in bbox]
+                            w = max(xs) - min(xs)
+                            h = max(ys) - min(ys)
+                            if h <= 0:
+                                return False
+                            aspect = w / h
+                            # Borders are extremely thin and taller than nearby text; confidence is also low
+                            if median_h:
+                                if (h > median_h * 1.6) and (aspect < 0.2) and (conf < 0.7):
+                                    return True
+                            # Fallback when no median is available
+                            if aspect < 0.15 and conf < 0.6:
+                                return True
+                        except Exception:
+                            return False
+                        return False
+
                     # Join text lines in reading order
                     lines: List[str] = []
                     for item in results:
                         try:
-                            _, t, c = item
+                            bbox, t, c = item
+                            if _is_spurious_vertical_line(bbox, t, float(c) if c is not None else 0.0, median_height):
+                                continue
                             if isinstance(t, str) and t.strip():
                                 lines.append(t)
                         except Exception:
@@ -1530,6 +1574,62 @@ def _pdf_cache_key(pdf_path: Path) -> str:
 # Persistent OCR Cache (DPI-aware, per-EIDP)
 # ============================================================================
 
+def _resolve_cache_root() -> Path:
+    """Return the project-root cache base (default: <repo>/cache)."""
+    # Explicit override (lets advanced deployments relocate, but still under one root)
+    try:
+        env_root = os.environ.get("OCR_CACHE_ROOT") or os.environ.get("CACHE_ROOT")
+        if env_root:
+            root = Path(env_root).expanduser()
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+    except Exception:
+        pass
+
+    # Project root: parent of this Application folder, or the executable location if frozen
+    try:
+        root = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+    except Exception:
+        # If creation fails, surface a best-effort path within the repo tree
+        return Path(__file__).resolve().parent.parent
+
+
+def _legacy_ocr_cache_dirs(pdf_path: Path) -> List[Path]:
+    """Return possible legacy cache locations to preserve backwards compatibility."""
+    dirs: List[Path] = []
+    # Legacy: alongside PDFs in a hidden .ocr_cache folder
+    try:
+        dirs.append(pdf_path.parent / ".ocr_cache" / pdf_path.stem)
+    except Exception:
+        pass
+    try:
+        # Legacy: cache located under Data Packages/.ocr_cache when run from repo root
+        root = Path(__file__).resolve().parent.parent
+        dirs.append(root / "Data Packages" / ".ocr_cache" / pdf_path.stem)
+    except Exception:
+        pass
+    return [d for i, d in enumerate(dirs) if d not in dirs[:i]]
+
+
+def _legacy_ocr_cache_keys(pdf_path: Path, page: int, ocr_mode: str, dpi: int) -> List[str]:
+    """Older builds hashed the full path; keep looking for them so cache survives upgrades."""
+    keys: List[str] = []
+    try:
+        full_hash = hashlib.md5(str(pdf_path.resolve()).encode("utf-8")).hexdigest()[:12]
+        keys.append(f"{full_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl")
+    except Exception:
+        pass
+    try:
+        rel_hash = hashlib.md5(str(pdf_path).encode("utf-8")).hexdigest()[:12]
+        if rel_hash not in {k.split("_p", 1)[0] for k in keys}:
+            keys.append(f"{rel_hash}_p{page}_{ocr_mode}_dpi{dpi}.pkl")
+    except Exception:
+        pass
+    return keys
+
+
 def _get_ocr_cache_dir(pdf_path: Path) -> Path:
     """Get the OCR cache directory for a given PDF.
 
@@ -1538,19 +1638,13 @@ def _get_ocr_cache_dir(pdf_path: Path) -> Path:
 
     Works correctly whether running as script or frozen executable.
     """
-    # Determine project root: supports both development and frozen (PyInstaller) environments
-    if getattr(sys, 'frozen', False):
-        # Running as compiled executable (PyInstaller)
-        # sys._MEIPASS is temp extraction dir, sys.executable is the .exe location
-        # We want the directory where the .exe lives
-        project_root = Path(sys.executable).parent
-    else:
-        # Running as Python script - go up one level from Application/ to project root
-        project_root = Path(__file__).resolve().parent.parent
-
-    # Create centralized cache directory: cache/ocr/{pdf_stem}/
-    cache_dir = project_root / "cache" / "ocr" / pdf_path.stem
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    root = _resolve_cache_root()
+    cache_dir = root / "cache" / "ocr" / pdf_path.stem
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Leave creation errors to caller; fallback directories will be tried in _load/_save
+        pass
     return cache_dir
 
 
@@ -1574,26 +1668,44 @@ def _load_ocr_from_cache(pdf_path: Path, page: int, ocr_mode: str, requested_dpi
         None if no suitable cache found
     """
     try:
-        cache_dir = _get_ocr_cache_dir(pdf_path)
+        primary_dir = _get_ocr_cache_dir(pdf_path)
+        cache_dirs = [primary_dir] + _legacy_ocr_cache_dirs(pdf_path)
         debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
 
         # Look for cached results with DPI >= requested_dpi
         # Check exact match first, then higher DPIs
         for check_dpi in range(requested_dpi, 2000, 100):  # Check up to DPI 2000
-            cache_key = _get_ocr_cache_key(pdf_path, page, ocr_mode, check_dpi)
-            cache_file = cache_dir / cache_key
+            candidate_keys = [_get_ocr_cache_key(pdf_path, page, ocr_mode, check_dpi)]
+            candidate_keys += _legacy_ocr_cache_keys(pdf_path, page, ocr_mode, check_dpi)
 
-            if cache_file.exists():
-                with open(cache_file, 'rb') as f:
-                    cache_data = pickle.load(f)
-                    cached_text = cache_data.get('text', '')
-                    cached_dpi = cache_data.get('dpi', check_dpi)
+            for cache_dir in cache_dirs:
+                cache_file = cache_dir / candidate_keys[0]
+                if not cache_file.exists():
+                    # Try legacy key shapes if present
+                    for legacy_key in candidate_keys[1:]:
+                        legacy_file = cache_dir / legacy_key
+                        if legacy_file.exists():
+                            cache_file = legacy_file
+                            break
+                if cache_file.exists():
+                    with open(cache_file, 'rb') as f:
+                        cache_data = pickle.load(f)
+                        cached_text = cache_data.get('text', '')
+                        cached_dpi = cache_data.get('dpi', check_dpi)
 
-                    # Only use if cached DPI >= requested DPI
-                    if cached_dpi >= requested_dpi:
-                        if debug_mode:
-                            print(f"[OCR CACHE HIT] {pdf_path.name} page {page} @ DPI {cached_dpi} (requested {requested_dpi})", file=sys.stderr)
-                        return (cached_text, cached_dpi)
+                        # Only use if cached DPI >= requested DPI
+                        if cached_dpi >= requested_dpi:
+                            if debug_mode:
+                                print(f"[OCR CACHE HIT] {pdf_path.name} page {page} @ DPI {cached_dpi} (requested {requested_dpi})", file=sys.stderr)
+                            # If we hit a legacy key/dir, mirror it into the primary slot for future runs
+                            try:
+                                target = primary_dir / candidate_keys[0]
+                                if not target.exists():
+                                    target.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(str(cache_file), str(target))
+                            except Exception:
+                                pass
+                            return (cached_text, cached_dpi)
 
         if debug_mode:
             print(f"[OCR CACHE MISS] {pdf_path.name} page {page} @ DPI {requested_dpi} - performing OCR", file=sys.stderr)
