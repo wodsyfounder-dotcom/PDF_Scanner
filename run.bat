@@ -8,7 +8,7 @@ rem Prefer local venv if present
 set "VENV_PY=%APP_ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
-  set "PATH=%APP_ROOT%.venv\Scripts;%PATH%"
+  set "PATH=%APP_ROOT%.venv\Scripts;!PATH!"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
@@ -85,7 +85,7 @@ if defined VENV_DIR (
   )
   if exist "%VENV_PY%" (
     set "PY=%VENV_PY%"
-    set "PATH=%VENV_DIR%\Scripts;%PATH%"
+    set "PATH=%VENV_DIR%\Scripts;!PATH!"
   ) else (
     echo [ERROR] Failed to create venv at "%VENV_DIR%".>&2
     exit /b 1

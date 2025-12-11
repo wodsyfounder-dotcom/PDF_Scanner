@@ -2511,7 +2511,7 @@ class MainWindow(QtWidgets.QMainWindow):
         divider.setStyleSheet("background-color: #e5e7eb; margin: 6px 0;")
         run_layout.addWidget(divider)
 
-        self.btn_view_outdated = QtWidgets.QPushButton("📋  View Data Package List and Update EIDAT Database")
+        self.btn_view_outdated = QtWidgets.QPushButton("📋  MANUAL UPDATE / INDIVIDUAL SELECTION")
         self.btn_view_outdated.setMinimumHeight(button_min_h)
         self.btn_view_outdated.setStyleSheet("""
             QPushButton {

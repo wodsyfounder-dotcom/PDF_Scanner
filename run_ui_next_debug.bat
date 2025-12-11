@@ -9,7 +9,7 @@ rem Prefer local venv if present
 set "VENV_PY=%APP_ROOT%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" (
   set "PY=%VENV_PY%"
-  set "PATH=%APP_ROOT%.venv\Scripts;%PATH%"
+  set "PATH=%APP_ROOT%.venv\Scripts;!PATH!"
 ) else (
   set "PY=py"
   where %PY% >nul 2>nul || set "PY=python"
@@ -48,7 +48,7 @@ if defined VENV_DIR (
   )
   if exist "%VENV_PY%" (
     set "PY=%VENV_PY%"
-    set "PATH=%VENV_DIR%\Scripts;%PATH%"
+    set "PATH=%VENV_DIR%\Scripts;!PATH!"
   ) else (
     echo [ERROR] Failed to create venv at "%VENV_DIR%".>&2
     exit /b 1
@@ -60,16 +60,16 @@ set "DEBUG_MODE=1"
 
 if not "%QUIET%"=="1" (
   echo [RUN] Python: "%PY%"
-  echo [RUN] Debug : DEBUG_MODE=1 (ui_next)
+  echo [RUN] Debug : DEBUG_MODE=1 ^(ui_next^)
   echo [RUN] Log   : "%LOG_FILE%"
 )
 
 set "PSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if exist "%PSHELL%" (
   set "PS_CMD=& { & '%PY%' -m ui_next.qt_main @args 2>&1 ^| Tee-Object -FilePath '%LOG_FILE%'; exit $LASTEXITCODE }"
-  "%PSHELL%" -NoLogo -NoProfile -Command "%PS_CMD%" -- %*
+  "%PSHELL%" -NoLogo -NoProfile -Command "!PS_CMD!" -- %*
 ) else (
-  echo [WARN] PowerShell not found; running without live tee (log will overwrite "%LOG_FILE%").
+  echo [WARN] PowerShell not found; running without live tee ^(log will overwrite "%LOG_FILE%"^).
   "%PY%" -m ui_next.qt_main %* > "%LOG_FILE%" 2>&1
 )
 
