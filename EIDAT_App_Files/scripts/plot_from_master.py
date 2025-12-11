@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate plots based on user_inputs/plot_terms.xlsx and Product_Data_File/master.
+Generate plots based on user_inputs/plot_terms.xlsx and master.xlsx (repo root; legacy master under Product_Data_File also read).
 
-Outputs PNG figures to Product_Data_File/plots/<plot_name>.png using matplotlib.
+Outputs PNG figures to plots/<plot_name>.png at the repo root (legacy Product_Data_File/plots read for back-compat).
 
 Behavior:
   - Builds plot definitions from rows where Plot? == 'Y' (case-insensitive) OR Tie To Plot is set.
@@ -32,14 +32,29 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPORTS = ROOT / "Product_Data_File"
-PLOTS_DIR = EXPORTS / "plots"
-MASTER_XLSX = EXPORTS / "master.xlsx"
-MASTER_CSV = EXPORTS / "master.csv"
+MASTER_DB = ROOT / "Product_Data_File" / "Master_Database"
+EXPORTS_NEW = MASTER_DB
+EXPORTS_LEGACY = ROOT
+EXPORTS_LEGACY2 = ROOT / "Product_Data_File"
+PLOTS_DIR = (ROOT / "plots")
+LEGACY_PLOTS_DIR = EXPORTS_LEGACY2 / "plots"
+MASTER_XLSX = EXPORTS_NEW / "master.xlsx"
+MASTER_CSV = EXPORTS_NEW / "master.csv"
+LEGACY_MASTER_XLSX = EXPORTS_LEGACY / "master.xlsx"
+LEGACY_MASTER_CSV = EXPORTS_LEGACY / "master.csv"
+LEGACY2_MASTER_XLSX = EXPORTS_LEGACY2 / "master.xlsx"
+LEGACY2_MASTER_CSV = EXPORTS_LEGACY2 / "master.csv"
 USER = ROOT / "user_inputs"
 PLOT_TERMS_XLSX = USER / "plot_terms.xlsx"
 PLOT_TERMS_CSV = USER / "plot_terms.csv"
 PROPOSED_PLOTS_JSON = USER / "proposed_plots.json"
+
+
+def _prefer_existing(*paths: Path) -> Path:
+    for p in paths:
+        if p.exists():
+            return p
+    return paths[0]
 
 
 ID_COLS = ["Term Label", "Data Group"]
@@ -55,11 +70,16 @@ def read_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict
     programs: Dict[str, str] = {}
     vehicles: Dict[str, str] = {}
 
-    if not MASTER_XLSX.exists():
+    master_xlsx = _prefer_existing(MASTER_XLSX, LEGACY_MASTER_XLSX, LEGACY2_MASTER_XLSX)
+    master_csv = _prefer_existing(MASTER_CSV, LEGACY_MASTER_CSV, LEGACY2_MASTER_CSV)
+    if not master_xlsx.exists() and not master_csv.exists():
         print("[ERROR] master.xlsx not found. Compile master first.")
         return [], [], {}, {}
 
-    df = pd.read_excel(MASTER_XLSX, sheet_name="master")
+    if master_xlsx.exists():
+        df = pd.read_excel(master_xlsx, sheet_name="master")
+    else:
+        df = pd.read_csv(master_csv)
 
     rename_map: Dict[str, str] = {}
     if "Term Label" not in df.columns and "Term" in df.columns:

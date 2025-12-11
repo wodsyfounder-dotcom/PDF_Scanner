@@ -3,12 +3,12 @@
 Compile a master extraction workbook from the per-run caches recorded in run_registry.
 
 Inputs:
-  - Product_Data_File/run_registry.xlsx (preferred) or run_registry.csv
+  - run_registry.xlsx (preferred) or run_registry.csv in Product_Data_File/Master_Database (legacy: repo root or Product_Data_File/run_registry.*)
   - For each row: serial_component, run_folder, program_name, vehicle_number
   - Each run folder contains scan_results.json which holds per-term values per SN.
 
 Output:
-  - Product_Data_File/master.xlsx (requires pandas + xlsxwriter)
+  - master.xlsx in Product_Data_File/Master_Database (requires pandas + xlsxwriter; legacy master.* still read for compatibility)
 
 Workbook layout:
   - Leading rows reserved for "Program", "Space Vehicle", and "Data" metadata.
@@ -29,13 +29,34 @@ from typing import Dict, List, Tuple, Optional, Any, Set
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPORTS = ROOT / "Product_Data_File"
-REG_XLSX = EXPORTS / "run_registry.xlsx"
-REG_CSV = EXPORTS / "run_registry.csv"
-OUT_XLSX = EXPORTS / "master.xlsx"
-OUT_CSV = EXPORTS / "master.csv"
+MASTER_DB = ROOT / "Product_Data_File" / "Master_Database"
+EXPORTS_NEW = MASTER_DB  # master + registry live here
+EXPORTS_LEGACY = ROOT  # prior root location
+EXPORTS_LEGACY2 = ROOT / "Product_Data_File"  # older legacy
+REG_XLSX = EXPORTS_NEW / "run_registry.xlsx"
+REG_CSV = EXPORTS_NEW / "run_registry.csv"
+LEGACY_REG_XLSX = EXPORTS_LEGACY / "run_registry.xlsx"
+LEGACY_REG_CSV = EXPORTS_LEGACY / "run_registry.csv"
+LEGACY2_REG_XLSX = EXPORTS_LEGACY2 / "run_registry.xlsx"
+LEGACY2_REG_CSV = EXPORTS_LEGACY2 / "run_registry.csv"
+OUT_XLSX = EXPORTS_NEW / "master.xlsx"
+OUT_CSV = EXPORTS_NEW / "master.csv"
+LEGACY_OUT_XLSX = EXPORTS_LEGACY / "master.xlsx"
+LEGACY_OUT_CSV = EXPORTS_LEGACY / "master.csv"
+LEGACY2_OUT_XLSX = EXPORTS_LEGACY2 / "master.xlsx"
+LEGACY2_OUT_CSV = EXPORTS_LEGACY2 / "master.csv"
+RUNS_NEW = EXPORTS_LEGACY2 / "run_data"
+RUNS_LEGACY = ROOT / "run_data"
 TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 TERMS_SHEET = "Template"
+
+
+def _prefer_existing(*paths: Path) -> Path:
+    """Return the first existing path, or the first element if none exist."""
+    for p in paths:
+        if p.exists():
+            return p
+    return paths[0]
 
 
 # ===== Intelligent Term Ordering Configuration =====
@@ -192,10 +213,12 @@ def _clean_master_cell(value: object) -> str:
 def _read_existing_master() -> Tuple[List[str], List[Dict[str, str]], Optional[float]]:
     """Return (header, rows, mtime) from an existing master workbook if present."""
     target: Optional[Path] = None
-    if OUT_XLSX.exists():
-        target = OUT_XLSX
-    elif OUT_CSV.exists():
-        target = OUT_CSV
+    xlsx = _prefer_existing(OUT_XLSX, LEGACY_OUT_XLSX, LEGACY2_OUT_XLSX)
+    csv_path = _prefer_existing(OUT_CSV, LEGACY_OUT_CSV, LEGACY2_OUT_CSV)
+    if xlsx.exists():
+        target = xlsx
+    elif csv_path.exists():
+        target = csv_path
     if not target:
         return [], [], None
 
@@ -322,11 +345,13 @@ def load_registry() -> List[Tuple[str, Path, Dict[str, str]]]:
         }
 
     rows: List[Tuple[str, Path, Dict[str, str]]] = []
-    if REG_XLSX.exists():
+    reg_xlsx = _prefer_existing(REG_XLSX, LEGACY_REG_XLSX, LEGACY2_REG_XLSX)
+    reg_csv = _prefer_existing(REG_CSV, LEGACY_REG_CSV, LEGACY2_REG_CSV)
+    if reg_xlsx.exists():
         # Try pandas first
         try:
             import pandas as pd  # type: ignore
-            df = pd.read_excel(REG_XLSX)
+            df = pd.read_excel(reg_xlsx)
             for _, r in df.iterrows():
                 row_dict = r.to_dict() if hasattr(r, "to_dict") else dict(r)
                 sc = clean_cell(row_dict.get("serial_component") or row_dict.get("serial_number"))
@@ -338,7 +363,7 @@ def load_registry() -> List[Tuple[str, Path, Dict[str, str]]]:
             # Fallback: openpyxl without pandas
             try:
                 from openpyxl import load_workbook  # type: ignore
-                wb = load_workbook(str(REG_XLSX), data_only=True)
+                wb = load_workbook(str(reg_xlsx), data_only=True)
                 ws = wb["runs"] if "runs" in wb.sheetnames else wb.active
                 # Build header map (case-insensitive)
                 header_map: Dict[str, int] = {}
@@ -374,9 +399,9 @@ def load_registry() -> List[Tuple[str, Path, Dict[str, str]]]:
                         return rows
             except Exception:
                 pass
-    if REG_CSV.exists():
+    if reg_csv.exists():
         try:
-            with REG_CSV.open("r", encoding="utf-8", newline="") as f:
+            with reg_csv.open("r", encoding="utf-8", newline="") as f:
                 r = csv.DictReader(f)
                 for row in r:
                     sc = clean_cell(row.get("serial_component") or row.get("serial_number"))
@@ -520,9 +545,15 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
         meta_by_sn[sn] = meta or {}
 
     runs_seen = False
-    runs_root = EXPORTS / "run_data"
-    if runs_root.exists():
+    seen_runs: set[Path] = set()
+    for runs_root in (RUNS_NEW, RUNS_LEGACY):
+        if not runs_root.exists():
+            continue
         for run_dir in sorted(p for p in runs_root.iterdir() if p.is_dir()):
+            resolved = run_dir.resolve()
+            if resolved in seen_runs:
+                continue
+            seen_runs.add(resolved)
             # Process all run_data folders regardless of timestamp. This ensures
             # that if a user deletes a value from master.xlsx (making it blank),
             # it will be refilled from ANY available run_data on the next compile.
@@ -674,7 +705,7 @@ def build_master() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dic
 
 
 def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by_sn: Dict[str, str] | None = None, sv_by_sn: Dict[str, str] | None = None, data_by_sn: Dict[str, str] | None = None) -> None:
-    EXPORTS.mkdir(parents=True, exist_ok=True)
+    EXPORTS_NEW.mkdir(parents=True, exist_ok=True)
     base_columns = ["Term Label", "Data Group", "Units", "Min", "Max"]
     header = base_columns + serials
 
@@ -734,6 +765,12 @@ def write_master(serials: List[str], term_rows: List[Dict[str, Any]], program_by
         print(f"[DONE] Master workbook -> {OUT_XLSX}")
     except Exception as e:
         raise RuntimeError(f"Failed to write master.xlsx: {e}") from e
+    try:
+        for legacy in (LEGACY_OUT_XLSX, LEGACY_OUT_CSV, LEGACY2_OUT_XLSX, LEGACY2_OUT_CSV):
+            if legacy.exists() and legacy not in (OUT_XLSX, OUT_CSV):
+                legacy.unlink()
+    except Exception:
+        pass
 
 
 def build_master_from_state() -> Tuple[List[str], List[Dict[str, Any]], Dict[str, str], Dict[str, str], Dict[str, str]]:

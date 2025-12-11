@@ -22,12 +22,12 @@ from datetime import datetime
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from scripts.master_cell_state import save_cell_state, load_cell_state
+from scripts.master_cell_state import save_cell_state, load_cell_state, STATE_FILE_PATH
 from scripts.compile_master import (
     load_registry,
     load_results_json,
-    EXPORTS,
     OUT_XLSX,
+    LEGACY_OUT_XLSX,
     _read_existing_master,
     norm
 )
@@ -118,7 +118,7 @@ def migrate_to_cell_state(dry_run: bool = False) -> None:
         }
 
     # Validate against current master.xlsx (if exists)
-    if OUT_XLSX.exists():
+    if OUT_XLSX.exists() or LEGACY_OUT_XLSX.exists():
         print("[INFO] Validating against current master.xlsx...")
         validate_against_master(state)
 
@@ -136,7 +136,7 @@ def migrate_to_cell_state(dry_run: bool = False) -> None:
         print(f"  - {len(state)} serial components")
         total_cells = sum(len(terms) for terms in state.values())
         print(f"  - {total_cells} total cells")
-        print(f"  - Saved to: Product_Data_File/master_cell_state.json")
+        print(f"  - Saved to: {STATE_FILE_PATH}")
 
 
 def extract_value_from_row(row: Dict[str, Any]) -> Optional[str]:

@@ -14,7 +14,7 @@ Grid approach (position -> table):
 Usage:
   python scripts/extract_page_tables.py --pdf path/to/file.pdf --pages "1,3-5" [--ocr] [--dpi 600] [--min-conf 0.4] [--out out.xlsx] [--emit-tokens]
 
-Defaults write to Product_Data_File/tables/<pdf-stem>_tables.xlsx
+Defaults write to tables/<pdf-stem>_tables.xlsx (repo root; legacy Product_Data_File/tables still read if specified)
 """
 from __future__ import annotations
 
@@ -446,7 +446,7 @@ def main() -> None:
     ap.add_argument('--dpi', type=int, default=600, help='OCR DPI when --ocr (default 600)')
     ap.add_argument('--min-conf', type=float, default=0.4, help='Min OCR confidence [0..1] when --ocr')
     ap.add_argument('--langs', default='en', help='OCR languages csv (for EasyOCR), default en')
-    ap.add_argument('--out', default='', help='Output .xlsx path (default Product_Data_File/tables/<stem>_tables.xlsx)')
+    ap.add_argument('--out', default='', help='Output .xlsx path (default tables/<stem>_tables.xlsx)')
     ap.add_argument('--emit-tokens', action='store_true', help='Include raw tokens sheets for debugging')
     args = ap.parse_args()
 
@@ -469,7 +469,7 @@ def main() -> None:
 
     langs = [s.strip() for s in re.split(r'[;,]', args.langs) if s.strip()]
     tables = extract_tables_for_pages(pdf, pages, use_ocr=bool(args.ocr), dpi=args.dpi, min_conf=args.min_conf, langs=langs, emit_tokens=bool(args.emit_tokens))
-    out = Path(args.out) if args.out else (Path('Product_Data_File')/ 'tables' / f"{pdf.stem}_tables.xlsx")
+    out = Path(args.out) if args.out else (Path('tables') / f"{pdf.stem}_tables.xlsx")
     write_excel(tables, out)
     print(f"[DONE] Wrote page tables -> {out}")
 

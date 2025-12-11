@@ -3521,9 +3521,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _get_registry_table_data(self) -> tuple[list[str], list[list[str]]]:
         try:
-            base = (be.ROOT / "Product_Data_File") if hasattr(be, "ROOT") else Path("Product_Data_File")
-            p_csv = base / "run_registry.csv"
-            p_xlsx = base / "run_registry.xlsx"
+            p_csv = be.registry_csv_for_read()
+            p_xlsx = be.registry_xlsx_for_read()
             rows: list[list[str]] = []
             headers: list[str] = []
             # Keep registry tidy before reading; best-effort and safe (prunes invalid rows)

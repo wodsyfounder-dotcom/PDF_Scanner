@@ -3,10 +3,10 @@
 Build an Excel summary workbook that embeds generated plot images.
 
 Inputs:
-  - Product_Data_File/plots/*.png (produced by plot_from_master.py)
+  - plots/*.png in repo root (produced by plot_from_master.py; legacy Product_Data_File/plots still read)
 
 Output:
-  - Product_Data_File/plots/plots_summary.xlsx (preferred; xlsxwriter)
+  - plots/plots_summary.xlsx (preferred; xlsxwriter)
     Fallback: same path via openpyxl if xlsxwriter unavailable.
 
 Behavior:
@@ -24,9 +24,20 @@ from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPORTS = ROOT / "Product_Data_File"
-PLOTS_DIR = EXPORTS / "plots"
+EXPORTS_NEW = ROOT
+EXPORTS_LEGACY = ROOT / "Product_Data_File"
+PLOTS_DIR = EXPORTS_NEW / "plots"
+LEGACY_PLOTS_DIR = EXPORTS_LEGACY / "plots"
 OUT_XLSX = PLOTS_DIR / "plots_summary.xlsx"
+LEGACY_OUT_XLSX = LEGACY_PLOTS_DIR / "plots_summary.xlsx"
+
+
+def _prefer_new(new_path: Path, legacy_path: Path) -> Path:
+    if new_path.exists():
+        return new_path
+    if legacy_path.exists():
+        return legacy_path
+    return new_path
 
 
 def list_plot_images(plots_dir: Path) -> List[Path]:
@@ -57,7 +68,6 @@ def sheet_name_from_file(path: Path, used: set[str]) -> str:
 def write_with_xlsxwriter(images: List[Path]) -> None:
     import xlsxwriter  # type: ignore
 
-    EXPORTS.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     workbook = xlsxwriter.Workbook(str(OUT_XLSX))
     try:
@@ -92,7 +102,6 @@ def write_with_openpyxl(images: List[Path]) -> None:
     from openpyxl import Workbook  # type: ignore
     from openpyxl.drawing.image import Image as XLImage  # type: ignore
 
-    EXPORTS.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
     ws_index = wb.active
@@ -120,10 +129,13 @@ def write_with_openpyxl(images: List[Path]) -> None:
 
 
 def main() -> int:
-    imgs = list_plot_images(PLOTS_DIR)
+    plots_root = _prefer_new(PLOTS_DIR, LEGACY_PLOTS_DIR)
+    imgs = list_plot_images(plots_root)
     if not imgs:
-        print(f"[WARN] No plot images found in {PLOTS_DIR}. Generate plots first.")
+        print(f"[WARN] No plot images found in {plots_root}. Generate plots first.")
         return 0
+    # Ensure new root exists for future writes
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     # Try xlsxwriter path
     try:
         write_with_xlsxwriter(imgs)

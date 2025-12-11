@@ -464,6 +464,8 @@ class MatchResult:
     debug_fuzzy_match_score: Optional[float] = None
     # Fuzzy matching threshold used (from FUZZY_PRESET config)
     debug_fuzzy_match_threshold: Optional[float] = None
+    # True when fallback EPS was triggered due to low score
+    debug_fallback_eps_used: Optional[bool] = None
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -1796,12 +1798,12 @@ def get_pdf_page_count(pdf_path: Path) -> int:
 def _update_run_registry(run_dir: Path, serial_components: List[str], serial_metadata: Optional[Dict[str, Dict[str, str]]] = None) -> None:
     """Update a persistent run registry of EIDPs (identified by serial_component) and their latest run date.
 
-    - File path: Product_Data_File/run_registry.csv (CSV only)
+    - File path: Product_Data_File/Master_Database/run_registry.csv (CSV only)
     - Columns: serial_component, program_name, vehicle_number, run_date, run_folder
     - On re-run, replaces the row for a serial component with the latest date and folder
     """
     try:
-        exports_dir = Path("Product_Data_File")
+        exports_dir = Path("Product_Data_File") / "Master_Database"
         exports_dir.mkdir(parents=True, exist_ok=True)
         registry_csv = exports_dir / "run_registry.csv"
         columns = [
@@ -3496,27 +3498,57 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
                             header_alignment: Dict[int, float] = {}
                             if sec_header_x0 is not None and numeric_cands:
-                                # Calculate X-axis distance from each candidate to the vertical line from header
-                                # Proportional scoring: closer to header X = higher score
-                                dists: List[float] = []
+                                # CLUSTER-BASED SECONDARY HEADER ALIGNMENT
+                                # Calculate X-axis distance from each candidate to secondary header
+                                distances: List[Tuple[Dict, float]] = []
                                 for c in numeric_cands:
                                     try:
                                         d = abs(float(c['x0']) - float(sec_header_x0))
                                     except Exception:
                                         d = abs(c['x0'] - sec_header_x0)  # type: ignore[operator]
-                                    dists.append(d)
+                                    distances.append((c, d))
 
-                                if dists:
-                                    # Proportional distance-based scoring
-                                    # Closest gets 1.0, others decay proportionally
-                                    d_min = min(dists)
-                                    for c, d in zip(numeric_cands, dists):
-                                        if d == 0:
-                                            h = 1.0
+                                if distances:
+                                    # Sort by distance to find clusters
+                                    distances.sort(key=lambda x: x[1])
+                                    d_min = distances[0][1]
+
+                                    # CLUSTER BOUNDARY DETECTION via gap analysis
+                                    # Look for large gaps that indicate different column/header
+                                    cluster_boundary = None
+                                    if len(distances) >= 3:  # Need at least 3 for meaningful clustering
+                                        for i in range(1, len(distances) - 1):
+                                            current_dist = distances[i][1]
+                                            next_dist = distances[i+1][1]
+                                            gap = next_dist - current_dist
+
+                                            # Calculate spread within potential cluster
+                                            cluster_spread = distances[i][1] - distances[0][1]
+                                            avg_spacing = cluster_spread / i if i > 0 else 0
+
+                                            # Gap detection: if next candidate is 2x+ further than avg spacing
+                                            # OR gap is larger than 10px minimum threshold
+                                            if gap > max(10, 2.0 * avg_spacing):
+                                                cluster_boundary = next_dist
+                                                break
+
+                                    # Fallback: use 20px window if no clear boundary detected
+                                    if cluster_boundary is None:
+                                        cluster_boundary = d_min + 20
+
+                                    # Score based on cluster membership
+                                    for c, d in distances:
+                                        if d <= cluster_boundary:
+                                            # Inside primary cluster - gentle scoring within cluster
+                                            if d == d_min:
+                                                h = 1.0
+                                            else:
+                                                # Gentle decay within cluster (characteristic length = 10px)
+                                                h = max(0.3, 1.0 / (1.0 + (d - d_min) / 10.0))
                                         else:
-                                            # Proportional decay: score inversely proportional to distance
-                                            # Using exponential decay with characteristic distance of 20 pixels
-                                            h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
+                                            # Outside cluster - essentially excluded (different column)
+                                            h = 0.05
+
                                         header_alignment[id(c)] = h
 
                             scored = []
@@ -3552,31 +3584,60 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     s += delta
                                     comp["value_header"] += delta
 
-                                # 3. RANGE VALIDATION (max 2.0 points, equal weight to secondary header)
+                                # 3. COMFORT ZONE RANGE VALIDATION (max 3.0 points for comfortable values)
                                 if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
                                     range_span = spec.range_max - spec.range_min
                                     tolerance_20 = 0.2 * range_span
                                     tolerance_50 = 0.5 * range_span
 
-                                    # NULLIFIER: Value is >50% off range - mark as invalid
+                                    # Calculate position within range (0.0 = min, 1.0 = max)
+                                    if range_span > 0:
+                                        range_position = (c['nval'] - spec.range_min) / range_span
+                                    else:
+                                        range_position = 0.5
+
+                                    # 5-TIER COMFORT ZONE SCORING
+                                    # Tier 0: FAR OUTSIDE (>50% beyond range) → Nullify
                                     if (c['nval'] < spec.range_min - tolerance_50 or
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
+
+                                    # Tier 1: EXACT BOUNDARY MATCH → Low score (likely document guidance text)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
+                                        delta = 0.8  # Reduced from 1.6 - strong penalty for boundary values
                                         s += delta
                                         comp["range_validation"] += delta
-                                    # Between 20% and 50% outside range - 10% penalty
-                                    elif not ((spec.range_min - tolerance_20) <= c['nval'] <= (spec.range_max + tolerance_20)):
-                                        # Value is outside the 20% tolerance but within 50%
-                                        delta = 1.8  # 2.0 - 10% penalty
+
+                                    # Tiers 2-5: Calculate if value is inside or outside range
+                                    elif not (spec.range_min <= c['nval'] <= spec.range_max):
+                                        # OUTSIDE range - determine how far
+                                        if c['nval'] < spec.range_min:
+                                            pct_outside = (spec.range_min - c['nval']) / range_span
+                                        else:
+                                            pct_outside = (c['nval'] - spec.range_max) / range_span
+
+                                        # Tier 2: SLIGHTLY OUTSIDE (10-20% beyond range)
+                                        if pct_outside <= 0.2:
+                                            delta = 1.0  # Possible OCR error
+                                            s += delta
+                                            comp["range_validation"] += delta
+                                        # Tier 3: MODERATELY OUTSIDE (20-50% beyond range)
+                                        else:
+                                            delta = 0.3  # Very suspicious
+                                            s += delta
+                                            comp["range_validation"] += delta
+
+                                    # INSIDE range - check if comfortable or near boundary
+                                    # Tier 4: COMFORTABLE WITHIN (5-95% of range) → Highest score!
+                                    elif 0.05 <= range_position <= 0.95:
+                                        delta = 3.0  # Sweet spot - likely real data
                                         s += delta
                                         comp["range_validation"] += delta
-                                    # Within range OR up to 20% tolerance outside range = full match
+
+                                    # Tier 5: NEAR BOUNDARY BUT INSIDE (0-5% or 95-100%)
                                     else:
-                                        delta = 2.0
+                                        delta = 1.5  # Suspicious but possible
                                         s += delta
                                         comp["range_validation"] += delta
 
@@ -3593,6 +3654,18 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 delta = 0.1 * (1.0 / (1.0 + dx/10.0))
                                 s += delta
                                 comp["label_proximity"] += delta
+
+                                # 6. HIGH CONFIDENCE MULTIPLIER
+                                # When both secondary alignment AND comfortable range align, boost total score
+                                hdr_align = header_alignment.get(id(c), 0.0)
+                                range_score = comp.get("range_validation", 0.0)
+                                if hdr_align is not None and hdr_align > 0.8 and range_score >= 2.5:
+                                    # Both secondary alignment (>0.8) and comfortable range (≥2.5) are strong
+                                    confidence_multiplier = 1.3
+                                    s *= confidence_multiplier
+                                    comp["confidence_multiplier"] = confidence_multiplier
+                                else:
+                                    comp["confidence_multiplier"] = 1.0
 
                                 if debug_mode:
                                     print(f"[SMART DEBUG][PDF] cand_score page={p} val={c['text']} s={s:.3f} breakdown={comp} nullified={is_nullified}", file=sys.stderr)
@@ -3940,7 +4013,21 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 smart_selection_method="alt_row",
                                 debug_extracted_term=None,
                             )
-            if best_info:
+            # FALLBACK EPS THRESHOLD CHECK
+            # If best score is too low, skip PDF result and force OCR fallback with wider row_eps
+            try:
+                fallback_score_threshold = float(os.environ.get("FALLBACK_SCORE_THRESHOLD", "3.0"))
+            except Exception:
+                fallback_score_threshold = 3.0
+
+            use_fallback_eps = False
+            if best_info and best_score < fallback_score_threshold:
+                # Score too low - will try OCR fallback with wider row_eps instead
+                use_fallback_eps = True
+                if debug_mode:
+                    print(f"[SMART DEBUG][PDF] Score {best_score:.3f} < threshold {fallback_score_threshold:.3f}, triggering fallback EPS", file=sys.stderr)
+
+            if best_info and not use_fallback_eps:
                 page_hit, context_line_text, right_text, value_text, smart_kind, line_min_txt, line_max_txt, conflict_reason, sec_found = best_info
                 # For title/text smart snaps, strip label tokens and normalize
                 # common status values so we return just the field contents
@@ -4096,7 +4183,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             # Vertical tolerance (in OCR pixel coordinates) for grouping
             # EasyOCR boxes into logical text rows. Use per-term value if specified,
             # otherwise fall back to global OCR_ROW_EPS; default tuned for 10–14pt text.
-            if spec.ocr_row_eps is not None:
+            # If fallback EPS is triggered due to low score, use wider tolerance.
+            if use_fallback_eps:
+                # Use fallback EPS for wider search
+                try:
+                    row_eps = float(os.environ.get("FALLBACK_EPS", "30.0"))
+                except Exception:
+                    row_eps = 30.0
+                row_eps = max(0.5, min(50.0, row_eps))
+                if debug_mode:
+                    print(f"[SMART DEBUG][OCR] Using fallback row_eps={row_eps}", file=sys.stderr)
+            elif spec.ocr_row_eps is not None:
                 row_eps = spec.ocr_row_eps
             else:
                 try:
@@ -4617,20 +4714,54 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
                             header_alignment: Dict[int, float] = {}
                             if sec_header_x0 is not None and numeric_cands:
-                                # Calculate X-axis distance from each candidate to the vertical line from header
-                                dists: List[float] = []
+                                # CLUSTER-BASED SECONDARY HEADER ALIGNMENT
+                                # Calculate X-axis distance from each candidate to secondary header
+                                distances: List[Tuple[Dict, float]] = []
                                 for c in numeric_cands:
-                                    dists.append(abs(float(c['x0']) - float(sec_header_x0)))
+                                    d = abs(float(c['x0']) - float(sec_header_x0))
+                                    distances.append((c, d))
 
-                                if dists:
-                                    # Proportional distance-based scoring
-                                    d_min = min(dists)
-                                    for c, d in zip(numeric_cands, dists):
-                                        if d == 0:
-                                            h = 1.0
+                                if distances:
+                                    # Sort by distance to find clusters
+                                    distances.sort(key=lambda x: x[1])
+                                    d_min = distances[0][1]
+
+                                    # CLUSTER BOUNDARY DETECTION via gap analysis
+                                    # Look for large gaps that indicate different column/header
+                                    cluster_boundary = None
+                                    if len(distances) >= 3:  # Need at least 3 for meaningful clustering
+                                        for i in range(1, len(distances) - 1):
+                                            current_dist = distances[i][1]
+                                            next_dist = distances[i+1][1]
+                                            gap = next_dist - current_dist
+
+                                            # Calculate spread within potential cluster
+                                            cluster_spread = distances[i][1] - distances[0][1]
+                                            avg_spacing = cluster_spread / i if i > 0 else 0
+
+                                            # Gap detection: if next candidate is 2x+ further than avg spacing
+                                            # OR gap is larger than 10px minimum threshold
+                                            if gap > max(10, 2.0 * avg_spacing):
+                                                cluster_boundary = next_dist
+                                                break
+
+                                    # Fallback: use 20px window if no clear boundary detected
+                                    if cluster_boundary is None:
+                                        cluster_boundary = d_min + 20
+
+                                    # Score based on cluster membership
+                                    for c, d in distances:
+                                        if d <= cluster_boundary:
+                                            # Inside primary cluster - gentle scoring within cluster
+                                            if d == d_min:
+                                                h = 1.0
+                                            else:
+                                                # Gentle decay within cluster (characteristic length = 10px)
+                                                h = max(0.3, 1.0 / (1.0 + (d - d_min) / 10.0))
                                         else:
-                                            # Proportional decay with characteristic distance of 20 pixels
-                                            h = max(0.0, 1.0 / (1.0 + (d - d_min) / 20.0))
+                                            # Outside cluster - essentially excluded (different column)
+                                            h = 0.05
+
                                         header_alignment[id(c)] = h
 
                             scored = []
@@ -4667,31 +4798,60 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     s += delta
                                     comp["value_header"] += delta
 
-                                # 3. RANGE VALIDATION (max 2.0 points, equal weight to secondary header)
+                                # 3. COMFORT ZONE RANGE VALIDATION (max 3.0 points for comfortable values)
                                 if c['nval'] is not None and spec.range_min is not None and spec.range_max is not None:
                                     range_span = spec.range_max - spec.range_min
                                     tolerance_20 = 0.2 * range_span
                                     tolerance_50 = 0.5 * range_span
 
-                                    # NULLIFIER: Value is >50% off range - mark as invalid
+                                    # Calculate position within range (0.0 = min, 1.0 = max)
+                                    if range_span > 0:
+                                        range_position = (c['nval'] - spec.range_min) / range_span
+                                    else:
+                                        range_position = 0.5
+
+                                    # 5-TIER COMFORT ZONE SCORING
+                                    # Tier 0: FAR OUTSIDE (>50% beyond range) → Nullify
                                     if (c['nval'] < spec.range_min - tolerance_50 or
                                         c['nval'] > spec.range_max + tolerance_50):
                                         is_nullified = True
                                         # Don't add any score for nullified candidates
-                                    # Exact match to boundary - reduced bonus (likely grabbing range spec, not actual value)
+
+                                    # Tier 1: EXACT BOUNDARY MATCH → Low score (likely document guidance text)
                                     elif c['nval'] == spec.range_min or c['nval'] == spec.range_max:
-                                        delta = 1.6  # Reduced from 2.0 to discourage boundary values
+                                        delta = 0.8  # Reduced from 1.6 - strong penalty for boundary values
                                         s += delta
                                         comp["range_validation"] += delta
-                                    # Between 20% and 50% outside range - 10% penalty
-                                    elif not ((spec.range_min - tolerance_20) <= c['nval'] <= (spec.range_max + tolerance_20)):
-                                        # Value is outside the 20% tolerance but within 50%
-                                        delta = 1.8  # 2.0 - 10% penalty
+
+                                    # Tiers 2-5: Calculate if value is inside or outside range
+                                    elif not (spec.range_min <= c['nval'] <= spec.range_max):
+                                        # OUTSIDE range - determine how far
+                                        if c['nval'] < spec.range_min:
+                                            pct_outside = (spec.range_min - c['nval']) / range_span
+                                        else:
+                                            pct_outside = (c['nval'] - spec.range_max) / range_span
+
+                                        # Tier 2: SLIGHTLY OUTSIDE (10-20% beyond range)
+                                        if pct_outside <= 0.2:
+                                            delta = 1.0  # Possible OCR error
+                                            s += delta
+                                            comp["range_validation"] += delta
+                                        # Tier 3: MODERATELY OUTSIDE (20-50% beyond range)
+                                        else:
+                                            delta = 0.3  # Very suspicious
+                                            s += delta
+                                            comp["range_validation"] += delta
+
+                                    # INSIDE range - check if comfortable or near boundary
+                                    # Tier 4: COMFORTABLE WITHIN (5-95% of range) → Highest score!
+                                    elif 0.05 <= range_position <= 0.95:
+                                        delta = 3.0  # Sweet spot - likely real data
                                         s += delta
                                         comp["range_validation"] += delta
-                                    # Within range OR up to 20% tolerance outside range = full match
+
+                                    # Tier 5: NEAR BOUNDARY BUT INSIDE (0-5% or 95-100%)
                                     else:
-                                        delta = 2.0
+                                        delta = 1.5  # Suspicious but possible
                                         s += delta
                                         comp["range_validation"] += delta
 
@@ -4714,6 +4874,18 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 delta = 0.1 * (1.0 / (1.0 + dx/10.0))
                                 s += delta
                                 comp["label_proximity"] += delta
+
+                                # 7. HIGH CONFIDENCE MULTIPLIER
+                                # When both secondary alignment AND comfortable range align, boost total score
+                                hdr_align = header_alignment.get(id(c), 0.0)
+                                range_score = comp.get("range_validation", 0.0)
+                                if hdr_align is not None and hdr_align > 0.8 and range_score >= 2.5:
+                                    # Both secondary alignment (>0.8) and comfortable range (≥2.5) are strong
+                                    confidence_multiplier = 1.3
+                                    s *= confidence_multiplier
+                                    comp["confidence_multiplier"] = confidence_multiplier
+                                else:
+                                    comp["confidence_multiplier"] = 1.0
 
                                 if debug_mode:
                                     print(f"[SMART DEBUG][OCR] cand_score dpi={dpi} page={p} val={c['text']} s={s:.3f} breakdown={comp} nullified={is_nullified}", file=sys.stderr)
@@ -5128,6 +5300,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             debug_group_before_page=debug_group_before_page_global,
                             debug_group_before_text=debug_group_before_text_global,
                             debug_group_region_applied=debug_group_region_applied_global,
+                            debug_fallback_eps_used=use_fallback_eps,
                         )
 
         if best_info:
@@ -5178,6 +5351,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                  debug_group_before_page=debug_group_before_page_global,
                  debug_group_before_text=debug_group_before_text_global,
                  debug_group_region_applied=debug_group_region_applied_global,
+                 debug_fallback_eps_used=use_fallback_eps,
             )
 
     # If still not found, try to return best context line (by fuzzy score) to aid debugging
@@ -8307,10 +8481,10 @@ def run_scan(
 
     # Remove legacy aggregate artifact if present
     try:
-        agg_path = Path("Product_Data_File") / "EIDP_data.csv"
-        if agg_path.exists():
-            agg_path.unlink(missing_ok=True)  # type: ignore[call-arg]
-            print(f"[CLEANUP] Removed legacy aggregate -> {agg_path}")
+        for agg_path in (Path("EIDP_data.csv"), Path("Product_Data_File") / "EIDP_data.csv"):
+            if agg_path.exists():
+                agg_path.unlink(missing_ok=True)  # type: ignore[call-arg]
+                print(f"[CLEANUP] Removed legacy aggregate -> {agg_path}")
     except Exception:
         pass
 
@@ -8480,9 +8654,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-

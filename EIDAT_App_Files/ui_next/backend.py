@@ -12,6 +12,11 @@ from typing import Dict, Iterable, Mapping, Optional
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 ROOT = APP_ROOT.parent  # repository root that holds user data folders
+EXPORTS_ROOT = ROOT / "Product_Data_File"  # default for run_data/plots
+LEGACY_EXPORTS_ROOT = ROOT  # legacy run_data/plots when they were root-level
+MASTER_DB_ROOT = ROOT / "Product_Data_File" / "Master_Database"  # new home for master/registry/cell state
+LEGACY_MASTER_ROOT = ROOT  # previous root-based location for master/registry
+LEGACY_MASTER_ROOT_2 = ROOT / "Product_Data_File"  # very old location
 DEFAULT_TERMS_XLSX = ROOT / "user_inputs" / "terms.schema.smartsnap.xlsx"
 DEFAULT_PLOT_TERMS_XLSX = ROOT / "user_inputs" / "plot_terms.xlsx"
 DEFAULT_PROPOSED_PLOTS_JSON = ROOT / "user_inputs" / "proposed_plots.json"
@@ -20,8 +25,10 @@ DEFAULT_REPO_ROOT = ROOT / "Data Packages"
 DEFAULT_PDF_DIR = DEFAULT_REPO_ROOT
 SCANNER_ENV = ROOT / "user_inputs" / "scanner.env"
 APP_ENTRY = APP_ROOT / "Application" / "eidp_term_scanner.py"
-RUNS_DIR = ROOT / "Product_Data_File" / "run_data"
-PLOTS_DIR = ROOT / "Product_Data_File" / "plots"
+RUNS_DIR = EXPORTS_ROOT / "run_data"
+LEGACY_RUNS_DIR = LEGACY_EXPORTS_ROOT / "run_data"
+PLOTS_DIR = EXPORTS_ROOT / "plots"
+LEGACY_PLOTS_DIR = LEGACY_EXPORTS_ROOT / "plots"
 TERMS_TEMPLATE_SHEET = "Template"
 TERMS_SCHEMA_COLUMNS = [
     "Data Group",
@@ -45,8 +52,18 @@ TERMS_SCHEMA_COLUMNS = [
 ]
 TERMS_MODE_CHOICES = ["smart", "full table"]
 TERMS_SMART_TYPE_CHOICES = ["", "auto", "number", "date", "time", "title"]
-MASTER_XLSX = ROOT / "Product_Data_File" / "master.xlsx"
-MASTER_CSV = ROOT / "Product_Data_File" / "master.csv"
+MASTER_XLSX = MASTER_DB_ROOT / "master.xlsx"
+MASTER_CSV = MASTER_DB_ROOT / "master.csv"
+LEGACY_MASTER_XLSX = LEGACY_MASTER_ROOT / "master.xlsx"
+LEGACY_MASTER_CSV = LEGACY_MASTER_ROOT / "master.csv"
+LEGACY2_MASTER_XLSX = LEGACY_MASTER_ROOT_2 / "master.xlsx"
+LEGACY2_MASTER_CSV = LEGACY_MASTER_ROOT_2 / "master.csv"
+REG_XLSX = MASTER_DB_ROOT / "run_registry.xlsx"
+REG_CSV = MASTER_DB_ROOT / "run_registry.csv"
+LEGACY_REG_XLSX = LEGACY_MASTER_ROOT / "run_registry.xlsx"
+LEGACY_REG_CSV = LEGACY_MASTER_ROOT / "run_registry.csv"
+LEGACY2_REG_XLSX = LEGACY_MASTER_ROOT_2 / "run_registry.xlsx"
+LEGACY2_REG_CSV = LEGACY_MASTER_ROOT_2 / "run_registry.csv"
 MASTER_BASE_COLUMNS = {"Term Label", "Data Group", "Units", "Min", "Max"}
 
 
@@ -128,6 +145,49 @@ def set_repo_root(p: Path) -> None:
     env = parse_scanner_env(SCANNER_ENV)
     env["REPO_ROOT"] = str(Path(p).expanduser())
     save_scanner_env(env)
+
+
+def _prefer_existing(*paths: Path) -> Path:
+    """Return the first existing path, or the first element if none exist."""
+    for p in paths:
+        if p.exists():
+            return p
+    return paths[0]
+
+
+def master_xlsx_for_read() -> Path:
+    """Prefer the new master.xlsx location, fall back to legacy/root variants."""
+    return _prefer_existing(MASTER_XLSX, LEGACY_MASTER_XLSX, LEGACY2_MASTER_XLSX)
+
+
+def master_csv_for_read() -> Path:
+    """Prefer the new master.csv location, fall back to legacy/root variants."""
+    return _prefer_existing(MASTER_CSV, LEGACY_MASTER_CSV, LEGACY2_MASTER_CSV)
+
+
+def registry_csv_for_read() -> Path:
+    """Prefer the new run_registry.csv location, fall back to legacy/root variants."""
+    return _prefer_existing(REG_CSV, LEGACY_REG_CSV, LEGACY2_REG_CSV)
+
+
+def registry_xlsx_for_read() -> Path:
+    """Prefer the new run_registry.xlsx location, fall back to legacy/root variants."""
+    return _prefer_existing(REG_XLSX, LEGACY_REG_XLSX, LEGACY2_REG_XLSX)
+
+
+def run_roots() -> list[Path]:
+    """Return new run_data root first, with legacy Product_Data_File/run_data as fallback."""
+    roots = [RUNS_DIR]
+    if LEGACY_RUNS_DIR.exists():
+        roots.append(LEGACY_RUNS_DIR)
+    return roots
+
+
+def plots_root_for_open() -> Path:
+    """Prefer the new plots folder, fall back to legacy Product_Data_File/plots if present."""
+    if PLOTS_DIR.exists() or not LEGACY_PLOTS_DIR.exists():
+        return PLOTS_DIR
+    return LEGACY_PLOTS_DIR
 
 
 def _venv_python_from(path: Path) -> Path:
@@ -219,6 +279,9 @@ def compile_master_from_state() -> None:
 
     Unlike compile_master(), this runs synchronously in the current process.
     """
+    import sys as _sys
+    if str(APP_ROOT) not in _sys.path:
+        _sys.path.insert(0, str(APP_ROOT))
     from scripts.compile_master import build_master_from_state, write_master
 
     # Build from state
@@ -488,7 +551,8 @@ def _clean_master_cell(value: object) -> str:
 def _read_master_table() -> tuple[list[str], list[dict[str, str]]]:
     header: list[str] = []
     rows: list[dict[str, str]] = []
-    if not MASTER_XLSX.exists():
+    master_path = master_xlsx_for_read()
+    if not master_path.exists():
         return header, rows
 
     try:
@@ -496,7 +560,7 @@ def _read_master_table() -> tuple[list[str], list[dict[str, str]]]:
         # Preserve textual sentinels such as 'N/A' instead of coercing them
         # to NaN so downstream logic can distinguish between true blanks and
         # explicit "not applicable" markers.
-        df = pd.read_excel(MASTER_XLSX, dtype=object, keep_default_na=False)
+        df = pd.read_excel(master_path, dtype=object, keep_default_na=False)
         header = [str(col) for col in df.columns]
         raw_rows = df.fillna("").to_dict(orient="records")
         for record in raw_rows:
@@ -506,7 +570,7 @@ def _read_master_table() -> tuple[list[str], list[dict[str, str]]]:
     except Exception:
         try:
             from openpyxl import load_workbook  # type: ignore
-            wb = load_workbook(str(MASTER_XLSX), data_only=True)
+            wb = load_workbook(str(master_path), data_only=True)
             ws = wb.active
             first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
             header = [(_clean_master_cell(val) or f"column_{idx}") for idx, val in enumerate(first_row)]
@@ -844,11 +908,11 @@ def _load_run_terms_map(reg_map: dict[str, dict[str, str]]) -> dict[str, set[tup
 def _read_run_registry_map() -> dict[str, dict[str, str]]:
     """Return mapping {serial_component: {run_date, run_folder, program_name, vehicle_number}}.
 
-    Reads Product_Data_File/run_registry.(xlsx|csv). Missing file -> empty map.
+    Reads run_registry.(xlsx|csv) from Product_Data_File/Master_Database, falling back to
+    legacy root or Product_Data_File locations. Missing file -> empty map.
     """
-    reg_dir = ROOT / "Product_Data_File"
-    rx = reg_dir / "run_registry.xlsx"
-    rc = reg_dir / "run_registry.csv"
+    rx = registry_xlsx_for_read()
+    rc = registry_csv_for_read()
     out: dict[str, dict[str, str]] = {}
     if rc.exists():
         try:
@@ -875,7 +939,8 @@ def _read_run_registry_map() -> dict[str, dict[str, str]]:
             rows = list(ws.iter_rows(values_only=True)) if ws else []
             if rows:
                 headers = [str(x) if x is not None else "" for x in rows[0]]
-                with rc.open("w", encoding="utf-8", newline="") as f:
+                REG_CSV.parent.mkdir(parents=True, exist_ok=True)
+                with REG_CSV.open("w", encoding="utf-8", newline="") as f:
                     w = _csv.writer(f)
                     w.writerow(headers)
                     for r in rows[1:]:
@@ -893,10 +958,10 @@ def _read_run_registry_map() -> dict[str, dict[str, str]]:
 
 def _write_run_registry_map(rows: dict[str, dict[str, str]]) -> None:
     """Write the run registry to CSV only. Remove any legacy XLSX to avoid drift."""
-    reg_dir = ROOT / "Product_Data_File"
+    reg_dir = MASTER_DB_ROOT
     reg_dir.mkdir(parents=True, exist_ok=True)
-    rx = reg_dir / "run_registry.xlsx"
-    rc = reg_dir / "run_registry.csv"
+    rx = REG_XLSX
+    rc = REG_CSV
     columns = ["serial_component", "program_name", "vehicle_number", "run_date", "run_folder"]
     try:
         with rc.open("w", encoding="utf-8", newline="") as f:
@@ -917,6 +982,14 @@ def _write_run_registry_map(rows: dict[str, dict[str, str]]) -> None:
     try:
         if rx.exists():
             rx.unlink()
+        if LEGACY_REG_XLSX.exists():
+            LEGACY_REG_XLSX.unlink()
+        if LEGACY2_REG_XLSX.exists():
+            LEGACY2_REG_XLSX.unlink()
+        if LEGACY_REG_CSV.exists() and LEGACY_REG_CSV != rc:
+            LEGACY_REG_CSV.unlink()
+        if LEGACY2_REG_CSV.exists() and LEGACY2_REG_CSV != rc:
+            LEGACY2_REG_CSV.unlink()
     except Exception:
         pass
 
@@ -1201,45 +1274,53 @@ def _gather_serials_from_run(run_dir: Path) -> dict[str, tuple[str, str]]:
 def rebuild_registry_from_run_data() -> dict[str, dict[str, str]]:
     """Rebuild run_registry.csv by scanning run_data folders."""
     rows: dict[str, dict[str, str]] = {}
-    if not RUNS_DIR.exists():
+    roots = run_roots()
+    if not any(r.exists() for r in roots):
         _write_run_registry_map(rows)
         return rows
     try:
         existing = _read_run_registry_map()
     except Exception:
         existing = {}
-    for run_dir in sorted(RUNS_DIR.iterdir()):
-        if not run_dir.is_dir():
+    for root in roots:
+        if not root.exists():
             continue
-        try:
-            run_dt = datetime.strptime(run_dir.name, "%Y%m%d_%H%M%S")
-        except Exception:
-            run_dt = datetime.fromtimestamp(run_dir.stat().st_mtime)
-        display_dt = run_dt.strftime("%Y-%m-%d %H:%M:%S")
-        serial_meta = _gather_serials_from_run(run_dir)
-        for serial, (program, vehicle) in serial_meta.items():
-            prev = rows.get(serial) or existing.get(serial)
-            if prev:
-                prev_dt = _parse_dt(prev.get("run_date", ""))
-                if prev_dt and prev_dt >= run_dt:
-                    rows[serial] = prev
-                    continue
-            rel_run = str(run_dir.relative_to(ROOT))
-            rows[serial] = {
-                "serial_component": serial,
-                "program_name": program,
-                "vehicle_number": vehicle,
-                "run_date": display_dt,
-                "run_folder": rel_run,
-            }
+        for run_dir in sorted(root.iterdir()):
+            if not run_dir.is_dir():
+                continue
+            try:
+                run_dt = datetime.strptime(run_dir.name, "%Y%m%d_%H%M%S")
+            except Exception:
+                run_dt = datetime.fromtimestamp(run_dir.stat().st_mtime)
+            display_dt = run_dt.strftime("%Y-%m-%d %H:%M:%S")
+            serial_meta = _gather_serials_from_run(run_dir)
+            for serial, (program, vehicle) in serial_meta.items():
+                prev = rows.get(serial) or existing.get(serial)
+                if prev:
+                    prev_dt = _parse_dt(prev.get("run_date", ""))
+                    if prev_dt and prev_dt >= run_dt:
+                        rows[serial] = prev
+                        continue
+                rel_run = str(run_dir.relative_to(ROOT))
+                rows[serial] = {
+                    "serial_component": serial,
+                    "program_name": program,
+                    "vehicle_number": vehicle,
+                    "run_date": display_dt,
+                    "run_folder": rel_run,
+                }
     _write_run_registry_map(rows)
     return rows
 
 
 def open_last_run_folder() -> None:
-    if not RUNS_DIR.exists():
+    run_dirs = []
+    for root in run_roots():
+        if root.exists():
+            run_dirs.extend([p for p in root.iterdir() if p.is_dir()])
+    if not run_dirs:
         raise FileNotFoundError(f"No run_data at {RUNS_DIR}")
-    latest = max((p for p in RUNS_DIR.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, default=None)
+    latest = max(run_dirs, key=lambda p: p.stat().st_mtime, default=None)
     if not latest:
         raise FileNotFoundError("No run folders found")
     open_path(latest)
@@ -1250,8 +1331,8 @@ def open_run_data_root() -> None:
 
 
 def open_run_registry() -> None:
-    reg_xlsx = ROOT / "Product_Data_File" / "run_registry.xlsx"
-    reg_csv = ROOT / "Product_Data_File" / "run_registry.csv"
+    reg_xlsx = registry_xlsx_for_read()
+    reg_csv = registry_csv_for_read()
     target = reg_xlsx if reg_xlsx.exists() else (reg_csv if reg_csv.exists() else None)
     if not target:
         raise FileNotFoundError("No run registry found (create by running a scan)")
@@ -1264,8 +1345,9 @@ def _resolve_run_folder(value: str) -> Path:
     """Resolve a run_folder value from registry or cell state to an absolute path.
 
     - Absolute paths are returned as-is.
-    - Bare folder names like ``20250115_103000`` are treated as children of RUNS_DIR.
-    - Other relative paths are treated as ROOT-relative (e.g., ``Product_Data_File/run_data/...``).
+    - Bare folder names like ``20250115_103000`` are treated as children of RUNS_DIR
+      (falling back to legacy run_data if present).
+    - Other relative paths are treated as ROOT-relative (e.g., ``run_data/...``).
     """
     try:
         p = Path(value)
@@ -1275,8 +1357,14 @@ def _resolve_run_folder(value: str) -> Path:
         return p
     # Single path component -> interpret as a run_data subfolder name
     if len(p.parts) == 1:
-        return RUNS_DIR / p
-    # Otherwise treat as ROOT-relative (e.g. "Product_Data_File/run_data/...")
+        candidate = RUNS_DIR / p
+        if candidate.exists():
+            return candidate
+        legacy_candidate = LEGACY_RUNS_DIR / p
+        if legacy_candidate.exists():
+            return legacy_candidate
+        return candidate
+    # Otherwise treat as ROOT-relative (e.g. "run_data/..." or legacy Product_Data_File/...)
     return ROOT / p
 
 
@@ -1285,7 +1373,6 @@ def clear_stale_run_data() -> tuple[int, int]:
 
     Returns (deleted_count, kept_count).
     """
-    runs_root = RUNS_DIR
     deleted = 0
     kept = 0
 
@@ -1320,29 +1407,34 @@ def clear_stale_run_data() -> tuple[int, int]:
         # If cell state module isn't available, just use registry references
         pass
     try:
-        if not runs_root.exists():
+        any_root = False
+        for root in run_roots():
+            if not root.exists():
+                continue
+            any_root = True
+            for child in root.iterdir():
+                try:
+                    if not child.is_dir():
+                        continue
+                    rchild = child.resolve()
+                    if rchild in referenced:
+                        kept += 1
+                        continue
+                    # Remove stale folder entirely
+                    shutil.rmtree(str(child), ignore_errors=True)
+                    deleted += 1
+                except Exception:
+                    # Ignore individual folder errors
+                    pass
+        if not any_root:
             return (0, 0)
-        for child in runs_root.iterdir():
-            try:
-                if not child.is_dir():
-                    continue
-                rchild = child.resolve()
-                if rchild in referenced:
-                    kept += 1
-                    continue
-                # Remove stale folder entirely
-                shutil.rmtree(str(child), ignore_errors=True)
-                deleted += 1
-            except Exception:
-                # Ignore individual folder errors
-                pass
     except Exception:
         pass
     return (deleted, kept)
 
 
 def open_master_workbook() -> None:
-    xlsx = ROOT / "Product_Data_File" / "master.xlsx"
+    xlsx = master_xlsx_for_read()
     if not xlsx.exists():
         raise FileNotFoundError("master.xlsx not found (compile first)")
     open_path(xlsx)
@@ -1355,11 +1447,12 @@ def enrich_run_registry() -> subprocess.Popen:  # type: ignore[dead-code]
 
 def open_plots_folder() -> None:
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    open_path(PLOTS_DIR)
+    open_path(plots_root_for_open())
 
 
 def open_plots_summary() -> None:
-    target = PLOTS_DIR / "plots_summary.xlsx"
+    target_root = plots_root_for_open()
+    target = target_root / "plots_summary.xlsx"
     if not target.exists():
         raise FileNotFoundError("No plots_summary.xlsx found (export first)")
     open_path(target)
@@ -1368,7 +1461,8 @@ def open_plots_summary() -> None:
 def ensure_scaffold() -> None:
     (ROOT / "user_inputs").mkdir(parents=True, exist_ok=True)
     DEFAULT_PDF_DIR.mkdir(parents=True, exist_ok=True)
-    (ROOT / "Product_Data_File" / "run_data").mkdir(parents=True, exist_ok=True)
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    MASTER_DB_ROOT.mkdir(parents=True, exist_ok=True)
     if not SCANNER_ENV.exists():
         save_scanner_env({"QUIET": "1"})
 

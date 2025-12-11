@@ -37,9 +37,9 @@ Notes:
   - Python: `py .\EIDAT_App_Files\Application\eidp_term_scanner.py --input .\user_inputs\terms.schema.smartsnap.xlsx --pdf-folder ".\Data Packages" --window-chars 400`
 
 Minimal transfer (work PC): copy the `EIDAT_App_Files` folder (contains `Application`, `ui_next`, `scripts`, vendored `Lib`, and optional `.venv`) plus `run.bat`, `run_gui.bat`, and `install.bat`. Bring your own `user_inputs` and `Data Packages` folders or let `install.bat` scaffold them. Point the scanner at your existing PDF repository (e.g., `Data Packages`). Set `VENV_DIR` in `scanner.env` if you want the venv outside the repo.
-Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
-- A persistent run registry is maintained at `Product_Data_File\run_registry.xlsx` (CSV fallback if Excel not available).
-- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `EIDAT_App_Files\scripts\compile_master.py` to write `Product_Data_File\master.xlsx` (CSV fallback).
+Outputs are saved under `Product_Data_File\run_data\<timestamp>` (legacy runs may still live in `run_data`).
+- A persistent run registry is maintained at `Product_Data_File\Master_Database\run_registry.xlsx` (CSV fallback).
+- To build a consolidated workbook across runs, use the "Compile Master" action (GUI) or run `EIDAT_App_Files\scripts\compile_master.py` to write `Product_Data_File\Master_Database\master.xlsx` (CSV fallback).
 
 ---
 
@@ -52,8 +52,8 @@ Outputs are saved under `Product_Data_File\run_data\<timestamp>`.
   - `scan_results.results.csv` and `scan_results.metadata.csv`
 - `scan_results_flat.csv` and `scan_results.json` (audit) also live in the per-run folder
   - `by_pdf/` folder contains one JSON per PDF with just that fileâ€™s term results
-- Persistent cross-run registry: `Product_Data_File\run_registry.xlsx` (or `run_registry.csv`).
-- Optional consolidated workbook via compile: `Product_Data_File\master.xlsx` (or `master.csv`).
+- Persistent cross-run registry: `Product_Data_File\Master_Database\run_registry.xlsx` (or `run_registry.csv`).
+- Optional consolidated workbook via compile: `Product_Data_File\Master_Database\master.xlsx` (or `master.csv`).
 
 ---
 

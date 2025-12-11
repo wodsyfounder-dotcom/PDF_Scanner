@@ -37,9 +37,22 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 
 logger = logging.getLogger(__name__)
 
+# Prefer new root-level artifacts, with legacy Product_Data_File as fallback for reads.
+def _prefer_new(new_path: Path, *legacy_paths: Path) -> Path:
+    if new_path.exists():
+        return new_path
+    for lp in legacy_paths:
+        if lp.exists():
+            return lp
+    return new_path
+
 # Path to the state file
-STATE_FILE_PATH = Path("Product_Data_File/master_cell_state.json")
-MASTER_XLSX_PATH = Path("Product_Data_File/master.xlsx")
+STATE_FILE_PATH = Path("Product_Data_File/Master_Database/master_cell_state.json")
+LEGACY_STATE_FILE_PATH = Path("master_cell_state.json")
+LEGACY_STATE_FILE_PATH_2 = Path("Product_Data_File/master_cell_state.json")
+MASTER_XLSX_PATH = Path("Product_Data_File/Master_Database/master.xlsx")
+LEGACY_MASTER_XLSX_PATH = Path("master.xlsx")
+LEGACY_MASTER_XLSX_PATH_2 = Path("Product_Data_File/master.xlsx")
 
 
 def load_cell_state() -> Dict[str, Dict[str, Dict[str, Any]]]:
@@ -50,12 +63,13 @@ def load_cell_state() -> Dict[str, Dict[str, Dict[str, Any]]]:
         Dictionary mapping serial_component -> term -> {value, last_updated, run_folder}
         Returns empty dict if file doesn't exist.
     """
-    if not STATE_FILE_PATH.exists():
-        logger.info(f"Cell state file not found at {STATE_FILE_PATH}, returning empty state")
+    state_path = _prefer_new(STATE_FILE_PATH, LEGACY_STATE_FILE_PATH, LEGACY_STATE_FILE_PATH_2)
+    if not state_path.exists():
+        logger.info(f"Cell state file not found at {state_path}, returning empty state")
         return {}
 
     try:
-        with open(STATE_FILE_PATH, 'r', encoding='utf-8') as f:
+        with open(state_path, 'r', encoding='utf-8') as f:
             state = json.load(f)
         logger.info(f"Loaded cell state with {len(state)} serial components")
         return state
@@ -74,18 +88,25 @@ def save_cell_state(state: Dict[str, Dict[str, Dict[str, Any]]]) -> None:
     Args:
         state: Dictionary mapping serial_component -> term -> {value, last_updated, run_folder}
     """
+    state_path = STATE_FILE_PATH
     try:
         # Ensure parent directory exists
-        STATE_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write to temp file first, then rename (atomic on most filesystems)
-        temp_path = STATE_FILE_PATH.with_suffix('.tmp')
+        temp_path = state_path.with_suffix('.tmp')
         with open(temp_path, 'w', encoding='utf-8') as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
 
         # Atomic rename
-        temp_path.replace(STATE_FILE_PATH)
+        temp_path.replace(state_path)
         logger.info(f"Saved cell state with {len(state)} serial components")
+        try:
+            for legacy_state in (LEGACY_STATE_FILE_PATH, LEGACY_STATE_FILE_PATH_2):
+                if legacy_state.exists() and legacy_state != state_path:
+                    legacy_state.unlink()
+        except Exception:
+            pass
 
     except Exception as e:
         logger.error(f"Failed to save cell state: {e}")
@@ -191,13 +212,14 @@ def apply_state_to_master_incremental(serial_component: str, term_values: Dict[s
         serial_component: The serial component ID (column to update, e.g., "SN0000")
         term_values: Dictionary mapping term names to values
     """
-    if not MASTER_XLSX_PATH.exists():
-        logger.warning(f"master.xlsx not found at {MASTER_XLSX_PATH}, skipping incremental update")
+    master_path = _prefer_new(MASTER_XLSX_PATH, LEGACY_MASTER_XLSX_PATH, LEGACY_MASTER_XLSX_PATH_2)
+    if not master_path.exists():
+        logger.warning(f"master.xlsx not found at {master_path}, skipping incremental update")
         return
 
     try:
         # Load workbook
-        wb = openpyxl.load_workbook(MASTER_XLSX_PATH)
+        wb = openpyxl.load_workbook(master_path)
         ws = wb.active
 
         # Find header row (row 1) - get column index for this serial_component
@@ -243,7 +265,13 @@ def apply_state_to_master_incremental(serial_component: str, term_values: Dict[s
 
         # Save workbook
         if updated_count > 0:
+            MASTER_XLSX_PATH.parent.mkdir(parents=True, exist_ok=True)
             wb.save(MASTER_XLSX_PATH)
+            try:
+                if master_path != MASTER_XLSX_PATH and master_path.exists():
+                    master_path.unlink()
+            except Exception:
+                pass
             logger.info(f"Updated {updated_count} cells in master.xlsx for {serial_component} (overriding existing values)")
         else:
             logger.debug(f"No cells updated for {serial_component}")
@@ -306,13 +334,14 @@ def sync_cell_state_with_master() -> None:
     This ensures deleted terms and serial components don't reappear when compiling from state.
     """
     # Load master.xlsx to determine which terms and serial components should exist
-    if not MASTER_XLSX_PATH.exists():
-        logger.warning(f"master.xlsx not found at {MASTER_XLSX_PATH}, cannot sync cell state")
+    master_path = _prefer_new(MASTER_XLSX_PATH, LEGACY_MASTER_XLSX_PATH, LEGACY_MASTER_XLSX_PATH_2)
+    if not master_path.exists():
+        logger.warning(f"master.xlsx not found at {master_path}, cannot sync cell state")
         return
 
     try:
         # Read master.xlsx to get list of term_labels and serial components
-        df = pd.read_excel(MASTER_XLSX_PATH, dtype=object, keep_default_na=False)
+        df = pd.read_excel(master_path, dtype=object, keep_default_na=False)
 
         # Skip first 3 metadata rows (Program, Space Vehicle, Data)
         # Term rows start at row 4 (index 3)

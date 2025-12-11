@@ -2,7 +2,7 @@
 """
 Generate or refresh a plotting configuration sheet (plot_terms.xlsx).
 
-Source: Product_Data_File/master.xlsx
+Source: master.xlsx (repo root; legacy fallback Product_Data_File/master.xlsx)
 Output: user_inputs/plot_terms.xlsx
 
 Each row in the sheet corresponds to a unique (Term Label, Data Group)
@@ -25,12 +25,26 @@ from typing import List, Dict, Any, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPORTS = ROOT / "Product_Data_File"
-MASTER_XLSX = EXPORTS / "master.xlsx"
-MASTER_CSV = EXPORTS / "master.csv"
+MASTER_DB = ROOT / "Product_Data_File" / "Master_Database"
+EXPORTS_NEW = MASTER_DB
+EXPORTS_LEGACY = ROOT
+EXPORTS_LEGACY2 = ROOT / "Product_Data_File"
+MASTER_XLSX = EXPORTS_NEW / "master.xlsx"
+MASTER_CSV = EXPORTS_NEW / "master.csv"
+LEGACY_MASTER_XLSX = EXPORTS_LEGACY / "master.xlsx"
+LEGACY_MASTER_CSV = EXPORTS_LEGACY / "master.csv"
+LEGACY2_MASTER_XLSX = EXPORTS_LEGACY2 / "master.xlsx"
+LEGACY2_MASTER_CSV = EXPORTS_LEGACY2 / "master.csv"
 USER = ROOT / "user_inputs"
 OUT_XLSX = USER / "plot_terms.xlsx"
 OUT_CSV = USER / "plot_terms.csv"
+
+
+def _prefer_existing(*paths: Path) -> Path:
+    for p in paths:
+        if p.exists():
+            return p
+    return paths[0]
 
 
 PREFERRED_AXIS = ("SN", "Program", "Space Vehicle")
@@ -82,12 +96,17 @@ def read_master() -> Tuple[List[str], List[Dict[str, Any]]]:
         print("[ERROR] pandas is required to read the master workbook.")
         return [], []
 
-    if not MASTER_XLSX.exists():
+    master_xlsx = _prefer_existing(MASTER_XLSX, LEGACY_MASTER_XLSX, LEGACY2_MASTER_XLSX)
+    master_csv = _prefer_existing(MASTER_CSV, LEGACY_MASTER_CSV, LEGACY2_MASTER_CSV)
+    if not master_xlsx.exists() and not master_csv.exists():
         print("[ERROR] master.xlsx not found. Compile master first.")
         return [], []
 
     try:
-        df = pd.read_excel(MASTER_XLSX, sheet_name="master")
+        if master_xlsx.exists():
+            df = pd.read_excel(master_xlsx, sheet_name="master")
+        else:
+            df = pd.read_csv(master_csv)
         serials, records = _prepare_master_df(df)
         return serials, records
     except Exception as e:

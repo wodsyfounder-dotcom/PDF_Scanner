@@ -68,8 +68,8 @@ if errorlevel 1 (
 rem --- Scaffold expected folders and sample terms file ---
 if not exist "%ROOT%user_inputs" mkdir "%ROOT%user_inputs"
 if not exist "%ROOT%Data Packages" mkdir "%ROOT%Data Packages"
-if not exist "%ROOT%Product_Data_File" mkdir "%ROOT%Product_Data_File"
-if not exist "%ROOT%Product_Data_File\run_data" mkdir "%ROOT%Product_Data_File\run_data"
+if not exist "%ROOT%Product_Data_File\\run_data" mkdir "%ROOT%Product_Data_File\\run_data"
+if not exist "%ROOT%Product_Data_File\\Master_Database" mkdir "%ROOT%Product_Data_File\\Master_Database"
 if not exist "%ROOT%user_inputs\terms.schema.smartsnap.xlsx" (
   echo [SETUP] Creating Smart-Snap template (user_inputs\terms.schema.smartsnap.xlsx)
   "%VPY%" "%APP_ROOT%scripts\generate_terms_schema_smartsnap.py"
