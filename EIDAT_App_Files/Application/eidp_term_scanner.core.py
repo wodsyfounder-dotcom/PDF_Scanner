@@ -26,6 +26,7 @@ import sys
 import difflib
 import tempfile
 import subprocess
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -101,12 +102,28 @@ except Exception:
 _HAVE_PYMUPDF = False
 _HAVE_PDFMINER = False
 _HAVE_PYPDF = False
-_HAVE_TESSERACT = False
 _HAVE_PDF2IMAGE = False
 _HAVE_OCRMYPDF = False
 _OCRMYPDF_BIN: Optional[str] = None
 _HAVE_PADDLE_OCR = False
 _HAVE_EASYOCR = False
+_HAVE_TESSERACT = False
+_TESSERACT_BIN: Optional[str] = None
+
+def _detect_tesseract_binary() -> Optional[str]:
+    """Best-effort Tesseract discovery (CLI)."""
+    # Explicit override (preferred)
+    for key in ("TESSERACT_CMD", "TESSERACT_BIN", "TESSERACT_PATH"):
+        try:
+            v = (os.environ.get(key) or "").strip()
+        except Exception:
+            v = ""
+        if v:
+            return v
+    try:
+        return shutil.which("tesseract")
+    except Exception:
+        return None
 
 try:
     import fitz  # PyMuPDF: fast, high-fidelity text extraction
@@ -129,13 +146,13 @@ try:
 except Exception:
     pass
 
-_HAVE_TESSERACT = False
-
-_HAVE_PDF2IMAGE = False
-
-_HAVE_OCRMYPDF = False
-
-_HAVE_PADDLE_OCR = False
+# Tesseract CLI detection (used for TSV OCR + optional ocrmypdf)
+try:
+    _TESSERACT_BIN = _detect_tesseract_binary()
+    _HAVE_TESSERACT = bool(_TESSERACT_BIN)
+except Exception:
+    _TESSERACT_BIN = None
+    _HAVE_TESSERACT = False
 
 # EasyOCR (pure-Python OCR)
 try:
@@ -602,20 +619,91 @@ def numeric_only(value: Optional[str]) -> Optional[str]:
     return m.group(0).replace(",", "")
 
 
+def _maybe_fix_missing_decimal_by_range(num_text: str, range_min: Optional[float], range_max: Optional[float]) -> Optional[Tuple[str, float]]:
+    """Heuristic: infer a missing decimal point using the expected numeric range.
+
+    Tesseract sometimes drops decimal points in dense tables (e.g. '5.32' -> '532').
+    When a range is provided, try shifting the decimal left by 1-3 places to bring
+    the value within an expanded tolerance band around the range.
+    """
+    try:
+        enabled = (os.environ.get("DECIMAL_FIX_ENABLE") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        enabled = False
+    if not enabled:
+        return None
+    if range_min is None or range_max is None:
+        return None
+    try:
+        rmin = float(range_min)
+        rmax = float(range_max)
+    except Exception:
+        return None
+    span = rmax - rmin
+    if span <= 0:
+        return None
+
+    s = (num_text or "").strip()
+    if not s:
+        return None
+    s_fixed = _fix_ocr_in_numbers(s).replace(",", "")
+    if "." in s_fixed or "e" in s_fixed.lower():
+        return None
+    sign = ""
+    if s_fixed[:1] in ("+", "-"):
+        sign = s_fixed[:1]
+        s_fixed = s_fixed[1:]
+    if not s_fixed.isdigit() or len(s_fixed) < 2:
+        return None
+
+    try:
+        raw_val = float(f"{sign}{s_fixed}")
+    except Exception:
+        return None
+
+    try:
+        tol_frac = float(os.environ.get("DECIMAL_FIX_TOL_FRAC", "0.5"))
+    except Exception:
+        tol_frac = 0.5
+    tol_frac = max(0.0, min(2.0, tol_frac))
+    tol = tol_frac * span
+    lo = rmin - tol
+    hi = rmax + tol
+    if lo <= raw_val <= hi:
+        return None
+
+    digits = s_fixed
+    for k in (1, 2, 3):
+        adj_val = raw_val / (10 ** k)
+        if lo <= adj_val <= hi:
+            if len(digits) <= k:
+                left = "0"
+                right = digits.zfill(k)
+            else:
+                left = digits[:-k]
+                right = digits[-k:]
+            adj_txt = f"{sign}{left}.{right}"
+            return adj_txt, float(adj_val)
+    return None
+
+
 def extract_units(value: Optional[str]) -> Optional[str]:
     """Extract a trailing unit token from a matched value.
     Examples: '24 lbf' -> 'lbf', '220 sec' -> 'sec', '100' -> None.
-    Matches against the aerospace unit set used by NUMBER_REGEX.
+    Matches against the normalization support unit lexicon.
     """
     if not value:
         return None
     s = value.replace("\xa0", " ").strip()
-    # unit set mirrors _AERO_UNITS; keep case-insensitive matching
-    unit_core = r"%|ppm|ppb|ms|s|sec|kg|g|mg|ug|lbm|lb|lbs|lbf|N|kN|mN|Ns|bar|mbar|Pa|kPa|MPa|psi|psia|psig|mm|cm|m|in|ft|K|degC|degF|C|F"
-    # Look for optional whitespace + unit at the end of the string; use IGNORECASE flag
-    m = re.search(r"(?:\s*(" + unit_core + r"))$", s, flags=re.IGNORECASE)
-    if m:
-        return m.group(1)
+    # Look for optional whitespace + unit at the end of the string.
+    try:
+        unit_re = _get_unit_regex()
+    except Exception:
+        unit_re = None
+    if unit_re is not None:
+        m = re.search(r"(?:\s*(" + unit_re.pattern + r"))$", s, flags=re.IGNORECASE)
+        if m:
+            return m.group(1)
     return None
 
 
@@ -627,11 +715,17 @@ SN_REGEX = re.compile(
 
 
 # Extend units for aerospace contexts and override NUMBER_REGEX with a richer set.
+# Base aerospace unit set; extended at runtime via ocr_normalization_support.json.
 _AERO_UNITS = (
     "%|ppm|ppb|ms|s|sec|seconds|second|minutes|minute|hours|hour|kg|g|mg|ug|lb|lbm|lbf|lbs|"
     "N|kN|mN|Ns|bar|mbar|Pa|kPa|MPa|psi|psia|psig|"
     "mm|cm|m|in|ft|K|degC|degF|C|F"
 )
+try:
+    # Use the support-driven unit regex when available (more complete).
+    _AERO_UNITS = _get_unit_regex().pattern
+except Exception:
+    pass
 NUMBER_REGEX = re.compile(
     rf"""
     (?<![A-Za-z0-9_.-])           # left boundary
@@ -1410,6 +1504,2752 @@ def ocr_pages_with_pdf2image(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict
     return out, "ocr_pdf2image"
 
 
+def _tess_lang_from_env() -> str:
+    """Resolve Tesseract language code from env (defaults to eng)."""
+    # Prefer explicit TESS_LANG; otherwise OCR_LANGS/OCR_LANG (map en->eng).
+    try:
+        v = (os.environ.get("TESS_LANG") or "").strip()
+    except Exception:
+        v = ""
+    if v:
+        return v
+    try:
+        raw = (os.environ.get("OCR_LANGS") or os.environ.get("OCR_LANG") or "").strip()
+    except Exception:
+        raw = ""
+    if not raw:
+        return "eng"
+    first = re.split(r"[;,]", raw)[0].strip().lower()
+    if first in ("en", "eng", "english"):
+        return "eng"
+    return first
+
+
+def _render_pdf_page_to_png(pdf_path: Path, page: int, dpi: int, out_dir: Path) -> Tuple[Optional[Path], int, int, Optional[str]]:
+    """Render a single PDF page to PNG via PyMuPDF."""
+    if not _HAVE_PYMUPDF:
+        return None, 0, 0, "pymupdf:N/A"
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception as e:
+        return None, 0, 0, f"pymupdf:open_error:{e}"
+    try:
+        if not (1 <= page <= doc.page_count):
+            return None, 0, 0, "pymupdf:page_oob"
+        pg = doc.load_page(page - 1)
+        pix = pg.get_pixmap(dpi=max(200, min(2000, int(dpi))))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        img_path = out_dir / f"page_{page}.png"
+        pix.save(str(img_path))
+        return img_path, int(pix.width), int(pix.height), None
+    except Exception as e:
+        return None, 0, 0, f"pymupdf:render_error:{e}"
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+
+def _run_tesseract_tsv(image_path: Path, lang: str, psm: int) -> Tuple[Optional[str], Optional[str]]:
+    """Run tesseract CLI on an image and return TSV output."""
+    if not _HAVE_TESSERACT:
+        return None, "tesseract:N/A"
+    tess_bin = _TESSERACT_BIN or _detect_tesseract_binary()
+    if not tess_bin:
+        return None, "tesseract:not_found"
+    try:
+        psm_i = int(psm)
+    except Exception:
+        psm_i = 6
+    try:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="tess_tsv_"))
+    except Exception:
+        tmp_dir = Path(tempfile.gettempdir())
+    try:
+        # Pre-parse env tuning once so retries are consistent.
+        try:
+            oem_raw = (os.environ.get("TESS_OEM") or "").strip()
+        except Exception:
+            oem_raw = ""
+        try:
+            dpi_raw = (os.environ.get("TESS_DPI") or "").strip()
+        except Exception:
+            dpi_raw = ""
+        try:
+            cfg_raw = (os.environ.get("TESS_CONFIG") or "").strip()
+        except Exception:
+            cfg_raw = ""
+        try:
+            extra_raw = (os.environ.get("TESS_EXTRA_ARGS") or "").strip()
+        except Exception:
+            extra_raw = ""
+
+        def _run_once(lang_i: str, suffix: str) -> Tuple[Optional[str], Optional[str], str]:
+            out_base = tmp_dir / f"out{suffix}"
+            cmd: List[str] = [str(tess_bin), str(image_path), str(out_base), "-l", str(lang_i), "--psm", str(psm_i)]
+            if oem_raw:
+                cmd += ["--oem", oem_raw]
+            if dpi_raw:
+                cmd += ["--dpi", dpi_raw]
+            if cfg_raw:
+                for part in re.split(r"[;,]", cfg_raw):
+                    part = (part or "").strip()
+                    if not part or "=" not in part:
+                        continue
+                    cmd += ["-c", part]
+            if extra_raw:
+                try:
+                    import shlex as _shlex
+                    cmd += _shlex.split(extra_raw)
+                except Exception:
+                    pass
+            cmd += ["tsv"]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+            tsv_path = out_base.with_suffix(".tsv")
+            if not tsv_path.exists():
+                err = (proc.stderr or "").strip()
+                if not err:
+                    err = f"tesseract:missing_tsv rc={proc.returncode}"
+                return None, err, err
+            try:
+                tsv_text = tsv_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                return None, f"tesseract:read_error:{e}", str(e)
+            return tsv_text, None, (proc.stderr or "").strip()
+
+        tsv_text, err, stderr_txt = _run_once(str(lang), "")
+        if not err and tsv_text:
+            return tsv_text, None
+
+        # If a multi-language request fails (e.g. eng+equ but equ.traineddata missing),
+        # retry with the base language so "try equ" doesn't hard-break OCR.
+        try:
+            lang_raw = str(lang or "").strip()
+        except Exception:
+            lang_raw = ""
+        if lang_raw and "+" in lang_raw:
+            lower_err = (stderr_txt or "").lower()
+            if any(tok in lower_err for tok in ("failed loading language", "error opening data file", "could not initialize tesseract", "tessdata")):
+                base_lang = (lang_raw.split("+", 1)[0] or "eng").strip() or "eng"
+                if base_lang != lang_raw:
+                    tsv2, err2, _stderr2 = _run_once(base_lang, "_fallback")
+                    if not err2 and tsv2:
+                        return tsv2, None
+        return None, err
+    finally:
+        try:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _parse_tesseract_tsv(tsv_text: str) -> List[Dict[str, float]]:
+    """Parse Tesseract TSV (word level) into token dicts compatible with existing OCR code."""
+    if not tsv_text:
+        return []
+    lines = tsv_text.splitlines()
+    if not lines:
+        return []
+    header = lines[0].split("\t")
+    idx = {name: i for i, name in enumerate(header)}
+    need = ("level", "left", "top", "width", "height", "conf", "text")
+    if any(k not in idx for k in need):
+        return []
+    out: List[Dict[str, float]] = []
+    for row in lines[1:]:
+        if not row.strip():
+            continue
+        cols = row.split("\t")
+        if len(cols) < len(header):
+            continue
+        try:
+            level = int(cols[idx["level"]])
+        except Exception:
+            continue
+        if level != 5:
+            continue
+        txt = str(cols[idx["text"]] or "").strip()
+        if not txt:
+            continue
+        try:
+            left = float(cols[idx["left"]])
+            top = float(cols[idx["top"]])
+            width = float(cols[idx["width"]])
+            height = float(cols[idx["height"]])
+        except Exception:
+            continue
+        try:
+            conf_raw = float(cols[idx["conf"]])
+        except Exception:
+            conf_raw = -1.0
+        conf = 0.0 if conf_raw < 0 else max(0.0, min(1.0, conf_raw / 100.0))
+        x0, y0 = left, top
+        x1, y1 = left + max(0.0, width), top + max(0.0, height)
+        cx = (x0 + x1) / 2.0
+        cy = (y0 + y1) / 2.0
+        try:
+            block_num = int(cols[idx.get("block_num", -1)]) if "block_num" in idx else 0
+        except Exception:
+            block_num = 0
+        try:
+            par_num = int(cols[idx.get("par_num", -1)]) if "par_num" in idx else 0
+        except Exception:
+            par_num = 0
+        try:
+            line_num = int(cols[idx.get("line_num", -1)]) if "line_num" in idx else 0
+        except Exception:
+            line_num = 0
+        try:
+            word_num = int(cols[idx.get("word_num", -1)]) if "word_num" in idx else 0
+        except Exception:
+            word_num = 0
+        out.append({
+            "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+            "cx": cx, "cy": cy,
+            "text": txt,
+            "conf": conf,
+            "block": float(block_num),
+            "par": float(par_num),
+            "line": float(line_num),
+            "word": float(word_num),
+        })
+    return out
+
+
+def _median(vals: List[float]) -> Optional[float]:
+    if not vals:
+        return None
+    vals = sorted(vals)
+    mid = len(vals) // 2
+    if len(vals) % 2:
+        return float(vals[mid])
+    return 0.5 * (float(vals[mid - 1]) + float(vals[mid]))
+
+
+def _stylize_tokens_as_text(tokens: List[Dict[str, float]], max_extra_spaces: int = 40) -> Tuple[str, List[Dict[str, object]]]:
+    """Build a deterministic, spacing-preserving text view from OCR tokens."""
+    if not tokens:
+        return "", []
+    _digitish_re = re.compile(r"^[0-9OoIlI%+\-.,/\\()]+$")
+    def _is_digitish_token(s: str) -> bool:
+        s = (s or "").strip()
+        if not s:
+            return False
+        return bool(_digitish_re.match(s.replace(" ", "")))
+    # Estimate a character width in pixels to convert x-gaps into spaces
+    char_ws: List[float] = []
+    for t in tokens:
+        try:
+            txt = str(t.get("text") or "")
+            if not txt:
+                continue
+            w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+            if w <= 0:
+                continue
+            char_ws.append(w / max(1, len(txt)))
+        except Exception:
+            continue
+    char_w = _median(char_ws) or 7.0
+    char_w = max(2.0, min(40.0, float(char_w)))
+
+    # Group by (block, par, line) if present; otherwise by y-bands
+    grouped: Dict[Tuple[int, int, int], List[Dict[str, float]]] = {}
+    for t in tokens:
+        try:
+            b = int(t.get("block", 0.0) or 0.0)
+            p = int(t.get("par", 0.0) or 0.0)
+            ln = int(t.get("line", 0.0) or 0.0)
+        except Exception:
+            b, p, ln = 0, 0, 0
+        grouped.setdefault((b, p, ln), []).append(t)
+
+    line_entries: List[Dict[str, object]] = []
+    for (_b, _p, _ln), toks in grouped.items():
+        toks_sorted = sorted(toks, key=lambda d: (float(d.get("x0", 0.0)), float(d.get("x1", 0.0))))
+        pieces: List[str] = []
+        prev_right: Optional[float] = None
+        prev_txt: Optional[str] = None
+        for t in toks_sorted:
+            txt = str(t.get("text") or "").strip()
+            if not txt:
+                continue
+            x0 = float(t.get("x0", 0.0))
+            x1 = float(t.get("x1", 0.0))
+            if prev_right is None:
+                pieces.append(txt)
+            else:
+                gap = max(0.0, x0 - prev_right)
+                # Convert gap into spaces; but for digit runs we often want to
+                # suppress the single-space separation so numeric parsing works.
+                join_digits = False
+                if prev_txt and _is_digitish_token(prev_txt) and _is_digitish_token(txt):
+                    # When OCR splits digits into separate tokens, the x-gap is
+                    # usually small; treat it as a contiguous token.
+                    join_digits = gap <= (2.2 * char_w)
+                if join_digits:
+                    pieces.append(txt)
+                else:
+                    spaces = 1 + int(round(gap / char_w))
+                    spaces = max(1, min(1 + max_extra_spaces, spaces))
+                    pieces.append(" " * spaces + txt)
+            prev_right = x1
+            prev_txt = txt
+        line_text = "".join(pieces).rstrip()
+        if not line_text:
+            continue
+        try:
+            x0s = [float(t.get("x0", 0.0)) for t in toks_sorted]
+            y0s = [float(t.get("y0", 0.0)) for t in toks_sorted]
+            x1s = [float(t.get("x1", 0.0)) for t in toks_sorted]
+            y1s = [float(t.get("y1", 0.0)) for t in toks_sorted]
+            bbox = (min(x0s), min(y0s), max(x1s), max(y1s))
+        except Exception:
+            bbox = (0.0, 0.0, 0.0, 0.0)
+        line_entries.append({
+            "text": line_text,
+            "bbox": bbox,
+            "cy": float(sum(float(t.get("cy", 0.0)) for t in toks_sorted) / max(1, len(toks_sorted))),
+        })
+
+    # Sort lines by Y center; stable tie-break by left x0
+    line_entries.sort(key=lambda e: (float(e.get("cy", 0.0)), float((e.get("bbox") or (0.0, 0.0, 0.0, 0.0))[0])))
+    text = "\n".join(str(e.get("text") or "") for e in line_entries)
+    return text, line_entries
+
+
+def _pretty_text_from_tokens(tokens: List[Dict[str, float]]) -> str:
+    # More aggressive space preservation for debugging
+    text, _lines = _stylize_tokens_as_text(tokens, max_extra_spaces=140)
+    return text
+
+
+def _maybe_export_tess_ir(pdf_path: Path, page: int, dpi: int, ir: Dict[str, object], source: str) -> None:
+    """Optional debug export of OCR IR (tokens + stylized text)."""
+    try:
+        enabled_raw = (os.environ.get("OCR_DEBUG_EXPORT") or "").strip().lower()
+        out_dir_raw = (os.environ.get("OCR_DEBUG_EXPORT_DIR") or "").strip()
+    except Exception:
+        enabled_raw = ""
+        out_dir_raw = ""
+    # Default ON per request; allow opt-out via OCR_DEBUG_EXPORT=0|false|no|off
+    if enabled_raw in ("0", "false", "no", "off", "disable", "disabled"):
+        return
+    enabled = True if (enabled_raw in ("", "1", "true", "yes", "on")) else bool(out_dir_raw)
+    if not (enabled or out_dir_raw):
+        return
+    try:
+        pages_raw = (os.environ.get("OCR_DEBUG_PAGES") or "").strip()
+    except Exception:
+        pages_raw = ""
+    if pages_raw:
+        try:
+            allow = {int(x) for x in re.split(r"[;,\\s]+", pages_raw) if x.strip().isdigit()}
+        except Exception:
+            allow = set()
+        if allow and int(page) not in allow:
+            return
+    # Avoid repeatedly rewriting exports for the same PDF/page/dpi in-process
+    try:
+        export_key = (_pdf_cache_key(pdf_path), int(page), int(dpi))
+        if export_key in _OCR_DEBUG_EXPORT_DONE:
+            return
+        _OCR_DEBUG_EXPORT_DONE.add(export_key)
+    except Exception:
+        pass
+    # Default export root under cache root if not provided
+    try:
+        base = Path(out_dir_raw).expanduser() if out_dir_raw else (_resolve_repo_root() / "debug" / "ocr")
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    try:
+        pdf_stem = pdf_path.stem or "pdf"
+    except Exception:
+        pdf_stem = "pdf"
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", pdf_stem).strip("_") or "pdf"
+    out_dir = base / safe_stem
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    prefix = f"p{int(page)}_dpi{int(dpi)}"
+    # Stop emitting legacy text views; clean up old artifacts for this prefix.
+    try:
+        for suffix in ("_search.txt", "_pretty.txt", "_pretty_norm.txt", "_tables.txt"):
+            fp = out_dir / f"{prefix}{suffix}"
+            if fp.exists():
+                fp.unlink(missing_ok=True)  # type: ignore[call-arg]
+    except Exception:
+        pass
+    try:
+        tokens = ir.get("tokens")
+        toks_list = list(tokens) if isinstance(tokens, list) else []
+    except Exception:
+        toks_list = []
+
+    # Write a structured, table-aware page bundle for debugging/inspection.
+    try:
+        page_bundle = _assemble_page_debug_json(pdf_path, int(page), int(dpi), ir, source=source)
+        (out_dir / f"{prefix}_page.json").write_text(json.dumps(page_bundle, indent=2), encoding="utf-8", errors="replace")
+        (out_dir / f"{prefix}_page.txt").write_text(_page_bundle_as_text(page_bundle), encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    # Keep exporting the raw IR JSON (tokens/lines/grid/tables) for low-level inspection.
+    bundle = {
+        "pdf_file": str(pdf_path),
+        "page": int(page),
+        "dpi": int(dpi),
+        "source": source,
+        "lang": ir.get("lang"),
+        "psm": ir.get("psm"),
+        "img_w": ir.get("img_w"),
+        "img_h": ir.get("img_h"),
+        "grid": ir.get("grid"),
+        "tables": ir.get("tables"),
+        "tokens": toks_list,
+        "lines": ir.get("lines"),
+    }
+    try:
+        # Provide a normalized line view to compare against raw OCR quickly.
+        norm_lines = []
+        for ln in (ir.get("lines") if isinstance(ir, dict) else None) or []:
+            if isinstance(ln, dict):
+                norm_lines.append({**ln, "text_norm": _normalize_ocr_text_for_display(str(ln.get("text") or ""))})
+        bundle["lines_norm"] = norm_lines
+    except Exception:
+        pass
+    try:
+        alias_count = len(_get_unit_alias_map())
+    except Exception:
+        alias_count = 0
+    try:
+        unit_pat = _get_unit_regex().pattern
+    except Exception:
+        unit_pat = None
+    bundle["normalization_support"] = {
+        "alias_count": alias_count,
+        "unit_regex_present": bool(unit_pat),
+    }
+    try:
+        (out_dir / f"{prefix}_ir.json").write_text(json.dumps(bundle, indent=2), encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+def export_tesseract_tsv_debug(pdf_path: Path, pages: Sequence[int], out_dir: Path, dpi: Optional[int] = None) -> List[Path]:
+    """Export human-readable + machine-readable OCR views for debugging."""
+    out_files: List[Path] = []
+    if dpi is None:
+        try:
+            dpi = int(os.environ.get("OCR_DPI", "700"))
+        except Exception:
+            dpi = 700
+    dpi = int(max(200, min(1300, int(dpi))))
+    try:
+        out_dir = Path(out_dir).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return out_files
+    for p in pages:
+        try:
+            page_i = int(p)
+        except Exception:
+            continue
+        if page_i < 1:
+            continue
+        ir, _lbl = _get_tess_tsv_ir(pdf_path, page_i, dpi)
+        if ir is None:
+            continue
+        prefix = f"p{page_i}_dpi{dpi}"
+        # Stop emitting legacy text views; clean up old artifacts for this prefix.
+        try:
+            for suffix in ("_search.txt", "_pretty.txt", "_pretty_norm.txt", "_tables.txt"):
+                fp = out_dir / f"{prefix}{suffix}"
+                if fp.exists():
+                    fp.unlink(missing_ok=True)  # type: ignore[call-arg]
+        except Exception:
+            pass
+        try:
+            tokens = ir.get("tokens")
+            toks_list = list(tokens) if isinstance(tokens, list) else []
+        except Exception:
+            toks_list = []
+        try:
+            f_json = out_dir / f"{prefix}_ir.json"
+            bundle = {
+                "pdf_file": str(pdf_path),
+                "page": int(page_i),
+                "dpi": int(dpi),
+                "lang": ir.get("lang"),
+                "psm": ir.get("psm"),
+                "img_w": ir.get("img_w"),
+                "img_h": ir.get("img_h"),
+                "grid": ir.get("grid"),
+                "tables": ir.get("tables"),
+                "tokens": toks_list,
+                "lines": ir.get("lines"),
+            }
+            try:
+                page_bundle = _assemble_page_debug_json(pdf_path, int(page_i), int(dpi), ir, source="export")
+                f_page = out_dir / f"{prefix}_page.json"
+                f_page_txt = out_dir / f"{prefix}_page.txt"
+                f_page.write_text(json.dumps(page_bundle, indent=2), encoding="utf-8", errors="replace")
+                f_page_txt.write_text(_page_bundle_as_text(page_bundle), encoding="utf-8", errors="replace")
+                out_files.append(f_page)
+                out_files.append(f_page_txt)
+            except Exception:
+                pass
+            try:
+                alias_count = len(_get_unit_alias_map())
+            except Exception:
+                alias_count = 0
+            try:
+                unit_pat = _get_unit_regex().pattern
+            except Exception:
+                unit_pat = None
+            bundle["normalization_support"] = {
+                "alias_count": alias_count,
+                "unit_regex_present": bool(unit_pat),
+            }
+            f_json.write_text(json.dumps(bundle, indent=2), encoding="utf-8", errors="replace")
+            out_files.append(f_json)
+        except Exception:
+            continue
+    return out_files
+
+
+def _detect_gridlines(img_path: Path, img_w: int, img_h: int) -> Dict[str, List[Tuple[float, float, float, float]]]:
+    """Detect prominent horizontal/vertical grid lines (normalized coords)."""
+    out: Dict[str, List[Tuple[float, float, float, float]]] = {"h": [], "v": []}
+    if not _HAVE_CV2:
+        return out
+    try:
+        try:
+            enabled = (os.environ.get("OCR_DETECT_GRID") or "").strip().lower()
+        except Exception:
+            enabled = ""
+        if enabled in ("0", "false", "no", "off"):
+            return out
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)  # type: ignore[name-defined]
+        if img is None:
+            return out
+        h, w = img.shape[:2]
+        if h < 10 or w < 10:
+            return out
+        # Binary (invert so lines are white)
+        bw = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 15)  # type: ignore[name-defined]
+        # Morph kernels scaled to page size
+        horiz_len = max(15, int(w / 35))
+        vert_len = max(15, int(h / 35))
+        horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (horiz_len, 1))  # type: ignore[name-defined]
+        vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, vert_len))  # type: ignore[name-defined]
+        horiz = cv2.morphologyEx(bw, cv2.MORPH_OPEN, horiz_kernel, iterations=1)  # type: ignore[name-defined]
+        vert = cv2.morphologyEx(bw, cv2.MORPH_OPEN, vert_kernel, iterations=1)  # type: ignore[name-defined]
+        for name, mask in (("h", horiz), ("v", vert)):
+            cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # type: ignore[name-defined]
+            for c in cnts:
+                x, y, ww, hh = cv2.boundingRect(c)  # type: ignore[name-defined]
+                if ww < 20 and hh < 20:
+                    continue
+                if name == "h" and ww < int(w * 0.25):
+                    continue
+                if name == "v" and hh < int(h * 0.25):
+                    continue
+                x0 = float(x) / float(w)
+                y0 = float(y) / float(h)
+                x1 = float(x + ww) / float(w)
+                y1 = float(y + hh) / float(h)
+                out[name].append((x0, y0, x1, y1))
+        # Keep only a manageable subset (largest first)
+        out["h"].sort(key=lambda s: (s[2] - s[0]) * (s[3] - s[1]), reverse=True)
+        out["v"].sort(key=lambda s: (s[2] - s[0]) * (s[3] - s[1]), reverse=True)
+        out["h"] = out["h"][:250]
+        out["v"] = out["v"][:250]
+        return out
+    except Exception:
+        return out
+
+
+def _merge_close_positions(vals: List[float], eps: float) -> List[float]:
+    if not vals:
+        return []
+    eps = float(max(0.0, eps))
+    out: List[float] = []
+    for v in sorted(vals):
+        if not out:
+            out.append(float(v))
+            continue
+        if abs(float(v) - out[-1]) <= eps:
+            out[-1] = 0.5 * (out[-1] + float(v))
+        else:
+            out.append(float(v))
+    return out
+
+
+def _table_clusters_from_grid(
+    grid: Optional[Dict[str, object]],
+    img_w: int,
+    img_h: int,
+    tokens: Optional[List[Dict[str, float]]] = None,
+) -> List[Dict[str, object]]:
+    """Infer table row bands from detected horizontal rules.
+
+    Returns a list of table clusters, each with:
+      - bbox_px: (x0, y0, x1, y1)
+      - y_lines_px: merged y positions of horizontal lines
+      - row_bands_px: list of (y0, y1) bands between consecutive y lines
+    """
+    if not isinstance(grid, dict):
+        return []
+    hlines = grid.get("h")
+    if not isinstance(hlines, list) or not hlines:
+        return []
+
+    # Tunables (pixel space)
+    min_width = max(60.0, 0.35 * float(img_w))
+    merge_eps = max(2.0, 0.0018 * float(img_h))  # merge close line detections
+    # Split separate tables on big vertical gaps. Keep below typical tall-row heights,
+    # but above normal row gaps; tuned so that multi-line table rows stay intact.
+    cluster_gap = max(220.0, 0.10 * float(img_h))
+    min_band_h = max(10.0, 0.004 * float(img_h))
+
+    # Collect candidate line centers in pixel coords.
+    line_entries: List[Tuple[float, float, float]] = []
+    for seg in hlines:
+        try:
+            x0n, y0n, x1n, y1n = seg  # type: ignore[misc]
+            x0 = float(x0n) * float(img_w)
+            x1 = float(x1n) * float(img_w)
+            y0 = float(y0n) * float(img_h)
+            y1 = float(y1n) * float(img_h)
+        except Exception:
+            continue
+        if (x1 - x0) < min_width:
+            continue
+        y = 0.5 * (y0 + y1)
+        line_entries.append((y, x0, x1))
+    if not line_entries:
+        return []
+
+    # Merge near-duplicate y positions first (thick rules often yield multiple contours).
+    line_entries.sort(key=lambda t: t[0])
+    merged: List[Tuple[float, float, float]] = []
+    for y, x0, x1 in line_entries:
+        if not merged or abs(y - merged[-1][0]) > merge_eps:
+            merged.append((y, x0, x1))
+        else:
+            py, px0, px1 = merged[-1]
+            merged[-1] = (0.5 * (py + y), min(px0, x0), max(px1, x1))
+    if len(merged) < 3:
+        return []
+
+    # Split into table clusters by large y gaps, and also by major width changes
+    # across moderately large vertical gaps (helps when multiple tables exist on
+    # a page at different widths).
+    clusters: List[List[Tuple[float, float, float]]] = []
+    cur: List[Tuple[float, float, float]] = []
+    width_split_gap = max(160.0, 0.06 * float(img_h))
+    width_split_ratio = 1.22
+    for ent in merged:
+        if not cur:
+            cur.append(ent)
+            continue
+        prev = cur[-1]
+        gap_y = ent[0] - prev[0]
+        prev_w = max(1.0, prev[2] - prev[1])
+        ent_w = max(1.0, ent[2] - ent[1])
+        wr = (max(prev_w, ent_w) / min(prev_w, ent_w)) if min(prev_w, ent_w) > 0 else 1.0
+        should_split = (gap_y > cluster_gap) or (gap_y > width_split_gap and wr >= width_split_ratio)
+        if should_split:
+            if len(cur) >= 2:
+                clusters.append(cur)
+            cur = [ent]
+        else:
+            cur.append(ent)
+    if cur and len(cur) >= 2:
+        clusters.append(cur)
+    if not clusters:
+        return []
+
+    merged_sorted = sorted(merged, key=lambda t: t[0])
+
+    tables: List[Dict[str, object]] = []
+    for cl in clusters:
+        y_lines = [t[0] for t in cl]
+        y_lines = _merge_close_positions(y_lines, merge_eps)
+        if len(y_lines) < 2:
+            continue
+        # Use the cluster's typical horizontal span (median) to avoid
+        # widening a narrow table due to an unrelated long separator line.
+        x0s = [t[1] for t in cl]
+        x1s = [t[2] for t in cl]
+        x0 = float(_median([float(v) for v in x0s]) or min(x0s))
+        x1 = float(_median([float(v) for v in x1s]) or max(x1s))
+        y0 = min(y_lines)
+        y1 = max(y_lines)
+
+        # Heuristic: if there is evidence of another table row below the last detected
+        # rule, extend the table down to the next prominent horizontal rule even if it
+        # is wider (common for final-row separators). This must be strict enough to
+        # avoid consuming section headers between tables.
+        try:
+            if tokens and y_lines:
+                last_y = float(y_lines[-1])
+                # Find next horizontal rule below last_y.
+                below = [t for t in merged_sorted if float(t[0]) > last_y + merge_eps]
+                cand = below[0] if below else None
+                if cand is not None:
+                    cy, cx0, cx1 = float(cand[0]), float(cand[1]), float(cand[2])
+                    gap_y = cy - last_y
+                    # Only consider a nearby rule.
+                    if gap_y <= max(650.0, 0.14 * float(img_h)):
+                        # Horizontal overlap requirement.
+                        overlap = max(0.0, min(cx1, x1) - max(cx0, x0))
+                        span = max(1.0, x1 - x0)
+                        if (overlap / span) >= 0.70:
+                            # Token evidence between last_y and candidate rule.
+                            mid_tokens = [
+                                tk for tk in tokens
+                                if str(tk.get("text") or "").strip()
+                                and (x0 <= float(tk.get("cx", 0.0)) <= x1)
+                                and (last_y + 2.0 <= float(tk.get("cy", 0.0)) <= cy - 2.0)
+                            ]
+                            if len(mid_tokens) >= 10:
+                                # Require table-like structure: multiple x clusters and digits.
+                                try:
+                                    cxs = sorted(float(tk.get("cx", 0.0)) for tk in mid_tokens)
+                                    gap_thr = max(140.0, 0.06 * span)
+                                    clusters_cx = 1
+                                    for a, b in zip(cxs, cxs[1:]):
+                                        if (b - a) > gap_thr:
+                                            clusters_cx += 1
+                                except Exception:
+                                    clusters_cx = 0
+                                try:
+                                    digit_hits = sum(1 for tk in mid_tokens if re.search(r"\d", str(tk.get("text") or "")))
+                                except Exception:
+                                    digit_hits = 0
+                                if clusters_cx >= 3 and digit_hits >= 2:
+                                    y_lines = list(y_lines) + [cy]
+                                    y_lines = _merge_close_positions(y_lines, merge_eps)
+                                    y1 = max(y_lines)
+        except Exception:
+            pass
+        row_bands: List[Tuple[float, float]] = []
+        for a, b in zip(y_lines, y_lines[1:]):
+            if (b - a) >= min_band_h:
+                row_bands.append((a, b))
+
+        # If we only have a single band (2 rules), require strong token evidence
+        # of a real multi-column table region to avoid underlined headings.
+        if len(y_lines) == 2 and tokens:
+            try:
+                y_top, y_bot = float(y_lines[0]), float(y_lines[1])
+                inband = [
+                    tk for tk in tokens
+                    if str(tk.get("text") or "").strip()
+                    and (x0 <= float(tk.get("cx", 0.0)) <= x1)
+                    and (y_top + 2.0 <= float(tk.get("cy", 0.0)) <= y_bot - 2.0)
+                ]
+            except Exception:
+                inband = []
+            if len(inband) < 10:
+                continue
+            try:
+                cxs = sorted(float(tk.get("cx", 0.0)) for tk in inband)
+                w_span = max(1.0, x1 - x0)
+                gap_thr = max(140.0, 0.06 * w_span)
+                clusters_cx = 1
+                for a, b in zip(cxs, cxs[1:]):
+                    if (b - a) > gap_thr:
+                        clusters_cx += 1
+            except Exception:
+                clusters_cx = 0
+            if clusters_cx < 3:
+                continue
+
+        if not row_bands:
+            continue
+        tables.append({
+            "bbox_px": (float(x0), float(y0), float(x1), float(y1)),
+            "y_lines_px": [float(v) for v in y_lines],
+            "row_bands_px": [(float(a), float(b)) for a, b in row_bands],
+        })
+    return tables
+
+
+def _infer_table_column_bounds_px(
+    tokens: List[Dict[str, float]],
+    bbox_px: Tuple[float, float, float, float],
+    row_bands_px: Optional[List[Tuple[float, float]]] = None,
+) -> Optional[List[float]]:
+    """Infer column boundaries from token X distribution within a table bbox (pixel coords).
+
+    When row bands are available, uses a simple support test so we only keep
+    separators that repeat across multiple rows (prevents splitting a single
+    long text cell into fake columns).
+    """
+    if not tokens:
+        return None
+    x0, y0, x1, y1 = bbox_px
+    w = max(1.0, float(x1) - float(x0))
+    cx_vals: List[float] = []
+    for t in tokens:
+        try:
+            cx = float(t.get("cx", 0.0))
+            cy = float(t.get("cy", 0.0))
+        except Exception:
+            continue
+        if not (y0 <= cy <= y1):
+            continue
+        if not (x0 <= cx <= x1):
+            continue
+        cx_vals.append(cx)
+    if len(cx_vals) < 6:
+        return None
+    cx_vals = sorted(cx_vals)
+    diffs = [b - a for a, b in zip(cx_vals, cx_vals[1:]) if (b - a) > 0]
+    if not diffs:
+        return None
+    try:
+        med_diff = _median(diffs) or 0.0
+    except Exception:
+        med_diff = 0.0
+    # Allow smaller gaps so narrow adjacent columns (e.g., Temp/Duration) can be detected,
+    # then filter with a per-row support check when we have row bands.
+    min_gap = max(55.0, 0.025 * w, 4.0 * float(med_diff))
+
+    def _gaps_to_seps(cxs_sorted: List[float]) -> List[float]:
+        out = []
+        for a, b in zip(cxs_sorted, cxs_sorted[1:]):
+            if (b - a) >= min_gap:
+                out.append(0.5 * (a + b))
+        return out
+
+    seps_all = _gaps_to_seps(cx_vals)
+    if not seps_all:
+        return None
+
+    # Support filter: a separator should appear (within eps) in multiple rows.
+    supported: Optional[List[float]] = None
+    if row_bands_px and isinstance(row_bands_px, list) and len(row_bands_px) >= 3:
+        merge_eps = max(30.0, 0.015 * w)
+        support: List[Tuple[float, int]] = []  # (sep_x, count)
+        # Build per-band separator candidates.
+        per_band: List[List[float]] = []
+        for band in row_bands_px:
+            try:
+                by0, by1 = float(band[0]), float(band[1])
+            except Exception:
+                continue
+            if by1 <= by0 + 2.0:
+                continue
+            band_cx = []
+            for t in tokens:
+                try:
+                    cx = float(t.get("cx", 0.0))
+                    cy = float(t.get("cy", 0.0))
+                except Exception:
+                    continue
+                if not (x0 <= cx <= x1 and by0 <= cy <= by1):
+                    continue
+                if not str(t.get("text") or "").strip():
+                    continue
+                band_cx.append(cx)
+            if len(band_cx) < 4:
+                continue
+            band_cx.sort()
+            seps_band = _gaps_to_seps(band_cx)
+            if seps_band:
+                per_band.append(seps_band)
+
+        if per_band:
+            flat = [s for band in per_band for s in band]
+            flat = _merge_close_positions(flat, merge_eps)
+            # Count support by matching band seps to merged centers.
+            counts = {s: 0 for s in flat}
+            for band in per_band:
+                for s in band:
+                    best = min(flat, key=lambda c: abs(c - s)) if flat else None
+                    if best is not None and abs(best - s) <= merge_eps:
+                        counts[best] += 1
+            support = [(s, counts.get(s, 0)) for s in flat]
+            support.sort(key=lambda t: (-t[1], t[0]))
+            min_support = max(2, int(0.25 * len(per_band)))
+            supported = sorted([s for s, c in support if c >= min_support])
+
+    seps = supported if supported else seps_all
+    if not seps:
+        return None
+    # De-dupe/merge separators that are too close.
+    sep_merge = max(30.0, 0.015 * w)
+    seps = _merge_close_positions(seps, sep_merge)
+
+    bounds = [float(x0)] + [float(s) for s in seps] + [float(x1)]
+    # Guardrails: too many inferred columns is likely noise.
+    if len(bounds) > 26:
+        return None
+    # Drop near-zero-width columns.
+    cleaned = [bounds[0]]
+    for b in bounds[1:]:
+        if (b - cleaned[-1]) >= 20.0:
+            cleaned.append(b)
+        else:
+            cleaned[-1] = b
+    if len(cleaned) < 3:
+        return None
+    return cleaned
+
+
+def _infer_table_column_bounds_from_header(tokens: List[Dict[str, float]], bbox_px: Tuple[float, float, float, float], y_lines_px: List[float]) -> Optional[List[float]]:
+    """Infer column boundaries using tokens above the first horizontal rule (header region)."""
+    if not tokens:
+        return None
+    if not (isinstance(y_lines_px, list) and y_lines_px):
+        return None
+    x0, y0, x1, y1 = bbox_px
+    first_rule_y = float(y_lines_px[0])
+    w = max(1.0, float(x1) - float(x0))
+    # Wider scan to include multi-line headers (common on dense tables).
+    scan_h = 0.24 * (float(y1) - float(y0))
+    scan_h = max(220.0, min(760.0, scan_h))
+    header_items = [
+        t for t in tokens
+        if x0 <= float(t.get("cx", 0.0)) <= x1
+        and (first_rule_y - scan_h) <= float(t.get("cy", 0.0)) <= (first_rule_y - 3.0)
+        and str(t.get("text") or "").strip()
+    ]
+    if len(header_items) < 2:
+        return None
+    header_items.sort(key=lambda t: float(t.get("cx", 0.0)))
+    cxs = [float(t.get("cx", 0.0)) for t in header_items]
+    if len(cxs) < 2:
+        return None
+    # Cluster by large gaps in header centers.
+    gap_thresh = max(120.0, 0.06 * w)
+    clusters_idx: List[List[int]] = [[0]]
+    for i, cx in enumerate(cxs[1:], start=1):
+        if abs(cx - cxs[clusters_idx[-1][-1]]) > gap_thresh:
+            clusters_idx.append([i])
+        else:
+            clusters_idx[-1].append(i)
+    if len(clusters_idx) < 2:
+        return None
+
+    # Compute cluster bboxes in header region and set boundaries between them
+    # using (right_edge_left + left_edge_right)/2.
+    cluster_boxes: List[Tuple[float, float, float]] = []  # (cx_center, x0_min, x1_max)
+    for idxs in clusters_idx:
+        xs0 = []
+        xs1 = []
+        xs_c = []
+        for i in idxs:
+            t = header_items[i]
+            try:
+                xs0.append(float(t.get("x0", 0.0)))
+                xs1.append(float(t.get("x1", 0.0)))
+                xs_c.append(float(t.get("cx", 0.0)))
+            except Exception:
+                continue
+        if not xs_c:
+            continue
+        cx_center = _median(xs_c) or float(sum(xs_c) / max(1, len(xs_c)))
+        cluster_boxes.append((float(cx_center), float(min(xs0) if xs0 else cx_center), float(max(xs1) if xs1 else cx_center)))
+    if len(cluster_boxes) < 2:
+        return None
+    cluster_boxes.sort(key=lambda t: t[0])
+    seps = []
+    for (_cxa, _x0a, x1a), (_cxb, x0b, _x1b) in zip(cluster_boxes, cluster_boxes[1:]):
+        seps.append(0.5 * (float(x1a) + float(x0b)))
+    seps = [float(max(float(x0), min(float(x1), s))) for s in seps]
+    seps = _merge_close_positions(seps, max(30.0, 0.015 * w))
+    bounds = [float(x0)] + seps + [float(x1)]
+    cleaned = [bounds[0]]
+    for b in bounds[1:]:
+        if (b - cleaned[-1]) >= 20.0:
+            cleaned.append(b)
+        else:
+            cleaned[-1] = b
+    if len(cleaned) < 3:
+        return None
+    return cleaned
+
+
+def _merge_sparse_table_columns(
+    tokens: List[Dict[str, float]],
+    bbox_px: Tuple[float, float, float, float],
+    row_bands_px: Optional[List[Tuple[float, float]]],
+    col_bounds_px: List[float],
+) -> List[float]:
+    """Merge obviously empty/sparse columns based on per-row support.
+
+    This helps when header words (e.g., 'Allowed' 'Delta') get split into separate
+    columns but the data only occupies one of them.
+    """
+    if not (row_bands_px and isinstance(row_bands_px, list) and len(row_bands_px) >= 2):
+        return col_bounds_px
+    if not (isinstance(col_bounds_px, list) and len(col_bounds_px) >= 3):
+        return col_bounds_px
+
+    x0, _y0, x1, _y1 = bbox_px
+    bounds = [float(b) for b in col_bounds_px]
+
+    def _support(bounds_i: List[float]) -> Tuple[List[int], int]:
+        ncols = len(bounds_i) - 1
+        per_col = [0] * ncols
+        usable_bands = 0
+        for by0, by1 in row_bands_px:
+            try:
+                by0f, by1f = float(by0), float(by1)
+            except Exception:
+                continue
+            if by1f <= by0f + 2.0:
+                continue
+            # collect tokens in this band
+            has_any = False
+            band_has = [False] * ncols
+            for t in tokens:
+                try:
+                    cx = float(t.get("cx", 0.0))
+                    cy = float(t.get("cy", 0.0))
+                except Exception:
+                    continue
+                if not (x0 <= cx <= x1 and by0f <= cy <= by1f):
+                    continue
+                if not str(t.get("text") or "").strip():
+                    continue
+                has_any = True
+                idx = None
+                for i in range(ncols):
+                    if bounds_i[i] <= cx < bounds_i[i + 1]:
+                        idx = i
+                        break
+                if idx is not None:
+                    band_has[idx] = True
+            if not has_any:
+                continue
+            usable_bands += 1
+            for i in range(ncols):
+                if band_has[i]:
+                    per_col[i] += 1
+        return per_col, usable_bands
+
+    # Iteratively merge sparse columns (at most a few passes).
+    for _ in range(6):
+        ncols = len(bounds) - 1
+        if ncols <= 2:
+            break
+        per_col, usable = _support(bounds)
+        if usable <= 0:
+            break
+        sparse_thresh = max(1, int(0.15 * usable))
+        sparse = [c <= sparse_thresh for c in per_col]
+        if not any(sparse):
+            break
+        merged = False
+        # Prefer merging sparse columns into their left neighbor when possible.
+        for i in range(ncols):
+            if not sparse[i]:
+                continue
+            if i > 0 and not sparse[i - 1]:
+                # remove boundary between i-1 and i (bounds index i)
+                del bounds[i]
+                merged = True
+                break
+            if i < ncols - 1 and not sparse[i + 1]:
+                # merge into right neighbor: remove boundary between i and i+1 (bounds index i+1)
+                del bounds[i + 1]
+                merged = True
+                break
+        if not merged:
+            break
+
+    # Ensure monotonic + minimum widths
+    cleaned = [bounds[0]]
+    for b in bounds[1:]:
+        if (b - cleaned[-1]) >= 20.0:
+            cleaned.append(b)
+        else:
+            cleaned[-1] = b
+    return cleaned if len(cleaned) >= 3 else col_bounds_px
+
+
+def _infer_table_row_bands_from_tokens(
+    tokens: List[Dict[str, float]],
+    bbox_px: Tuple[float, float, float, float],
+    y_top: float,
+    y_bot: float,
+    col_bounds_px: List[float],
+) -> List[Tuple[float, float]]:
+    """Infer row bands from tokens within a table region.
+
+    Groups by Y into "lines", then groups lines into "rows" using the presence of
+    first-column content as a row start signal (keeps multi-line cell content
+    together when row separators are not detected).
+    """
+    if not tokens or not (isinstance(col_bounds_px, list) and len(col_bounds_px) >= 3):
+        return [(float(y_top), float(y_bot))] if (y_bot - y_top) > 5 else []
+    x0, _y0, x1, _y1 = bbox_px
+    y_top = float(y_top)
+    y_bot = float(y_bot)
+    if y_bot <= y_top + 5:
+        return []
+
+    band_items = [
+        t for t in tokens
+        if str(t.get("text") or "").strip()
+        and (x0 <= float(t.get("cx", 0.0)) <= x1)
+        and (y_top <= float(t.get("cy", 0.0)) <= y_bot)
+    ]
+    if len(band_items) < 8:
+        return [(y_top, y_bot)]
+
+    heights: List[float] = []
+    for t in band_items:
+        try:
+            h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+        except Exception:
+            continue
+        if h > 0:
+            heights.append(h)
+    med_h = _median(heights) or 12.0
+    y_eps = max(7.0, min(42.0, 0.95 * float(med_h)))
+
+    toks = sorted(band_items, key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+    lines: List[List[Dict[str, float]]] = []
+    cur: List[Dict[str, float]] = []
+    last_cy: Optional[float] = None
+    for t in toks:
+        cy = float(t.get("cy", 0.0))
+        if last_cy is None or abs(cy - last_cy) <= y_eps:
+            cur.append(t)
+            last_cy = cy if last_cy is None else (0.75 * last_cy + 0.25 * cy)
+        else:
+            if cur:
+                lines.append(cur)
+            cur = [t]
+            last_cy = cy
+    if cur:
+        lines.append(cur)
+
+    if len(lines) <= 1:
+        return [(y_top, y_bot)]
+
+    first_left = float(col_bounds_px[0])
+    first_right = float(col_bounds_px[1])
+
+    def _is_row_start(ln: List[Dict[str, float]]) -> bool:
+        # A row start typically has something in the first column.
+        first = [t for t in ln if first_left <= float(t.get("cx", 0.0)) < first_right and str(t.get("text") or "").strip()]
+        if not first:
+            return False
+        # Avoid treating single punctuation as a row start.
+        txt = " ".join(str(t.get("text") or "").strip() for t in sorted(first, key=lambda t: float(t.get("x0", 0.0))))
+        txt = re.sub(r"\s+", " ", txt).strip()
+        if len(txt) <= 1 and not re.search(r"[A-Za-z0-9]", txt):
+            return False
+        return True
+
+    rows: List[List[Dict[str, float]]] = []
+    cur_row: List[Dict[str, float]] = []
+    for i, ln in enumerate(lines):
+        if i == 0:
+            cur_row = list(ln)
+            continue
+        if _is_row_start(ln) and cur_row:
+            rows.append(cur_row)
+            cur_row = list(ln)
+        else:
+            cur_row.extend(ln)
+    if cur_row:
+        rows.append(cur_row)
+
+    out: List[Tuple[float, float]] = []
+    for r in rows:
+        try:
+            ry0 = min(float(t.get("y0", 0.0)) for t in r)
+            ry1 = max(float(t.get("y1", 0.0)) for t in r)
+        except Exception:
+            continue
+        ry0 = max(y_top, ry0 - 1.0)
+        ry1 = min(y_bot, ry1 + 1.0)
+        if (ry1 - ry0) >= 6.0:
+            out.append((float(ry0), float(ry1)))
+    if not out:
+        return [(y_top, y_bot)]
+    out.sort(key=lambda t: t[0])
+    # Merge overlapping/near-touching bands.
+    merged: List[Tuple[float, float]] = []
+    for a, b in out:
+        if not merged or a > merged[-1][1] + 3.0:
+            merged.append((a, b))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+    return merged
+
+
+def _join_tokens_as_cell_text(tokens: List[Dict[str, float]]) -> str:
+    if not tokens:
+        return ""
+    # Estimate a line grouping tolerance from token heights.
+    heights: List[float] = []
+    for t in tokens:
+        try:
+            h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+        except Exception:
+            continue
+        if h > 0:
+            heights.append(h)
+    try:
+        med_h = _median(heights) or 12.0
+    except Exception:
+        med_h = 12.0
+    y_eps = max(3.0, min(30.0, 0.55 * float(med_h)))
+
+    toks = [t for t in tokens if str(t.get("text") or "").strip()]
+    toks.sort(key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+
+    lines: List[List[Dict[str, float]]] = []
+    cur: List[Dict[str, float]] = []
+    last_cy: Optional[float] = None
+    for t in toks:
+        cy = float(t.get("cy", 0.0))
+        if last_cy is None or abs(cy - last_cy) <= y_eps:
+            cur.append(t)
+            last_cy = cy if last_cy is None else (0.7 * last_cy + 0.3 * cy)
+        else:
+            if cur:
+                lines.append(cur)
+            cur = [t]
+            last_cy = cy
+    if cur:
+        lines.append(cur)
+
+    def _line_text(line_toks: List[Dict[str, float]]) -> str:
+        line_toks = sorted(line_toks, key=lambda t: float(t.get("x0", 0.0)))
+        parts = [str(t.get("text") or "").strip() for t in line_toks if str(t.get("text") or "").strip()]
+        return " ".join(parts).strip()
+
+    merged_lines = [_line_text(lt) for lt in lines]
+    merged_lines = [s for s in merged_lines if s]
+    if not merged_lines:
+        return ""
+
+    out = merged_lines[0]
+    for nxt in merged_lines[1:]:
+        if out.endswith("-") and nxt and nxt[0].isalnum():
+            # Preserve the hyphen but remove the line break.
+            out = (out + nxt.lstrip()).strip()
+        else:
+            out = (out + " " + nxt).strip()
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
+
+def _table_header_virtual_tokens(tokens: List[Dict[str, float]], table: Dict[str, object]) -> List[Dict[str, float]]:
+    """Create virtual tokens for header cells (e.g., 'Measured Value', 'Data Quality')."""
+    try:
+        bbox_px = table.get("bbox_px")
+        y_lines = table.get("y_lines_px")
+    except Exception:
+        return []
+    if not (isinstance(bbox_px, (tuple, list)) and len(bbox_px) == 4):
+        return []
+    if not (isinstance(y_lines, list) and len(y_lines) >= 2):
+        return []
+    x0, y0, x1, y1 = (float(bbox_px[0]), float(bbox_px[1]), float(bbox_px[2]), float(bbox_px[3]))
+
+    # Prefer a header region immediately ABOVE the first horizontal rule (common when
+    # the header has only an underline, not a top border). If nothing is found above,
+    # fall back to the first band between rules.
+    first_rule_y = float(y_lines[0])
+    # Wider scan to include multi-line headers (common on dense tables).
+    scan_h = 0.24 * (y1 - y0)
+    scan_h = max(220.0, min(760.0, scan_h))
+    above = [
+        t for t in tokens
+        if x0 <= float(t.get("cx", 0.0)) <= x1
+        and (first_rule_y - scan_h) <= float(t.get("cy", 0.0)) <= (first_rule_y - 3.0)
+        and str(t.get("text") or "").strip()
+    ]
+    if above:
+        header_top = min(float(t.get("y0", 0.0)) for t in above)
+        header_bot = first_rule_y
+    else:
+        if len(y_lines) < 2:
+            return []
+        header_top = float(y_lines[0])
+        header_bot = float(y_lines[1])
+        if header_bot <= header_top + 2.0:
+            return []
+
+    bounds = None
+    try:
+        b = table.get("col_bounds_px")
+        if isinstance(b, list) and len(b) >= 3:
+            bounds = [float(v) for v in b]
+    except Exception:
+        bounds = None
+    if not bounds:
+        # Prefer header-derived bounds when available; fall back to distribution.
+        try:
+            bounds = _infer_table_column_bounds_from_header(tokens, (x0, y0, x1, y1), [float(v) for v in y_lines])  # type: ignore[arg-type]
+        except Exception:
+            bounds = None
+    if not bounds:
+        bounds = _infer_table_column_bounds_px(tokens, (x0, y0, x1, y1), row_bands_px=table.get("row_bands_px") if isinstance(table.get("row_bands_px"), list) else None)
+    if not bounds or len(bounds) < 3:
+        return []
+
+    header_items = [
+        t for t in tokens
+        if header_top <= float(t.get("cy", 0.0)) <= header_bot
+        and x0 <= float(t.get("cx", 0.0)) <= x1
+    ]
+    if not header_items:
+        return []
+
+    cols: List[List[Dict[str, float]]] = [[] for _ in range(len(bounds) - 1)]
+    for t in header_items:
+        cx = float(t.get("cx", 0.0))
+        idx = None
+        for i in range(len(bounds) - 1):
+            if bounds[i] <= cx < bounds[i + 1]:
+                idx = i
+                break
+        if idx is None:
+            continue
+        cols[idx].append(t)
+
+    virtuals: List[Dict[str, float]] = []
+    for i, col_toks in enumerate(cols):
+        txt = _join_tokens_as_cell_text(col_toks)
+        if not txt:
+            continue
+        try:
+            x0s = [float(t.get("x0", 0.0)) for t in col_toks]
+            y0s = [float(t.get("y0", 0.0)) for t in col_toks]
+            x1s = [float(t.get("x1", 0.0)) for t in col_toks]
+            y1s = [float(t.get("y1", 0.0)) for t in col_toks]
+            bx0, by0, bx1, by1 = (min(x0s), min(y0s), max(x1s), max(y1s))
+        except Exception:
+            bx0, by0, bx1, by1 = (bounds[i], header_top, bounds[i + 1], header_bot)
+        cxv = 0.5 * (bx0 + bx1)
+        cyv = 0.5 * (by0 + by1)
+        virtuals.append({
+            "x0": float(bx0),
+            "y0": float(by0),
+            "x1": float(bx1),
+            "y1": float(by1),
+            "cx": float(cxv),
+            "cy": float(cyv),
+            "text": txt,
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0,
+        })
+    return virtuals
+
+
+def _refresh_ir_tables(ir: Dict[str, object]) -> None:
+    """(Re)compute inferred table structures for a Tesseract TSV IR dict.
+
+    This is safe to run on cached IR payloads so improvements in table
+    reconstruction apply even when OCR output is loaded from disk.
+    """
+    try:
+        tokens_raw = ir.get("tokens")  # type: ignore[assignment]
+        grid = ir.get("grid")
+        img_w = int(ir.get("img_w") or 0)
+        img_h = int(ir.get("img_h") or 0)
+        tokens = list(tokens_raw) if isinstance(tokens_raw, list) else []
+    except Exception:
+        return
+    if not (tokens and isinstance(grid, dict) and img_w > 0 and img_h > 0):
+        return
+
+    try:
+        tables = _table_clusters_from_grid(grid, img_w, img_h, tokens=tokens)
+    except Exception:
+        return
+
+    for tb in tables:
+        if not isinstance(tb, dict):
+            continue
+        bbox = tb.get("bbox_px")
+        y_lines = tb.get("y_lines_px")
+        bands = tb.get("row_bands_px")
+        bounds = None
+        bands2 = None
+        try:
+            bands2 = [(float(a), float(b)) for a, b in bands] if isinstance(bands, list) else None  # type: ignore[misc]
+        except Exception:
+            bands2 = None
+
+        if isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(y_lines, list) and y_lines:
+            try:
+                bounds = _infer_table_column_bounds_from_header(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), [float(v) for v in y_lines])
+            except Exception:
+                bounds = None
+        if bounds is None and isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+            bounds = _infer_table_column_bounds_px(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), row_bands_px=bands2)
+        if bounds and isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+            try:
+                bounds = _merge_sparse_table_columns(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), bands2, list(bounds))
+            except Exception:
+                pass
+        tb["col_bounds_px"] = bounds if bounds else []
+        # If we only detected two horizontal rules, refine row bands from tokens so
+        # multi-line cell content stays within the same logical row.
+        try:
+            if bounds and isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(y_lines, list) and len(y_lines) == 2:
+                rb = _infer_table_row_bands_from_tokens(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), float(y_lines[0]), float(y_lines[1]), list(bounds))
+                if rb:
+                    tb["row_bands_px"] = [(float(a), float(b)) for a, b in rb]
+        except Exception:
+            pass
+        try:
+            tb["header_virtual_tokens"] = _table_header_virtual_tokens(tokens, tb)
+        except Exception:
+            tb["header_virtual_tokens"] = []
+
+    ir["tables"] = tables
+
+
+def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, object]) -> Optional[Dict[str, object]]:
+    """Build a debug-friendly table representation with per-row/per-cell strings."""
+    if not tokens or not isinstance(tb, dict):
+        return None
+    bbox = tb.get("bbox_px")
+    bands = tb.get("row_bands_px")
+    if not (isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(bands, list) and bands):
+        return None
+    bx0, by0, bx1, by1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    col_bounds = tb.get("col_bounds_px")
+    if not (isinstance(col_bounds, list) and len(col_bounds) >= 3):
+        rb = tb.get("row_bands_px") if isinstance(tb.get("row_bands_px"), list) else None
+        try:
+            bands2 = [(float(a), float(b)) for a, b in rb] if rb else None  # type: ignore[misc]
+        except Exception:
+            bands2 = None
+        col_bounds = _infer_table_column_bounds_px(tokens, (bx0, by0, bx1, by1), row_bands_px=bands2) or []
+    col_bounds = [float(v) for v in col_bounds] if col_bounds else []
+    if len(col_bounds) < 3:
+        return None
+
+    # Header cell texts from virtual tokens if available.
+    header_cells: List[str] = []
+    try:
+        hv = tb.get("header_virtual_tokens")
+        if isinstance(hv, list) and hv:
+            hv_sorted = sorted([t for t in hv if isinstance(t, dict)], key=lambda t: float(t.get("cx", 0.0)))
+            header_cells = [str(t.get("text") or "").strip() for t in hv_sorted if str(t.get("text") or "").strip()]
+    except Exception:
+        header_cells = []
+
+    rows_out: List[Dict[str, object]] = []
+    spill_blocks: List[Dict[str, object]] = []
+    _logref_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
+    for band_idx, band in enumerate(bands):
+        if not (isinstance(band, (tuple, list)) and len(band) == 2):
+            continue
+        y_top, y_bot = float(band[0]), float(band[1])
+        if y_bot <= y_top + 2.0:
+            continue
+        # Use a wider X window for band collection so below-table notes that
+        # slightly exceed the inferred table bbox don't get split into duplicates.
+        table_w = max(1.0, float(bx1) - float(bx0))
+        # Wider right pad to catch callout/note text that spans beyond the inferred bbox,
+        # but keep the left pad small to avoid absorbing unrelated left-margin content.
+        x_pad_left = max(20.0, min(150.0, 0.08 * table_w))
+        x_pad_right = max(40.0, min(900.0, 0.35 * table_w))
+        band_items = [
+            it for it in tokens
+            if ((bx0 - x_pad_left) <= float(it.get("cx", 0.0)) <= (bx1 + x_pad_right))
+            and (y_top <= float(it.get("cy", 0.0)) <= y_bot)
+            and str(it.get("text") or "").strip()
+        ]
+        row_items = [it for it in band_items if (bx0 <= float(it.get("cx", 0.0)) <= bx1)]
+        if not row_items:
+            continue
+        try:
+            row_items, spill_items = _split_table_band_row_and_spill(band_items, col_bounds, (bx0, by0, bx1, by1))
+            # Ensure row_items remain within the original table bbox for column assignment.
+            row_items = [it for it in row_items if (bx0 <= float(it.get("cx", 0.0)) <= bx1)]
+        except Exception:
+            spill_items = []
+        if spill_items:
+            try:
+                spill_text = _join_tokens_as_cell_text(spill_items)
+            except Exception:
+                spill_text = " ".join(str(t.get("text") or "").strip() for t in spill_items if str(t.get("text") or "").strip())
+            try:
+                sx0s = [float(t.get("x0", 0.0)) for t in spill_items]
+                sy0s = [float(t.get("y0", 0.0)) for t in spill_items]
+                sx1s = [float(t.get("x1", 0.0)) for t in spill_items]
+                sy1s = [float(t.get("y1", 0.0)) for t in spill_items]
+                sbbox = (min(sx0s), min(sy0s), max(sx1s), max(sy1s))
+            except Exception:
+                sbbox = (bx0, y_top, bx1, y_bot)
+            spill_blocks.append({
+                "band_index": int(band_idx),
+                "bbox_px": sbbox,
+                "text": spill_text,
+            })
+        cols: List[List[Dict[str, float]]] = [[] for _ in range(len(col_bounds) - 1)]
+        for it in row_items:
+            cx = float(it.get("cx", 0.0))
+            idx = None
+            for i in range(len(col_bounds) - 1):
+                if col_bounds[i] <= cx < col_bounds[i + 1]:
+                    idx = i
+                    break
+            if idx is None:
+                continue
+            cols[idx].append(it)
+        # Two-column key/value table cleanup: if the key label is split across
+        # columns (e.g., "Serial /" + "Component SN42-AX"), move the label word(s)
+        # back into the key column.
+        try:
+            if len(cols) == 2 and cols[0] and cols[1]:
+                left_txt = " ".join(str(t.get("text") or "").strip() for t in sorted(cols[0], key=lambda t: float(t.get("x0", 0.0))) if str(t.get("text") or "").strip())
+                left_norm = re.sub(r"\s+", " ", left_txt).strip().lower()
+                right_sorted = sorted(cols[1], key=lambda t: float(t.get("x0", 0.0)))
+                right_txt = " ".join(str(t.get("text") or "").strip() for t in right_sorted if str(t.get("text") or "").strip())
+                right_norm = re.sub(r"\s+", " ", right_txt).strip().lower()
+                if (left_norm.endswith("/") or left_norm.endswith("/ component") or "serial" in left_norm) and right_norm.startswith("component "):
+                    moved = [t for t in cols[1] if str(t.get("text") or "").strip().lower() == "component"]
+                    if moved:
+                        cols[0].extend(moved)
+                        cols[1] = [t for t in cols[1] if t not in moved]
+        except Exception:
+            pass
+        # If the last column is a short reference code (e.g., A-118) and has
+        # a stray word (e.g., "at A-118"), move the stray token to the left.
+        try:
+            if len(cols) >= 2 and cols[-1]:
+                last_txts = [str(t.get("text") or "").strip() for t in cols[-1] if str(t.get("text") or "").strip()]
+                id_hits = [t for t in cols[-1] if _logref_re.match(str(t.get("text") or "").strip())]
+                non_id = [t for t in cols[-1] if t not in id_hits and str(t.get("text") or "").strip()]
+                if id_hits and non_id:
+                    # Only rebalance when the non-id tokens are small connector words.
+                    non_id_txt = [str(t.get("text") or "").strip() for t in non_id]
+                    if all(len(s) <= 4 and s.isalpha() for s in non_id_txt):
+                        cols[-2].extend(non_id)
+                        cols[-1] = id_hits
+        except Exception:
+            pass
+        cells_text = [_join_tokens_as_cell_text(ct) for ct in cols]
+        cell_tokens = [[str(t.get("text") or "").strip() for t in sorted(ct, key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0)))) if str(t.get("text") or "").strip()] for ct in cols]
+        row_text_cells = " | ".join([c for c in cells_text if c]).strip()
+        rows_out.append({
+            "band_index": int(band_idx),
+            "row_band_px": (float(y_top), float(y_bot)),
+            "cells_text": cells_text,
+            "cells_tokens": cell_tokens,
+            "row_text_cells": row_text_cells,
+        })
+
+    return {
+        "bbox_px": (bx0, by0, bx1, by1),
+        "col_bounds_px": col_bounds,
+        "header_cells": header_cells,
+        "rows": rows_out,
+        "spill_blocks": spill_blocks,
+    }
+
+
+def _debug_tables_as_text(tables_assembled: List[Dict[str, object]]) -> str:
+    if not tables_assembled:
+        return ""
+    out_lines: List[str] = []
+    for ti, tb in enumerate(tables_assembled):
+        try:
+            bbox = tb.get("bbox_px")
+        except Exception:
+            bbox = None
+        out_lines.append(f"TABLE {ti} bbox_px={bbox}")
+        header = tb.get("header_cells")
+        if isinstance(header, list) and header:
+            out_lines.append("  headers: " + " | ".join(str(x) for x in header if str(x).strip()))
+        rows = tb.get("rows")
+        if not isinstance(rows, list) or not rows:
+            out_lines.append("  (no rows)")
+            continue
+        for ri, row in enumerate(rows):
+            try:
+                band = row.get("row_band_px")
+            except Exception:
+                band = None
+            out_lines.append(f"  row {ri} band_px={band}")
+            cells = row.get("cells_text")
+            toks = row.get("cells_tokens")
+            if not isinstance(cells, list):
+                continue
+            for ci, cell_text in enumerate(cells):
+                cell_text = str(cell_text or "").strip()
+                if not cell_text:
+                    continue
+                out_lines.append(f"    c{ci}: {cell_text}")
+                if isinstance(toks, list) and ci < len(toks) and isinstance(toks[ci], list) and toks[ci]:
+                    out_lines.append(f"      tokens: {' '.join(str(t) for t in toks[ci] if str(t).strip())}")
+    return "\n".join(out_lines).rstrip() + "\n"
+
+
+def _split_table_band_row_and_spill(
+    band_items: List[Dict[str, float]],
+    col_bounds_px: List[float],
+    table_bbox_px: Tuple[float, float, float, float],
+) -> Tuple[List[Dict[str, float]], List[Dict[str, float]]]:
+    """Split a tall band into (row_items, spill_items).
+
+    Used to prevent below-table notes (no rightmost-column content) from being
+    absorbed into the last table row when the final row band is tall.
+    """
+    if not band_items or not (isinstance(col_bounds_px, list) and len(col_bounds_px) >= 3):
+        return band_items, []
+    try:
+        last_col_left = float(col_bounds_px[-2])
+    except Exception:
+        return band_items, []
+
+    heights: List[float] = []
+    for t in band_items:
+        try:
+            h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+        except Exception:
+            continue
+        if h > 0:
+            heights.append(h)
+    try:
+        med_h = _median(heights) or 12.0
+    except Exception:
+        med_h = 12.0
+    y_eps = max(6.0, min(40.0, 0.85 * float(med_h)))
+    gap_thresh = max(90.0, 2.4 * float(y_eps))
+
+    toks = [t for t in band_items if str(t.get("text") or "").strip()]
+    toks.sort(key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+    if len(toks) < 5:
+        return band_items, []
+
+    # Cluster into lines.
+    lines: List[List[Dict[str, float]]] = []
+    cur: List[Dict[str, float]] = []
+    last_cy: Optional[float] = None
+    for t in toks:
+        cy = float(t.get("cy", 0.0))
+        if last_cy is None or abs(cy - last_cy) <= y_eps:
+            cur.append(t)
+            last_cy = cy if last_cy is None else (0.7 * last_cy + 0.3 * cy)
+        else:
+            if cur:
+                lines.append(cur)
+            cur = [t]
+            last_cy = cy
+    if cur:
+        lines.append(cur)
+
+    if len(lines) < 2:
+        return band_items, []
+
+    _logref_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
+    _has_digit_re = re.compile(r"\d")
+
+    # Identify the last "row-like" line. Prefer evidence from the rightmost column:
+    # numeric-like or ID-like content there indicates a real table row rather than
+    # a paragraph that happens to span wide.
+    line_cy = [sum(float(t.get("cy", 0.0)) for t in ln) / max(1, len(ln)) for ln in lines]
+    has_lastcol = [any(float(t.get("cx", 0.0)) >= last_col_left for t in ln) for ln in lines]
+    digit_count = [sum(1 for t in ln if _has_digit_re.search(str(t.get("text") or ""))) for ln in lines]
+    lastcol_digit = []
+    lastcol_id = []
+    for ln in lines:
+        last_tokens = [t for t in ln if float(t.get("cx", 0.0)) >= last_col_left and str(t.get("text") or "").strip()]
+        lastcol_digit.append(any(_has_digit_re.search(str(t.get("text") or "")) for t in last_tokens))
+        lastcol_id.append(any(_logref_re.match(str(t.get("text") or "").strip()) for t in last_tokens))
+
+    row_like = [bool(has_lastcol[i] and (lastcol_digit[i] or lastcol_id[i] or digit_count[i] >= 2)) for i in range(len(lines))]
+    if any(row_like):
+        last_row_line = max(i for i, ok in enumerate(row_like) if ok)
+    else:
+        # Fallback: use rightmost-column presence if nothing looks numeric/ID-like.
+        try:
+            last_row_line = max(i for i, ok in enumerate(has_lastcol) if ok)
+        except Exception:
+            return band_items, []
+
+    if last_row_line >= len(lines) - 1:
+        return band_items, []
+
+    # Treat subsequent lines as spill only if there's a large vertical gap and
+    # the later lines look paragraph-like (no digits/IDs in the rightmost column).
+    spill_start = None
+    for j in range(last_row_line + 1, len(lines)):
+        if lastcol_digit[j] or lastcol_id[j] or digit_count[j] >= 1:
+            # Likely a multi-line row continuation.
+            return band_items, []
+        if (line_cy[j] - line_cy[j - 1]) > gap_thresh:
+            spill_start = j
+            break
+    if spill_start is None:
+        return band_items, []
+
+    row_items = [t for ln in lines[:spill_start] for t in ln]
+    spill_items = [t for ln in lines[spill_start:] for t in ln]
+
+    # Conservative guard: avoid treating a wrapped cell line as spill text.
+    # True below-table notes typically start near the left edge and span wide;
+    # if the spill is a narrow, indented fragment, keep it in the row.
+    try:
+        bx0, _by0, bx1, _by1 = table_bbox_px
+        table_w = max(1.0, float(bx1) - float(bx0))
+        sx0 = min(float(t.get("x0", 0.0)) for t in spill_items)
+        sx1 = max(float(t.get("x1", 0.0)) for t in spill_items)
+        spill_w = max(0.0, sx1 - sx0)
+        if (sx0 > float(bx0) + 0.18 * table_w) and (spill_w < 0.70 * table_w):
+            return band_items, []
+    except Exception:
+        pass
+
+    return row_items, spill_items
+
+
+def _tokens_outside_bboxes(tokens: List[Dict[str, float]], bboxes_px: List[Tuple[float, float, float, float]]) -> List[Dict[str, float]]:
+    if not tokens:
+        return []
+    if not bboxes_px:
+        return [t for t in tokens if str(t.get("text") or "").strip()]
+    out: List[Dict[str, float]] = []
+    for t in tokens:
+        if not str(t.get("text") or "").strip():
+            continue
+        # Some token sources omit cx/cy; fall back to bbox center.
+        try:
+            cx = float(t.get("cx", 0.0))
+            cy = float(t.get("cy", 0.0))
+        except Exception:
+            cx, cy = 0.0, 0.0
+        if abs(cx) < 1e-6 and abs(cy) < 1e-6:
+            try:
+                x0 = float(t.get("x0", 0.0))
+                y0 = float(t.get("y0", 0.0))
+                x1 = float(t.get("x1", 0.0))
+                y1 = float(t.get("y1", 0.0))
+                if (x1 != 0.0 or x0 != 0.0) and (y1 != 0.0 or y0 != 0.0):
+                    cx = (x0 + x1) / 2.0
+                    cy = (y0 + y1) / 2.0
+            except Exception:
+                pass
+        inside = False
+        for x0, y0, x1, y1 in bboxes_px:
+            if x0 <= cx <= x1 and y0 <= cy <= y1:
+                inside = True
+                break
+        if not inside:
+            out.append(t)
+    return out
+
+
+def _group_tokens_into_text_blocks(tokens: List[Dict[str, float]]) -> List[Dict[str, object]]:
+    """Simple non-table text grouping for debug exports."""
+    if not tokens:
+        return []
+    toks = [t for t in tokens if str(t.get("text") or "").strip()]
+    if not toks:
+        return []
+    heights: List[float] = []
+    for t in toks:
+        try:
+            h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+        except Exception:
+            continue
+        if h > 0:
+            heights.append(h)
+    med_h = _median(heights) or 12.0
+    y_eps = max(6.0, min(40.0, 0.85 * float(med_h)))
+
+    toks.sort(key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+    lines: List[List[Dict[str, float]]] = []
+    cur: List[Dict[str, float]] = []
+    last_cy: Optional[float] = None
+    cur_y0: Optional[float] = None
+    cur_y1: Optional[float] = None
+
+    def _y_overlap_ratio(a0: float, a1: float, b0: float, b1: float) -> float:
+        inter = max(0.0, min(a1, b1) - max(a0, b0))
+        denom = max(1.0, min(a1 - a0, b1 - b0))
+        return float(inter / denom)
+
+    for t in toks:
+        cy = float(t.get("cy", 0.0))
+        try:
+            ty0 = float(t.get("y0", 0.0))
+            ty1 = float(t.get("y1", 0.0))
+        except Exception:
+            ty0, ty1 = 0.0, 0.0
+        overlap_ok = False
+        if cur_y0 is not None and cur_y1 is not None and ty1 > ty0 and cur_y1 > cur_y0:
+            overlap_ok = _y_overlap_ratio(float(cur_y0), float(cur_y1), float(ty0), float(ty1)) >= 0.50
+
+        if last_cy is None or abs(cy - last_cy) <= y_eps or overlap_ok:
+            cur.append(t)
+            last_cy = cy if last_cy is None else (0.7 * last_cy + 0.3 * cy)
+            if cur_y0 is None or cur_y1 is None:
+                cur_y0, cur_y1 = ty0, ty1
+            else:
+                cur_y0 = min(float(cur_y0), float(ty0))
+                cur_y1 = max(float(cur_y1), float(ty1))
+        else:
+            if cur:
+                lines.append(cur)
+            cur = [t]
+            last_cy = cy
+            cur_y0, cur_y1 = ty0, ty1
+    if cur:
+        lines.append(cur)
+
+    blocks: List[Dict[str, object]] = []
+    for ln in lines:
+        ln_sorted = sorted(ln, key=lambda t: float(t.get("x0", 0.0)))
+        text = " ".join(str(t.get("text") or "").strip() for t in ln_sorted if str(t.get("text") or "").strip()).strip()
+        if not text:
+            continue
+        try:
+            x0s = [float(t.get("x0", 0.0)) for t in ln_sorted]
+            y0s = [float(t.get("y0", 0.0)) for t in ln_sorted]
+            x1s = [float(t.get("x1", 0.0)) for t in ln_sorted]
+            y1s = [float(t.get("y1", 0.0)) for t in ln_sorted]
+            bbox = (min(x0s), min(y0s), max(x1s), max(y1s))
+        except Exception:
+            bbox = (0.0, 0.0, 0.0, 0.0)
+        blocks.append({"text": text, "bbox_px": bbox})
+    blocks.sort(key=lambda b: (float((b.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[1]), float((b.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[0])))
+    return blocks
+
+
+def _group_text_blocks_into_paragraphs(blocks: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Legacy paragraph grouping (debug-only); prefer _build_text_flow_items_from_blocks()."""
+    _flow, paragraphs, _strings = _build_text_flow_items_from_blocks(blocks)
+    return paragraphs
+
+
+def _build_text_flow_items_from_blocks(
+    blocks: List[Dict[str, object]],
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]]]:
+    """Build ordered text items classified as paragraph vs string/date/time/number (debug-only)."""
+    if not blocks:
+        return [], [], []
+
+    def _as_bbox(b: object) -> Optional[Tuple[float, float, float, float]]:
+        if isinstance(b, (tuple, list)) and len(b) == 4:
+            try:
+                return (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+            except Exception:
+                return None
+        return None
+
+    def _word_count(text: str) -> int:
+        s = (text or "").strip()
+        if not s:
+            return 0
+        return len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", s))
+
+    def _is_bullet_like(text: str) -> bool:
+        t = (text or "").strip()
+        if not t:
+            return False
+        return bool(re.match(r"^(?:[•\-\*]|[e€¢]|«|AŽ|\d{1,3}[.)])\s+", t))
+
+    def _classify_atomic_kind(text: str) -> str:
+        s = re.sub(r"\s+", " ", (text or "").strip())
+        if not s:
+            return "string"
+        try:
+            if DATE_REGEX.fullmatch(s):
+                return "date"
+        except Exception:
+            pass
+        try:
+            if TIME_REGEX.fullmatch(s):
+                return "time"
+        except Exception:
+            pass
+        try:
+            if NUMBER_REGEX.fullmatch(s):
+                return "number"
+        except Exception:
+            pass
+        return "string"
+
+    # Normalize into line-like entries with measured height/indent.
+    lines: List[Dict[str, object]] = []
+    for b in blocks:
+        txt = str(b.get("text") or "").strip()
+        bb = _as_bbox(b.get("bbox_px"))
+        if not txt or bb is None:
+            continue
+        x0, y0, x1, y1 = bb
+        h = max(1.0, y1 - y0)
+        lines.append(
+            {
+                "text": txt,
+                "bbox_px": bb,
+                "x0": float(x0),
+                "y0": float(y0),
+                "x1": float(x1),
+                "y1": float(y1),
+                "h": float(h),
+                "words": int(_word_count(txt)),
+                "bullet": bool(_is_bullet_like(txt)),
+            }
+        )
+    if not lines:
+        return [], [], []
+
+    lines.sort(key=lambda it: (float(it.get("y0", 0.0)), float(it.get("x0", 0.0))))
+
+    # Estimate "body" font height robustly (ignore likely titles by trimming the top tail).
+    heights_all = [float(it.get("h", 0.0) or 0.0) for it in lines if float(it.get("h", 0.0) or 0.0) > 0]
+    heights_sorted = sorted(heights_all)
+    trim_n = max(1, int(round(0.70 * len(heights_sorted)))) if heights_sorted else 0
+    body_h = _median(heights_sorted[:trim_n]) if trim_n else None
+    body_h = float(body_h or (_median(heights_all) or 12.0))
+    title_h_thresh = float(body_h) * 1.35
+
+    try:
+        para_min_words = int((os.environ.get("OCR_PARA_MIN_WORDS") or "5").strip())
+    except Exception:
+        para_min_words = 5
+    para_min_words = int(max(3, min(50, para_min_words)))
+    indent_tol = max(10.0, min(80.0, 1.4 * float(body_h)))
+
+    def _looks_like_title(text: str, h: float) -> bool:
+        wc = _word_count(text)
+        if wc <= 0:
+            return False
+        if h >= title_h_thresh and wc <= 10:
+            return True
+        if wc <= 4 and h >= (float(body_h) * 1.2):
+            return True
+        return False
+
+    def _looks_like_headerish(text: str, h: float) -> bool:
+        s = re.sub(r"\s+", " ", (text or "").strip())
+        if not s:
+            return False
+        if any(ch in s for ch in (".", ",", ";", ":", "(", ")")):
+            return False
+        parts = [p for p in s.split(" ") if p]
+        if not (5 <= len(parts) <= 18):
+            return False
+        upperish = 0
+        for w in parts:
+            w0 = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", w)
+            if not w0:
+                continue
+            if len(w0) <= 2 and w0.isalpha():
+                upperish += 1
+                continue
+            if w0[:1].isupper():
+                upperish += 1
+        ratio = upperish / max(1, len(parts))
+        return (ratio >= 0.65) and (float(body_h) * 0.85 <= float(h) <= float(body_h) * 1.45)
+
+    def _merge_group_text(group: List[Dict[str, object]]) -> str:
+        merged: List[str] = []
+        for it in group:
+            s = str(it.get("text") or "").strip()
+            if not s:
+                continue
+            if not merged:
+                merged.append(s)
+                continue
+            prev = merged[-1]
+            if prev.endswith("-") and s and s[:1].islower():
+                merged[-1] = prev[:-1] + s
+            else:
+                merged.append(s)
+        return re.sub(r"\s+", " ", " ".join(merged).strip())
+
+    def _union_bbox(group: List[Dict[str, object]]) -> Tuple[float, float, float, float]:
+        x0s: List[float] = []
+        y0s: List[float] = []
+        x1s: List[float] = []
+        y1s: List[float] = []
+        for it in group:
+            bb = it.get("bbox_px")
+            if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                try:
+                    x0s.append(float(bb[0]))
+                    y0s.append(float(bb[1]))
+                    x1s.append(float(bb[2]))
+                    y1s.append(float(bb[3]))
+                except Exception:
+                    continue
+        if not x0s:
+            return (0.0, 0.0, 0.0, 0.0)
+        return (min(x0s), min(y0s), max(x1s), max(y1s))
+
+    # Group consecutive lines by style cues (indent, font height similarity, gap).
+    groups: List[List[Dict[str, object]]] = []
+    cur: List[Dict[str, object]] = []
+    for it in lines:
+        if not cur:
+            cur = [it]
+            continue
+        prev = cur[-1]
+        try:
+            gap = float(it.get("y0", 0.0)) - float(prev.get("y1", 0.0))
+        except Exception:
+            gap = 0.0
+        h_a = float(prev.get("h", body_h) or body_h)
+        h_b = float(it.get("h", body_h) or body_h)
+        # Cap heights to reduce the impact of occasionally "tall" blocks that actually
+        # represent multi-line OCR merges.
+        h_cap = 1.6 * float(body_h)
+        h_a_eff = min(float(h_a), h_cap)
+        h_b_eff = min(float(h_b), h_cap)
+        h_ratio = (max(h_a_eff, h_b_eff) / max(1.0, min(h_a_eff, h_b_eff))) if (h_a_eff > 0 and h_b_eff > 0) else 1.0
+        gap_tol = max(8.0, min(120.0, 1.6 * max(h_a, h_b)))
+
+        x0_base = float(cur[0].get("x0", 0.0) or 0.0)
+        x0_now = float(it.get("x0", 0.0) or 0.0)
+        same_indent = abs(x0_now - x0_base) <= indent_tol
+        bullet_break = bool(prev.get("bullet")) or bool(it.get("bullet"))
+
+        # Allow same-line continuation fragments (common OCR artifact): a line split into
+        # two blocks separated by a small horizontal gap.
+        same_line_cont = False
+        try:
+            py0 = float(prev.get("y0", 0.0))
+            py1 = float(prev.get("y1", 0.0))
+            iy0 = float(it.get("y0", 0.0))
+            iy1 = float(it.get("y1", 0.0))
+            inter = max(0.0, min(py1, iy1) - max(py0, iy0))
+            denom = max(1.0, min(py1 - py0, iy1 - iy0))
+            overlap = float(inter / denom)
+            px1 = float(prev.get("x1", 0.0))
+            ix0 = float(it.get("x0", 0.0))
+            hgap = ix0 - px1
+            hgap_tol = max(18.0, 2.2 * float(body_h))
+            same_line_cont = (overlap >= 0.60) and (0.0 <= hgap <= hgap_tol)
+        except Exception:
+            same_line_cont = False
+
+        prev_title = _looks_like_title(str(prev.get("text") or ""), h_a)
+        cur_title = _looks_like_title(str(cur[0].get("text") or ""), float(cur[0].get("h", body_h) or body_h))
+        next_title = _looks_like_title(str(it.get("text") or ""), h_b)
+        title_break = prev_title or next_title
+
+        h_ratio_ok = (h_ratio <= 1.25) or same_line_cont
+        if (gap <= gap_tol) and (same_indent or same_line_cont) and h_ratio_ok and (not bullet_break) and (not title_break or cur_title):
+            cur.append(it)
+        else:
+            groups.append(cur)
+            cur = [it]
+    if cur:
+        groups.append(cur)
+
+    flow_items: List[Dict[str, object]] = []
+    paragraphs: List[Dict[str, object]] = []
+    strings: List[Dict[str, object]] = []
+
+    for g in groups:
+        text = _merge_group_text(g)
+        if not text:
+            continue
+        bbox = _union_bbox(g)
+        wc = _word_count(text)
+        h_med = _median([float(it.get("h", 0.0) or 0.0) for it in g if float(it.get("h", 0.0) or 0.0) > 0]) or float(body_h)
+        is_title = _looks_like_title(text, float(h_med))
+        is_header = _looks_like_headerish(text, float(h_med))
+        is_bullet = any(bool(it.get("bullet")) for it in g)
+        atomic = _classify_atomic_kind(text)
+
+        if atomic in ("date", "time", "number"):
+            kind = atomic
+        elif (wc >= para_min_words) and (not is_title) and (not is_header) and (not is_bullet):
+            kind = "paragraph"
+        else:
+            kind = "string"
+
+        item = {"type": "text", "kind": kind, "bbox_px": bbox, "text": text, "line_count": len(g), "word_count": wc}
+        flow_items.append(item)
+        if kind == "paragraph":
+            paragraphs.append(item)
+        else:
+            strings.append(item)
+
+    flow_items.sort(key=lambda e: (float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[1]), float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[0])))
+    return flow_items, paragraphs, strings
+
+
+def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str, object], source: str) -> Dict[str, object]:
+    """Build a structured, table-aware page representation for debug inspection."""
+    try:
+        tokens_raw = ir.get("tokens")  # type: ignore[assignment]
+        tokens = [dict(t) for t in tokens_raw if isinstance(t, dict)] if isinstance(tokens_raw, list) else []
+    except Exception:
+        tokens = []
+
+    # Ensure token centers exist for downstream table grouping/debug views.
+    for t in tokens:
+        try:
+            cx = float(t.get("cx", 0.0))
+            cy = float(t.get("cy", 0.0))
+        except Exception:
+            cx, cy = 0.0, 0.0
+        if abs(cx) < 1e-6 and abs(cy) < 1e-6:
+            try:
+                x0 = float(t.get("x0", 0.0))
+                y0 = float(t.get("y0", 0.0))
+                x1 = float(t.get("x1", 0.0))
+                y1 = float(t.get("y1", 0.0))
+                if (x1 != 0.0 or x0 != 0.0) and (y1 != 0.0 or y0 != 0.0):
+                    t["cx"] = (x0 + x1) / 2.0
+                    t["cy"] = (y0 + y1) / 2.0
+            except Exception:
+                continue
+    try:
+        tables_raw = ir.get("tables")  # type: ignore[assignment]
+        tables_list = list(tables_raw) if isinstance(tables_raw, list) else []
+    except Exception:
+        tables_list = []
+
+    assembled_tables: List[Dict[str, object]] = []
+    table_bboxes: List[Tuple[float, float, float, float]] = []
+    spill_bboxes: List[Tuple[float, float, float, float]] = []
+    spill_elements: List[Dict[str, object]] = []
+    for tb in tables_list:
+        if not isinstance(tb, dict):
+            continue
+        built = _debug_assemble_table_cells(tokens, tb)
+        if built is None:
+            continue
+        assembled_tables.append(built)
+        try:
+            spills = built.get("spill_blocks")
+            if isinstance(spills, list):
+                for sp in spills:
+                    if not isinstance(sp, dict):
+                        continue
+                    txt = str(sp.get("text") or "").strip()
+                    bb = sp.get("bbox_px")
+                    if txt:
+                        spill_elements.append({"type": "text", "bbox_px": bb, "text": txt})
+                        try:
+                            if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                                spill_bboxes.append((float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3])))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        try:
+            bb = built.get("bbox_px")
+            if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                table_bboxes.append((float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3])))
+        except Exception:
+            pass
+
+    non_table_tokens = _tokens_outside_bboxes(tokens, table_bboxes + spill_bboxes)
+    text_blocks = _group_tokens_into_text_blocks(non_table_tokens)
+    text_flow, paragraphs, strings = _build_text_flow_items_from_blocks(text_blocks)
+
+    def _word_set(text: str) -> set:
+        try:
+            return {w.lower() for w in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text or "") if w}
+        except Exception:
+            return set()
+
+    # Suppress duplicate table header text that sits just above the inferred table bbox.
+    try:
+        heights = []
+        for b in text_blocks:
+            bb = b.get("bbox_px")
+            if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                try:
+                    h = float(bb[3]) - float(bb[1])
+                except Exception:
+                    h = 0.0
+                if h > 0:
+                    heights.append(h)
+        body_h_guess = float(_median(heights) or 12.0)
+    except Exception:
+        body_h_guess = 12.0
+    header_gap_max = max(60.0, 4.0 * body_h_guess)
+
+    header_word_cache: Dict[int, set] = {}
+
+    def _table_header_words(tb: Dict[str, object]) -> set:
+        key = id(tb)
+        if key in header_word_cache:
+            return header_word_cache[key]
+        words: set = set()
+        try:
+            for s in (tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []) or []:
+                words |= _word_set(str(s or ""))
+        except Exception:
+            pass
+        header_word_cache[key] = words
+        return words
+
+    def _is_header_duplicate(text_item: Dict[str, object]) -> bool:
+        bb = text_item.get("bbox_px")
+        if not (isinstance(bb, (tuple, list)) and len(bb) == 4):
+            return False
+        try:
+            ix0, iy0, ix1, iy1 = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+        except Exception:
+            return False
+        text = str(text_item.get("text") or "")
+        item_words = _word_set(text)
+        if not item_words:
+            return False
+        for tb in assembled_tables:
+            if not isinstance(tb, dict):
+                continue
+            tbb = tb.get("bbox_px")
+            if not (isinstance(tbb, (tuple, list)) and len(tbb) == 4):
+                continue
+            try:
+                tx0, ty0, tx1, _ty1 = (float(tbb[0]), float(tbb[1]), float(tbb[2]), float(tbb[3]))
+            except Exception:
+                continue
+            # Must be near the table top, typically just above it.
+            if iy1 > ty0 + 1.0:
+                continue
+            if (ty0 - iy1) > header_gap_max:
+                continue
+            # Require meaningful horizontal overlap with the table bbox.
+            overlap = max(0.0, min(ix1, tx1) - max(ix0, tx0))
+            item_w = max(1.0, ix1 - ix0)
+            if (overlap / item_w) < 0.45:
+                continue
+            hdr_words = _table_header_words(tb)
+            if not hdr_words:
+                continue
+            hits = len(item_words & hdr_words)
+            ratio = hits / max(1, len(item_words))
+            if ratio >= 0.60:
+                return True
+        return False
+
+    filtered_text_flow = [it for it in text_flow if not _is_header_duplicate(it)]
+    if len(filtered_text_flow) != len(text_flow):
+        text_flow = filtered_text_flow
+        paragraphs = [it for it in text_flow if str(it.get("kind") or "") == "paragraph"]
+        strings = [it for it in text_flow if str(it.get("kind") or "") != "paragraph"]
+
+    def _classify_cell_kind(text: str) -> str:
+        s = re.sub(r"\s+", " ", (text or "").strip())
+        if not s:
+            return "string"
+        try:
+            if DATE_REGEX.fullmatch(s):
+                return "date"
+        except Exception:
+            pass
+        try:
+            if TIME_REGEX.fullmatch(s):
+                return "time"
+        except Exception:
+            pass
+        try:
+            if NUMBER_REGEX.fullmatch(s):
+                return "number"
+        except Exception:
+            pass
+        try:
+            wc = len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", s))
+        except Exception:
+            wc = len(s.split())
+        try:
+            minw = int((os.environ.get("OCR_PARA_MIN_WORDS") or "5").strip())
+        except Exception:
+            minw = 5
+        return "paragraph" if wc >= max(3, min(50, int(minw))) else "string"
+
+    # Add lightweight kind classification for table cells (paragraph/string/number/date/time).
+    for tb in assembled_tables:
+        if not isinstance(tb, dict):
+            continue
+        rows = tb.get("rows")
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            ct = r.get("cells_text")
+            if not isinstance(ct, list):
+                continue
+            try:
+                r["cells_kind"] = [_classify_cell_kind(str(x or "")) for x in ct]
+            except Exception:
+                continue
+
+    elements: List[Dict[str, object]] = []
+    for t in assembled_tables:
+        elements.append({"type": "table", "bbox_px": t.get("bbox_px"), "table": t})
+    # Add spill text extracted from inside table bboxes (e.g., below-table notes).
+    elements.extend(spill_elements)
+    for b in text_blocks:
+        elements.append({"type": "text", "bbox_px": b.get("bbox_px"), "text": b.get("text")})
+    elements.sort(key=lambda e: (float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[1]), float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[0])))
+
+    flow: List[Dict[str, object]] = []
+    for t in assembled_tables:
+        flow.append({"type": "table", "bbox_px": t.get("bbox_px"), "table": t})
+    # Include table spill notes as classified text in-flow.
+    for sp in spill_elements:
+        if not isinstance(sp, dict):
+            continue
+        txt = str(sp.get("text") or "").strip()
+        bb = sp.get("bbox_px")
+        if not txt:
+            continue
+        # Use the same text item schema as text_flow entries; classify similarly.
+        try:
+            para_min_words = int((os.environ.get("OCR_PARA_MIN_WORDS") or "5").strip())
+        except Exception:
+            para_min_words = 5
+        para_min_words = int(max(3, min(50, para_min_words)))
+        item = {
+            "type": "text",
+            "kind": "string",
+            "bbox_px": bb,
+            "text": txt,
+            "line_count": 1,
+            "word_count": len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", txt)),
+        }
+        try:
+            norm = re.sub(r"\s+", " ", txt.strip())
+            if DATE_REGEX.fullmatch(norm):
+                item["kind"] = "date"
+            elif TIME_REGEX.fullmatch(norm):
+                item["kind"] = "time"
+            elif NUMBER_REGEX.fullmatch(norm):
+                item["kind"] = "number"
+            elif int(item.get("word_count") or 0) >= para_min_words:
+                item["kind"] = "paragraph"
+        except Exception:
+            pass
+        flow.append(item)
+    flow.extend(text_flow)
+    flow.sort(key=lambda e: (float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[1]), float((e.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[0])))
+
+    # Merge adjacent text fragments that are visually one line but got split
+    # across table-bbox boundaries (common for below-table notes/callouts).
+    try:
+        hgap_tol = max(18.0, 2.2 * float(body_h_guess))
+
+        def _as_bbox(b: object) -> Optional[Tuple[float, float, float, float]]:
+            if isinstance(b, (tuple, list)) and len(b) == 4:
+                try:
+                    return (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                except Exception:
+                    return None
+            return None
+
+        def _v_overlap(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
+            inter = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+            denom = max(1.0, min(a[3] - a[1], b[3] - b[1]))
+            return float(inter / denom)
+
+        def _classify_text_kind(txt: str, prefer_para: bool = False) -> str:
+            s = re.sub(r"\s+", " ", (txt or "").strip())
+            if not s:
+                return "string"
+            try:
+                if DATE_REGEX.fullmatch(s):
+                    return "date"
+            except Exception:
+                pass
+            try:
+                if TIME_REGEX.fullmatch(s):
+                    return "time"
+            except Exception:
+                pass
+            try:
+                if NUMBER_REGEX.fullmatch(s):
+                    return "number"
+            except Exception:
+                pass
+            if prefer_para:
+                return "paragraph"
+            try:
+                wc = len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", s))
+            except Exception:
+                wc = len(s.split())
+            try:
+                minw = int((os.environ.get("OCR_PARA_MIN_WORDS") or "5").strip())
+            except Exception:
+                minw = 5
+            return "paragraph" if wc >= max(3, min(50, int(minw))) else "string"
+
+        merged_flow: List[Dict[str, object]] = []
+        for el in flow:
+            if not (isinstance(el, dict) and str(el.get("type") or "") == "text"):
+                merged_flow.append(el)
+                continue
+            bb = _as_bbox(el.get("bbox_px"))
+            txt = str(el.get("text") or "").strip()
+            if bb is None or not txt:
+                merged_flow.append(el)
+                continue
+            if merged_flow and isinstance(merged_flow[-1], dict) and str(merged_flow[-1].get("type") or "") == "text":
+                prev = merged_flow[-1]
+                pbb = _as_bbox(prev.get("bbox_px"))
+                ptxt = str(prev.get("text") or "").strip()
+                if pbb is not None and ptxt:
+                    overlap = _v_overlap(pbb, bb)
+                    hgap = bb[0] - pbb[2]
+                    if overlap >= 0.60 and 0.0 <= hgap <= hgap_tol:
+                        join_txt = re.sub(r"\s+", " ", (ptxt + " " + txt).strip())
+                        merged_bbox = (min(pbb[0], bb[0]), min(pbb[1], bb[1]), max(pbb[2], bb[2]), max(pbb[3], bb[3]))
+                        prev_kind = str(prev.get("kind") or "string").strip().lower()
+                        cur_kind = str(el.get("kind") or "string").strip().lower()
+                        prefer_para = (prev_kind == "paragraph") or (cur_kind == "paragraph")
+                        new_kind = _classify_text_kind(join_txt, prefer_para=prefer_para)
+                        prev["text"] = join_txt
+                        prev["bbox_px"] = merged_bbox
+                        prev["kind"] = new_kind
+                        try:
+                            prev["line_count"] = int(prev.get("line_count") or 1) + int(el.get("line_count") or 1)
+                        except Exception:
+                            prev["line_count"] = prev.get("line_count") or 1
+                        try:
+                            prev["word_count"] = len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", join_txt))
+                        except Exception:
+                            prev["word_count"] = prev.get("word_count")
+                        continue
+            merged_flow.append(el)
+        flow = merged_flow
+    except Exception:
+        pass
+
+    return {
+        "pdf_file": str(pdf_path),
+        "page": int(page),
+        "dpi": int(dpi),
+        "source": source,
+        "lang": ir.get("lang"),
+        "psm": ir.get("psm"),
+        "img_w": ir.get("img_w"),
+        "img_h": ir.get("img_h"),
+        "elements": elements,
+        "paragraphs": [e for e in flow if isinstance(e, dict) and str(e.get("type") or "") == "text" and str(e.get("kind") or "") == "paragraph"],
+        "strings": [e for e in flow if isinstance(e, dict) and str(e.get("type") or "") == "text" and str(e.get("kind") or "") != "paragraph"],
+        "flow": flow,
+    }
+
+
+def _page_bundle_as_text(page_bundle: Dict[str, object]) -> str:
+    """Render a human-friendly reconstruction of a page using table/cell heuristics."""
+    def _fmt_bbox(b: object) -> str:
+        if isinstance(b, (tuple, list)) and len(b) == 4:
+            try:
+                return f"({float(b[0]):.1f},{float(b[1]):.1f},{float(b[2]):.1f},{float(b[3]):.1f})"
+            except Exception:
+                return str(tuple(b))
+        return str(b)
+
+    def _wrap_cell(s: str, width: int) -> List[str]:
+        s = re.sub(r"\s+", " ", (s or "").strip())
+        if not s:
+            return [""]
+        return textwrap.wrap(s, width=width, break_long_words=False, break_on_hyphens=False) or [""]
+
+    lines: List[str] = []
+    lines.append(f"PDF: {page_bundle.get('pdf_file')}")
+    lines.append(f"Page: {page_bundle.get('page')}  DPI: {page_bundle.get('dpi')}  Source: {page_bundle.get('source')}  Lang: {page_bundle.get('lang')}  PSM: {page_bundle.get('psm')}")
+    lines.append(f"Image: {page_bundle.get('img_w')}x{page_bundle.get('img_h')}")
+    lines.append("")
+
+    flow = page_bundle.get("flow")
+    elements = flow if isinstance(flow, list) else page_bundle.get("elements")
+    if not isinstance(elements, list):
+        return "\n".join(lines).rstrip() + "\n"
+
+    table_i = 0
+    for el in elements:
+        if not isinstance(el, dict):
+            continue
+        et = str(el.get("type") or "")
+        bbox = el.get("bbox_px")
+        if et == "text":
+            txt = str(el.get("text") or "").strip()
+            if not txt:
+                continue
+            kind = str(el.get("kind") or "string").strip().lower()
+            tag = "PARA" if kind == "paragraph" else kind.upper()
+            lines.append(f"[{tag} bbox_px={_fmt_bbox(bbox)}]")
+            lines.append(txt)
+            lines.append("")
+            continue
+        if et != "table":
+            continue
+        tb = el.get("table")
+        if not isinstance(tb, dict):
+            continue
+        header_cells = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+        rows = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+        col_bounds = tb.get("col_bounds_px") if isinstance(tb.get("col_bounds_px"), list) else []
+        col_count = 0
+        try:
+            col_count = max(col_count, len(header_cells))
+        except Exception:
+            pass
+        for r in rows:
+            if isinstance(r, dict) and isinstance(r.get("cells_text"), list):
+                col_count = max(col_count, len(r.get("cells_text") or []))
+        if col_count <= 0:
+            continue
+
+        # Compute per-column widths (cap to keep page readable).
+        max_w = 44
+        min_w = 6
+        widths = [min_w] * col_count
+        for ci in range(col_count):
+            candidates: List[str] = []
+            if ci < len(header_cells):
+                candidates.append(str(header_cells[ci] or ""))
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                ct = r.get("cells_text")
+                if isinstance(ct, list) and ci < len(ct):
+                    candidates.append(str(ct[ci] or ""))
+            best = max((len(re.sub(r"\s+", " ", c.strip())) for c in candidates if c and str(c).strip()), default=min_w)
+            widths[ci] = int(max(min_w, min(max_w, best)))
+
+        def _render_row(cells: List[str]) -> List[str]:
+            wrapped = [_wrap_cell(cells[i] if i < len(cells) else "", widths[i]) for i in range(col_count)]
+            h = max(len(w) for w in wrapped) if wrapped else 1
+            out = []
+            for li in range(h):
+                parts = []
+                for ci in range(col_count):
+                    seg = wrapped[ci][li] if li < len(wrapped[ci]) else ""
+                    parts.append(seg.ljust(widths[ci]))
+                out.append("| " + " | ".join(parts) + " |")
+            return out
+
+        def _sep(ch: str = "-") -> str:
+            return "+-" + "-+-".join((ch * w) for w in widths) + "-+"
+
+        lines.append(f"[TABLE {table_i} bbox_px={_fmt_bbox(tb.get('bbox_px') or bbox)} rows={len(rows)} cols={col_count}]")
+        if col_bounds:
+            lines.append(f"col_bounds_px: {[round(float(v), 1) for v in col_bounds]}")
+        lines.append(_sep("-"))
+        if header_cells:
+            header_strs = [str(x or "") for x in header_cells] + [""] * max(0, col_count - len(header_cells))
+            lines.extend(_render_row(header_strs))
+            lines.append(_sep("="))
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            ct = r.get("cells_text")
+            if not isinstance(ct, list):
+                continue
+            lines.extend(_render_row([str(x or "") for x in ct]))
+            lines.append(_sep("-"))
+        lines.append("")
+        table_i += 1
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict[str, object]], str]:
+    """Get per-page OCR IR via Tesseract TSV."""
+    # In-memory cache first (optional)
+    try:
+        psm_key = int((os.environ.get("TESS_PSM") or "6").strip())
+    except Exception:
+        psm_key = 6
+    try:
+        lang_key = _tess_lang_from_env()
+    except Exception:
+        lang_key = "eng"
+    try:
+        oem_key = (os.environ.get("TESS_OEM") or "").strip()
+    except Exception:
+        oem_key = ""
+    try:
+        dpi_key = (os.environ.get("TESS_DPI") or "").strip()
+    except Exception:
+        dpi_key = ""
+    try:
+        cfg_key = (os.environ.get("TESS_CONFIG") or "").strip()
+    except Exception:
+        cfg_key = ""
+    try:
+        extra_key = (os.environ.get("TESS_EXTRA_ARGS") or "").strip()
+    except Exception:
+        extra_key = ""
+    cache_key = (_pdf_cache_key(pdf_path), int(page), int(dpi), str(lang_key), int(psm_key), str(oem_key), str(dpi_key), str(cfg_key), str(extra_key))
+    if _ocr_use_mem_cache() and cache_key in _PAGE_OCR_IR_CACHE:
+        try:
+            ir = _PAGE_OCR_IR_CACHE[cache_key]
+            try:
+                _refresh_ir_tables(ir)
+            except Exception:
+                pass
+            _maybe_export_tess_ir(pdf_path, page, dpi, ir, source="mem")
+            return ir, "tess_tsv:mem"
+        except Exception:
+            pass
+
+    if _ocr_use_disk_cache():
+        cached = _load_tess_tsv_ir_from_cache(pdf_path, page, dpi)
+        if cached is not None:
+            ir, cached_dpi = cached
+            try:
+                _refresh_ir_tables(ir)
+            except Exception:
+                pass
+            if _ocr_use_mem_cache():
+                try:
+                    _PAGE_OCR_IR_CACHE[cache_key] = ir
+                except Exception:
+                    pass
+            try:
+                _maybe_export_tess_ir(pdf_path, page, cached_dpi, ir, source="disk_cache")
+            except Exception:
+                pass
+            return ir, f"tess_tsv:cache(dpi={cached_dpi})"
+
+    # Render + OCR
+    tmp_dir = Path(tempfile.mkdtemp(prefix="tess_page_"))
+    try:
+        img_path, img_w, img_h, render_err = _render_pdf_page_to_png(pdf_path, page, dpi, tmp_dir)
+        if img_path is None:
+            return None, f"tess_tsv:render_error:{render_err or 'unknown'}"
+
+        try:
+            psm = int((os.environ.get("TESS_PSM") or "6").strip())
+        except Exception:
+            psm = 6
+        lang = _tess_lang_from_env()
+        tsv_text, err = _run_tesseract_tsv(img_path, lang=lang, psm=psm)
+        if err or not tsv_text:
+            return None, f"tess_tsv:ocr_error:{err or 'empty'}"
+        tokens = _parse_tesseract_tsv(tsv_text)
+        styled_text, line_entries = _stylize_tokens_as_text(tokens)
+        grid = _detect_gridlines(img_path, img_w, img_h)
+        try:
+            tables = _table_clusters_from_grid(grid, int(img_w), int(img_h), tokens=tokens)
+            for tb in tables:
+                try:
+                    bbox = tb.get("bbox_px")
+                    y_lines = tb.get("y_lines_px")
+                    bands = tb.get("row_bands_px")
+                    if isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+                        bounds = None
+                        try:
+                            bands2 = [(float(a), float(b)) for a, b in bands] if isinstance(bands, list) else None  # type: ignore[misc]
+                        except Exception:
+                            bands2 = None
+                        if isinstance(y_lines, list) and y_lines:
+                            try:
+                                bounds = _infer_table_column_bounds_from_header(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), [float(v) for v in y_lines])
+                            except Exception:
+                                bounds = None
+                        if bounds is None:
+                            bounds = _infer_table_column_bounds_px(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), row_bands_px=bands2)
+                        if bounds:
+                            try:
+                                bounds = _merge_sparse_table_columns(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), bands2, list(bounds))
+                            except Exception:
+                                pass
+                        tb["col_bounds_px"] = bounds if bounds else []
+                        # If only two rules were detected, refine row bands from tokens.
+                        try:
+                            if bounds and isinstance(y_lines, list) and len(y_lines) == 2:
+                                rb = _infer_table_row_bands_from_tokens(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), float(y_lines[0]), float(y_lines[1]), list(bounds))
+                                if rb:
+                                    tb["row_bands_px"] = [(float(a), float(b)) for a, b in rb]
+                        except Exception:
+                            pass
+                except Exception:
+                    tb["col_bounds_px"] = []
+                # Add virtual header tokens to each inferred table for downstream multi-word header matching.
+                try:
+                    tb["header_virtual_tokens"] = _table_header_virtual_tokens(tokens, tb)
+                except Exception:
+                    tb["header_virtual_tokens"] = []
+        except Exception:
+            tables = []
+        ir: Dict[str, object] = {
+            "text": styled_text,
+            "tokens": tokens,
+            "lines": line_entries,
+            "img_w": int(img_w),
+            "img_h": int(img_h),
+            "lang": lang,
+            "psm": int(psm),
+            "grid": grid,
+            "tables": tables,
+        }
+        _save_tess_tsv_ir_to_cache(pdf_path, page, dpi, ir)
+        if _ocr_use_mem_cache():
+            try:
+                _PAGE_OCR_IR_CACHE[cache_key] = ir
+            except Exception:
+                pass
+        try:
+            _maybe_export_tess_ir(pdf_path, page, dpi, ir, source="ocr")
+        except Exception:
+            pass
+        return ir, f"tess_tsv:ocr(lang={lang},psm={psm})"
+    finally:
+        try:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        except Exception:
+            pass
+
+
+def ocr_pages_with_tesseract_tsv(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
+    """OCR selected pages using Tesseract TSV + deterministic stylization."""
+    out: Dict[int, str] = {}
+    if not (_HAVE_TESSERACT and _HAVE_PYMUPDF):
+        return out, "ocr_tess_tsv:N/A"
+    try:
+        dpi = int(os.environ.get("OCR_DPI", "700"))
+    except Exception:
+        dpi = 700
+    dpi = max(200, min(1300, dpi))
+
+    labels: List[str] = []
+    for p in pages:
+        if not isinstance(p, int) or p < 1:
+            continue
+        ir, label = _get_tess_tsv_ir(pdf_path, p, dpi)
+        labels.append(label)
+        if ir is None:
+            out[p] = ""
+            continue
+        try:
+            out[p] = str(ir.get("text") or "")
+        except Exception:
+            out[p] = ""
+    # Build a compact pipeline label
+    try:
+        lang = _tess_lang_from_env()
+    except Exception:
+        lang = "eng"
+    try:
+        psm = int((os.environ.get("TESS_PSM") or "6").strip())
+    except Exception:
+        psm = 6
+    return out, f"ocr_tess_tsv(lang={lang},psm={psm},dpi={dpi})"
+
+
 def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
     """OCR selected pages using EasyOCR (CPU) with PyMuPDF rendering.
 
@@ -1452,7 +4292,34 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
         dpi = int(os.environ.get('OCR_DPI', '600'))
     except Exception:
         dpi = 600
-    dpi = max(200, min(900, dpi))
+    # Allow higher DPI for tougher OCR cases (was capped at 900)
+    dpi = max(200, min(1300, dpi))
+
+    _digitish_re = re.compile(r"^[0-9OoIlI]+$")
+    _alpha_noise_re = re.compile(r"(?<=\w)[\]\[\|](?=\s|$)")
+    _num_capture_re = re.compile(r"(\d[\d,.\-\/]*\d)")
+    try:
+        _raw_view = (os.environ.get("OCR_RAW_VIEW") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        _raw_view = False
+    try:
+        _raw_view = (os.environ.get("OCR_RAW_VIEW") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        _raw_view = False
+    def _clean_alpha_noise(s: str) -> str:
+        if not s:
+            return s
+        return _alpha_noise_re.sub("", s)
+    def _strip_edges_num(s: str) -> str:
+        if not s:
+            return s
+        m = _num_capture_re.search(s)
+        return m.group(1) if m else s
+    def _extract_numeric_fragment(s: str) -> Optional[str]:
+        if not s:
+            return None
+        hits = re.findall(r"[0-9][0-9,./\\-]*[0-9]|[0-9]", s)
+        return hits[0] if hits else None
 
     try:
         doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
@@ -1462,6 +4329,47 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
     try:
         for p in pages:
             if 1 <= p <= doc.page_count:
+                # Prefer shared boxes path to ensure consistent OCR and digit handling
+                try:
+                    items = _get_easyocr_boxes_page(pdf_path, p, dpi, langs)  # type: ignore[name-defined]
+                except Exception:
+                    items = []
+                if items:
+                    items_sorted = sorted(items, key=lambda d: (d.get("cy", 0.0), d.get("cx", 0.0)))
+                    lines: List[str] = []
+                    y_tol = 20.0
+                    current_group: List[Dict[str, float]] = []
+                    last_cy = None
+                    def _flush_group():
+                        nonlocal lines, current_group
+                        if not current_group:
+                            return
+                        for it in sorted(current_group, key=lambda d: d.get("cx", 0.0)):
+                            txt = it.get("text", "")
+                            if isinstance(txt, str):
+                                if _raw_view:
+                                    lines.append(txt.strip())
+                                    continue
+                                tnorm = txt.strip()
+                                if _digitish_re.match(tnorm.replace(" ", "")):
+                                    tnorm = tnorm.translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"}))
+                                lines.append(tnorm)
+                        current_group = []
+                    for it in items_sorted:
+                        cy = it.get("cy", 0.0)
+                        if last_cy is None or abs(cy - last_cy) <= y_tol:
+                            current_group.append(it)
+                            last_cy = cy if last_cy is None else (last_cy + cy) / 2.0
+                        else:
+                            _flush_group()
+                            current_group = [it]
+                            last_cy = cy
+                    _flush_group()
+                    text = "\n".join(lines)
+                    out[p] = text
+                    _save_ocr_to_cache(pdf_path, p, 'easyocr', dpi, text)
+                    continue
+
                 # Try loading from persistent cache first
                 cached_result = _load_ocr_from_cache(pdf_path, p, 'easyocr', dpi)
                 if cached_result is not None:
@@ -1482,7 +4390,57 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                     import os as _os
                     tmp_dir = tempfile.mkdtemp(prefix="easyocr_")
                     img_path = Path(tmp_dir) / f"page_{p}.png"
-                    pix.save(str(img_path))
+                    # Shave a thin border to avoid table lines being read as "1"
+                    _border_px = 1
+                    try:
+                        _border_px = int(os.environ.get("OCR_SHAVE_PX", "1"))
+                    except Exception:
+                        _border_px = 1
+                    _border_px = max(0, min(12, _border_px))
+                    arr_orig = None
+                    arr = None
+                    try:
+                        from PIL import Image as _Image  # type: ignore
+                        import numpy as _np  # type: ignore
+                        mode = "RGB" if pix.n >= 3 else "L"
+                        img = _Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                        if mode != "RGB":
+                            img = img.convert("RGB")
+                        arr_orig = _np.array(img)
+                        arr = arr_orig.copy()
+                    except Exception:
+                        arr = None
+                    if arr is not None and _border_px > 0:
+                        b = _border_px
+                        arr[:b, :, :] = 255
+                        arr[-b:, :, :] = 255
+                        arr[:, :b, :] = 255
+                        arr[:, -b:, :] = 255
+                        try:
+                            import cv2  # type: ignore
+                            gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+                            _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                            inv = 255 - bw
+                            h_size = max(8, arr.shape[1] // 60)
+                            v_size = max(8, arr.shape[0] // 60)
+                            h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (h_size, 1))
+                            v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, v_size))
+                            horiz = cv2.erode(inv, h_kernel, iterations=1)
+                            horiz = cv2.dilate(horiz, h_kernel, iterations=1)
+                            vert = cv2.erode(inv, v_kernel, iterations=1)
+                            vert = cv2.dilate(vert, v_kernel, iterations=1)
+                            mask = cv2.bitwise_or(horiz, vert)
+                            cleaned_inv = cv2.bitwise_and(inv, cv2.bitwise_not(mask))
+                            cleaned_bw = 255 - cleaned_inv
+                            arr = cv2.cvtColor(cleaned_bw, cv2.COLOR_GRAY2RGB)
+                        except Exception:
+                            pass
+                        _Image.fromarray(arr).save(str(img_path))
+                    elif arr is not None:
+                        _Image.fromarray(arr).save(str(img_path))
+                    else:
+                        pix.save(str(img_path))
+
                     # Run OCR
                     try:
                         results = reader.readtext(str(img_path), detail=1)  # list of [bbox, text, conf]
@@ -1551,18 +4509,194 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
                             return False
                         return False
 
+                    _digitish_re = re.compile(r"^[0-9OoIlI]+$")
+                    def _normalize_digitish_token(s: str) -> str:
+                        if not s:
+                            return s
+                        raw = s.strip()
+                        if not _digitish_re.match(raw):
+                            return s
+                        return raw.translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"}))
+
+                    _alpha_noise_re = re.compile(r"(?<=\w)[\]\[\|](?=\s|$)")
+                    def _clean_alpha_noise(s: str) -> str:
+                        if not s:
+                            return s
+                        return _alpha_noise_re.sub("", s)
+
+                    def _is_suspicious_token(s: str) -> bool:
+                        """Heuristic: tokens mixing digits/letters/specials are likely OCR errors; trigger re-pass."""
+                        if not s:
+                            return False
+                        has_digit = bool(re.search(r"\d", s))
+                        has_alpha = bool(re.search(r"[A-Za-z]", s))
+                        # Special chars excluding common number separators . , - /
+                        has_special = bool(re.search(r"[^\w\s\.\,\-\/]", s))
+                        mixed = (has_digit and has_alpha) or (has_digit and has_special) or (has_alpha and has_special)
+                        return mixed or has_special
+
+                    def _retry_token_on_crop(bbox, digit_only: bool = False) -> Tuple[Optional[str], float]:
+                        """Re-OCR a bbox on the unmodified image to try to recover lost digits/letters."""
+                        if arr_orig is None:
+                            return None, 0.0
+                        try:
+                            import numpy as _np  # type: ignore
+                            import os as _os
+                            import shutil as _sh
+                            import subprocess as _sp
+                            import tempfile as _tmp
+                            from PIL import Image as _Image  # type: ignore
+                            xs = [float(p[0]) for p in bbox]
+                            ys = [float(p[1]) for p in bbox]
+                            pad = 6.0
+                            x0 = max(0, int(min(xs) - pad))
+                            y0 = max(0, int(min(ys) - pad))
+                            x1 = min(arr_orig.shape[1], int(max(xs) + pad))
+                            y1 = min(arr_orig.shape[0], int(max(ys) + pad))
+                            crop = arr_orig[y0:y1, x0:x1]
+                            if crop.size == 0:
+                                return None, 0.0
+                            best_text: Optional[str] = None
+                            best_conf: float = 0.0
+                            try:
+                                res2 = reader.readtext(crop, detail=1, allowlist="0123456789" if digit_only else None)  # type: ignore[attr-defined]
+                            except Exception:
+                                res2 = []
+                            if res2:
+                                best = max(res2, key=lambda r: (r[2] if len(r) > 2 and r[2] is not None else 0.0))
+                                best_text = best[1].strip() if len(best) > 1 and isinstance(best[1], str) else None
+                                best_conf = float(best[2]) if len(best) > 2 and best[2] is not None else 0.0
+                            # Numeric-specific fallback: Tesseract tends to keep leading zeros
+                            if digit_only:
+                                try:
+                                    tess_bin = _sh.which("tesseract")
+                                    if tess_bin:
+                                        with _tmp.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                                            _Image.fromarray(crop).save(tf.name)
+                                            tf_path = tf.name
+                                        cmd = [
+                                            tess_bin,
+                                            tf_path,
+                                            "stdout",
+                                            "-l",
+                                            "eng",
+                                            "--psm",
+                                            "7",
+                                            "--oem",
+                                            "3",
+                                            "-c",
+                                            "tessedit_char_whitelist=0123456789",
+                                            "tsv",
+                                        ]
+                                        proc = _sp.run(cmd, capture_output=True, text=True, check=False)
+                                        try:
+                                            _os.remove(tf_path)
+                                        except Exception:
+                                            pass
+                                        if proc.returncode == 0 and proc.stdout:
+                                            for line in proc.stdout.splitlines():
+                                                parts = line.split("\t")
+                                                if len(parts) >= 12 and parts[11].strip():
+                                                    t_txt = parts[11].strip()
+                                                    try:
+                                                        t_conf = float(parts[10]) / 100.0
+                                                    except Exception:
+                                                        t_conf = 0.0
+                                                    if _debug_retry:
+                                                        try:
+                                                            print(f"[OCR TESS] cand={t_txt!r} t_conf={t_conf} best_conf={best_conf}", file=sys.stderr)
+                                                        except Exception:
+                                                            pass
+                                                    if t_txt and (t_conf > best_conf or (digit_only and best_text and t_txt != best_text and t_conf >= best_conf * 0.6)):
+                                                        best_text = t_txt
+                                                        best_conf = max(best_conf, t_conf)
+                                except Exception:
+                                    pass
+                            if isinstance(best_text, str):
+                                best_text = best_text.strip()
+                            return best_text, best_conf
+                        except Exception:
+                            return None, 0.0
+
                     # Join text lines in reading order
                     lines: List[str] = []
                     for item in results:
                         try:
                             bbox, t, c = item
+                            if _raw_view:
+                                if isinstance(t, str) and t.strip():
+                                    lines.append(t.strip())
+                                continue
                             if _is_spurious_vertical_line(bbox, t, float(c) if c is not None else 0.0, median_height, median_char_w):
                                 continue
+                            if isinstance(t, str) and _is_suspicious_token(t):
+                                t_retry, c_retry = _retry_token_on_crop(bbox)
+                                c_base = float(c) if c is not None else 0.0
+                                if t_retry and c_retry > c_base:
+                                    t = t_retry
+                                    c = c_retry
                             if isinstance(t, str) and t.strip():
+                                # For numeric-looking tokens with less-than-perfect confidence, retry on raw crop
+                                clean_txt = t.replace(" ", "")
+                                digit_count = sum(1 for ch in clean_txt if ch.isdigit())
+                                digitish = bool(_digitish_re.match(clean_txt))
+                                digit_heavy = digit_count >= 2 and digit_count >= max(2, int(len(clean_txt) * 0.5))
+                                has_sep = bool(re.search(r"[.,/\\-]", clean_txt))
+                                noisy_marks = bool(re.search(r"[\\[\\]|]", t))
+                                starts_suspicious = clean_txt.startswith("10") or clean_txt.startswith("01")
+                                needs_retry = (digitish or digit_heavy) and not has_sep and (noisy_marks or starts_suspicious)
+                                if needs_retry:
+                                    c_base = float(c) if c is not None else 0.0
+                                    t_retry, c_retry = _retry_token_on_crop(bbox, digit_only=True)
+                                    if t_retry and _digitish_re.match(str(t_retry).replace(" ", "")) and (c_retry > c_base or (c_retry >= c_base * 0.6 and str(t_retry).strip() != str(t).strip())):
+                                        t = str(t_retry)
+                                        c = c_retry if c_retry > c_base else c_base
+                            if isinstance(t, str) and t.strip():
+                                t = _normalize_digitish_token(t)
+                                if not _digitish_re.match(t.replace(" ", "")):
+                                    t = _clean_alpha_noise(t)
                                 lines.append(t)
                         except Exception:
                             pass
-                    text = "\n".join(lines)
+                    # If filtering dropped tokens, fall back to raw OCR texts to avoid losing lines
+                    if len(lines) < len(results):
+                        lines = []
+                        for _, t, _ in results:
+                            if isinstance(t, str) and t.strip():
+                                lines.append(t.strip())
+                    if _raw_view and lines:
+                        text = "\n".join(lines)
+                        out[p] = text
+                        _save_ocr_to_cache(pdf_path, p, 'easyocr', dpi, text)
+                        continue
+                    if lines:
+                        norm_lines: List[str] = []
+                        # Overwrite numeric lines with higher-confidence numeric tokens in reading order when available
+                        numeric_items: List[str] = []
+                        for it in sorted(results, key=lambda d: ((d[0][0][1] + d[0][2][1]) / 2.0 if d and d[0] else 0.0, (d[0][0][0] + d[0][1][0]) / 2.0 if d and d[0] else 0.0)):  # sort by cy, cx
+                            try:
+                                txt = it[1]
+                            except Exception:
+                                txt = ""
+                            if isinstance(txt, str) and _digitish_re.match(txt.replace(" ", "")):
+                                numeric_items.append(txt.translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"})))
+                        numeric_line_idxs = [i for i, ln in enumerate(lines) if _digitish_re.match(ln.replace(" ", ""))]
+                        for idx, ni in zip(numeric_line_idxs, numeric_items):
+                            lines[idx] = ni
+                        for ln in lines:
+                            ln_strip = ln.strip()
+                            if _digitish_re.match(ln_strip.replace(" ", "")):
+                                norm_lines.append(ln_strip.translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"})))
+                            else:
+                                norm_lines.append(_clean_alpha_noise(ln))
+                        text = "\n".join(norm_lines)
+                        text = re.sub(
+                            r"\\b[0-9OoIlI]{2,}\\b",
+                            lambda m: m.group(0).translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"})),
+                            text,
+                        )
+                    else:
+                        text = ""
                     out[p] = text
 
                     # Save to persistent cache
@@ -1585,12 +4719,573 @@ def ocr_pages_with_easyocr(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[i
 _EASYOCR_CACHE: Dict[Tuple[str, int, str, int], List[Dict[str, float]]] = {}
 _EASYOCR_READER_CACHE: Dict[str, object] = {}
 _PAGE_TEXT_CACHE: Dict[str, Tuple[Dict[int, str], str, int]] = {}
+# Per-PDF in-memory OCR geometry/text cache (Tesseract TSV IR)
+_PAGE_OCR_IR_CACHE: Dict[Tuple[str, int, int], Dict[str, object]] = {}
+_OCR_DEBUG_EXPORT_DONE: set[Tuple[str, int, int]] = set()
+_NORMALIZATION_SUPPORT_CACHE: Optional[Dict[str, object]] = None
+_UNIT_ALIAS_MAP_CACHE: Optional[Dict[str, str]] = None
+_UNIT_REGEX_CACHE: Optional[re.Pattern] = None
+_MEASUREMENT_REGEX_CACHE: Optional[re.Pattern] = None
+_MEASUREMENT_PREFIX_REGEX_CACHE: Optional[re.Pattern] = None
+
+
+def _resolve_repo_root() -> Path:
+    """Best-effort repo root resolution (folder containing /debug)."""
+    # Frozen builds: keep exports alongside the executable.
+    try:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).parent
+    except Exception:
+        pass
+    # Source tree: .../EIDAT_App_Files/Application/<this_file> -> repo root at parents[2]
+    try:
+        return Path(__file__).resolve().parents[2]
+    except Exception:
+        return Path.cwd()
+
+
+def reset_scanner_state(confirm: bool = False, include_debug: bool = False) -> Dict[str, object]:
+    """Delete on-disk caches and run/master artifacts so the scanner starts "fresh".
+
+    This is intentionally destructive. It does NOT delete PDFs or user_inputs.
+
+    Deletes (when present):
+    - OCR caches: `<repo>/cache/ocr`, `<repo>/Data Packages/.ocr_cache`
+    - Run artifacts: `<repo>/Product_Data_File/run_data`, `<repo>/run_data`
+    - Master DB artifacts: `<repo>/Product_Data_File/Master_Database` (+ legacy root/Product_Data_File master/registry files)
+    - Plots: `<repo>/Product_Data_File/plots`, `<repo>/plots`
+    - Debug exports (optional): `<repo>/debug/ocr`
+
+    Returns a report dict with `deleted` and `errors` lists.
+    """
+    if not confirm:
+        raise ValueError("refusing to reset without confirm=True")
+
+    repo_root = _resolve_repo_root()
+    deleted: List[str] = []
+    errors: List[str] = []
+
+    # Clear in-memory caches for the current process.
+    try:
+        _EASYOCR_CACHE.clear()
+        _EASYOCR_READER_CACHE.clear()
+        _PAGE_TEXT_CACHE.clear()
+        _PAGE_OCR_IR_CACHE.clear()
+        _OCR_DEBUG_EXPORT_DONE.clear()
+    except Exception:
+        pass
+    try:
+        global _NORMALIZATION_SUPPORT_CACHE, _UNIT_ALIAS_MAP_CACHE, _UNIT_REGEX_CACHE, _MEASUREMENT_REGEX_CACHE, _MEASUREMENT_PREFIX_REGEX_CACHE
+        _NORMALIZATION_SUPPORT_CACHE = None
+        _UNIT_ALIAS_MAP_CACHE = None
+        _UNIT_REGEX_CACHE = None
+        _MEASUREMENT_REGEX_CACHE = None
+        _MEASUREMENT_PREFIX_REGEX_CACHE = None
+    except Exception:
+        pass
+
+    def _rm_path(p: Path) -> None:
+        nonlocal deleted, errors
+        try:
+            p = Path(p)
+        except Exception:
+            return
+        try:
+            if not p.exists():
+                return
+        except Exception:
+            return
+        try:
+            if p.is_dir():
+                shutil.rmtree(str(p), ignore_errors=False)
+            else:
+                p.unlink(missing_ok=True)  # type: ignore[call-arg]
+            deleted.append(str(p))
+        except Exception as e:
+            errors.append(f"{p}: {type(e).__name__}: {e}")
+
+    # OCR caches
+    try:
+        cache_root_str = (os.environ.get("OCR_CACHE_ROOT") or os.environ.get("CACHE_ROOT") or "").strip()
+        cache_root = Path(cache_root_str) if cache_root_str else Path()
+    except Exception:
+        cache_root = Path()
+    if not str(cache_root):
+        cache_root = repo_root
+    _rm_path(cache_root / "cache" / "ocr")
+    _rm_path(repo_root / "cache" / "ocr")
+    _rm_path(repo_root / "Data Packages" / ".ocr_cache")
+
+    # Master database artifacts (new + legacy)
+    master_db = repo_root / "Product_Data_File" / "Master_Database"
+    _rm_path(master_db)
+    for legacy_root in (repo_root, repo_root / "Product_Data_File"):
+        _rm_path(legacy_root / "master.xlsx")
+        _rm_path(legacy_root / "master.csv")
+        _rm_path(legacy_root / "run_registry.xlsx")
+        _rm_path(legacy_root / "run_registry.csv")
+        _rm_path(legacy_root / "master_cell_state.json")
+
+    # Run data + plots
+    _rm_path(repo_root / "Product_Data_File" / "run_data")
+    _rm_path(repo_root / "run_data")
+    _rm_path(repo_root / "Product_Data_File" / "plots")
+    _rm_path(repo_root / "plots")
+
+    # Debug exports (optional)
+    if include_debug:
+        _rm_path(repo_root / "debug" / "ocr")
+
+    return {
+        "repo_root": str(repo_root),
+        "deleted": deleted,
+        "errors": errors,
+    }
+
+
+def _load_normalization_support() -> Dict[str, object]:
+    """Load normalization support data (units/symbols) from JSON, with safe defaults."""
+    global _NORMALIZATION_SUPPORT_CACHE
+    if _NORMALIZATION_SUPPORT_CACHE is not None:
+        return _NORMALIZATION_SUPPORT_CACHE
+    # Defaults mirror the legacy unit set so the app works even if the JSON is missing.
+    default: Dict[str, object] = {
+        "unit_aliases": {},
+        "unit_tokens_prefer": [],
+        "special_symbols": {
+            "degree": ["°", "º", "˚"],
+            "micro": ["µ", "μ"],
+            "plus_minus": ["±"],
+            "times": ["×", "x"],
+            "dot": ["·", "•"],
+        },
+    }
+    try:
+        support_path = Path(__file__).resolve().parent / "ocr_normalization_support.json"
+        if support_path.exists():
+            data = json.loads(support_path.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(data, dict):
+                # Merge defaults shallowly
+                merged = dict(default)
+                merged.update(data)
+                _NORMALIZATION_SUPPORT_CACHE = merged
+                return merged
+    except Exception:
+        pass
+    _NORMALIZATION_SUPPORT_CACHE = default
+    return default
+
+
+def _normalize_ocr_text_for_display(text: str) -> str:
+    """Best-effort OCR text cleanup for human-readable debug views.
+
+    This is intentionally conservative and should not be relied upon for numeric
+    extraction logic (it is for display + troubleshooting).
+    """
+    if not text:
+        return ""
+    try:
+        support = _load_normalization_support()
+    except Exception:
+        support = {}
+    out = str(text)
+
+    # Normalize common mojibake/special glyph variants into canonical symbols.
+    try:
+        sym = support.get("special_symbols") if isinstance(support, dict) else None
+    except Exception:
+        sym = None
+    if isinstance(sym, dict):
+        canon_map = {
+            "degree": "°",
+            "micro": "µ",
+            "plus_minus": "±",
+            "times": "×",
+            "dot": "·",
+        }
+        for key, canon in canon_map.items():
+            try:
+                variants = sym.get(key)
+            except Exception:
+                variants = None
+            if isinstance(variants, list):
+                for v in variants:
+                    try:
+                        vv = str(v)
+                    except Exception:
+                        continue
+                    if vv and vv in out:
+                        out = out.replace(vv, canon)
+
+    # Common OCR confusions for this project (tables/spec sheets).
+    # - Standalone Q/q is frequently Ω (ohm) in the units column.
+    out = re.sub(r"(?<=\s)[Qq](?=\s|$)", "Ω", out)
+
+    # - "185+10" in spec tables is typically "185 ± 10" (not arithmetic).
+    out = re.sub(r"\b(\d{1,6})\+(\d{1,6})\b", r"\1 ± \2", out)
+
+    # - "P,," in the Pcc label (subscript c c) often OCRs as commas.
+    out = re.sub(r"(?<!\w)P,,(?!\w)", "Pcc", out)
+
+    # - N/A: "nia"/"n1a"/"nla" commonly intended as "n/a".
+    out = re.sub(r"\b[nN][iIl1][aA]\b", "n/a", out)
+
+    out = out.replace("\u00A0", " ")
+    return out
+
+
+def _normalize_unit_key(s: str) -> str:
+    """Normalize a unit/alias token for lookup (case-insensitive, strip separators)."""
+    if not s:
+        return ""
+    t = str(s).strip().lower()
+    # Normalize common OCR variants
+    t = t.replace("\u00A0", " ")
+    t = t.replace(" ", "")
+    t = t.replace("·", "")
+    t = t.replace("-", "")
+    t = t.replace("_", "")
+    t = t.replace("(", "").replace(")", "")
+    return t
+
+
+def _get_unit_alias_map() -> Dict[str, str]:
+    """Return alias->canonical unit map (normalized)."""
+    global _UNIT_ALIAS_MAP_CACHE
+    if _UNIT_ALIAS_MAP_CACHE is not None:
+        return _UNIT_ALIAS_MAP_CACHE
+    support = _load_normalization_support()
+    aliases = support.get("unit_aliases")
+    mapping: Dict[str, str] = {}
+    if isinstance(aliases, dict):
+        for canonical, alias_list in aliases.items():
+            canon = str(canonical).strip().lower()
+            if not canon:
+                continue
+            # Canonical should also map to itself
+            mapping[_normalize_unit_key(canon)] = canon
+            if isinstance(alias_list, list):
+                for a in alias_list:
+                    k = _normalize_unit_key(str(a))
+                    if k:
+                        mapping[k] = canon
+    _UNIT_ALIAS_MAP_CACHE = mapping
+    return mapping
+
+
+def normalize_unit_token(text: Optional[str]) -> Optional[str]:
+    """Normalize a unit token/alias to canonical form (lowercase)."""
+    if not text:
+        return None
+    key = _normalize_unit_key(str(text))
+    if not key:
+        return None
+    m = _get_unit_alias_map()
+    return m.get(key) or None
+
+
+def _get_units_sorted_for_regex() -> List[str]:
+    """Return unit tokens/aliases sorted for regex (longest-first)."""
+    support = _load_normalization_support()
+    prefer = support.get("unit_tokens_prefer")
+    out: List[str] = []
+    if isinstance(prefer, list):
+        out.extend([str(x) for x in prefer if str(x).strip()])
+    # Include all canonical units and aliases too
+    aliases = support.get("unit_aliases")
+    if isinstance(aliases, dict):
+        for canonical, alias_list in aliases.items():
+            out.append(str(canonical))
+            if isinstance(alias_list, list):
+                out.extend([str(x) for x in alias_list])
+    # Add legacy units if missing
+    legacy = [
+        "%", "ppm", "ppb", "ms", "s", "sec", "kg", "g", "mg", "ug",
+        "lbm", "lb", "lbs", "lbf", "n", "kn", "mn", "ns",
+        "bar", "mbar", "pa", "kpa", "mpa", "psi", "psia", "psig",
+        "mm", "cm", "m", "in", "ft", "k", "degc", "degf", "c", "f",
+        "°c", "°f",
+    ]
+    out.extend(legacy)
+    # Normalize and de-duplicate while preserving the "prefer" bias.
+    seen: set[str] = set()
+    uniq: List[str] = []
+    for u in out:
+        s = str(u).strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(s)
+    # Longest-first so psig matches before psi, etc.
+    uniq.sort(key=lambda s: len(s), reverse=True)
+    return uniq
+
+
+def _get_unit_regex() -> re.Pattern:
+    """Regex for matching a unit token (case-insensitive)."""
+    global _UNIT_REGEX_CACHE
+    if _UNIT_REGEX_CACHE is not None:
+        return _UNIT_REGEX_CACHE
+    units = _get_units_sorted_for_regex()
+    # Escape units for regex, but keep them as alternatives.
+    parts = [re.escape(u) for u in units]
+    # Units may include symbols like % or °C; do not use \b boundaries.
+    pat = r"(?:%s)" % "|".join(parts)
+    _UNIT_REGEX_CACHE = re.compile(pat, flags=re.IGNORECASE)
+    return _UNIT_REGEX_CACHE
+
+
+def _get_measurement_regexes() -> Tuple[re.Pattern, re.Pattern]:
+    """Return (suffix, prefix) measurement regexes."""
+    global _MEASUREMENT_REGEX_CACHE, _MEASUREMENT_PREFIX_REGEX_CACHE
+    if _MEASUREMENT_REGEX_CACHE is not None and _MEASUREMENT_PREFIX_REGEX_CACHE is not None:
+        return _MEASUREMENT_REGEX_CACHE, _MEASUREMENT_PREFIX_REGEX_CACHE
+    unit_pat = _get_unit_regex().pattern
+    # Number core: allow thousands, decimals, exponent.
+    num_pat = r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?"
+    # Suffix: 180psig, 180 psig, 180° C (rare)
+    suffix = re.compile(rf"(?P<num>{num_pat})\s*(?P<unit>{unit_pat})", flags=re.IGNORECASE)
+    # Prefix: psig 180
+    prefix = re.compile(rf"(?P<unit>{unit_pat})\s*(?P<num>{num_pat})", flags=re.IGNORECASE)
+    _MEASUREMENT_REGEX_CACHE = suffix
+    _MEASUREMENT_PREFIX_REGEX_CACHE = prefix
+    return suffix, prefix
+
+
+def normalize_span_text(text: str) -> Dict[str, object]:
+    """Classify a span of OCR text into typed components for scoring/extraction."""
+    raw = (text or "").strip()
+    if not raw:
+        return {"kind": "empty", "text": ""}
+    # Light unicode normalization for matching
+    t = raw.replace("\u00A0", " ")
+    t = t.replace("\u2212", "-")  # minus sign
+    # Common OCR: "O" used for 0 in numeric context
+    t_fixed = _fix_ocr_in_numbers(t)
+
+    # Measurement first (number+unit or unit+number)
+    meas_suf, meas_pre = _get_measurement_regexes()
+    m = meas_suf.search(t_fixed)
+    if not m:
+        m = meas_pre.search(t_fixed)
+    if m:
+        num_txt = m.group("num")
+        unit_txt = m.group("unit")
+        unit_norm = normalize_unit_token(unit_txt)
+        num_clean = numeric_only(num_txt)
+        try:
+            nval = float(num_clean) if num_clean is not None else None
+        except Exception:
+            nval = None
+        return {
+            "kind": "measurement",
+            "text": raw,
+            "num_text": num_txt,
+            "num_clean": num_clean,
+            "nval": nval,
+            "unit_text": unit_txt,
+            "unit_norm": unit_norm,
+        }
+
+    # Date/time before plain number, if present.
+    dm = DATE_REGEX.search(t_fixed)
+    if dm:
+        return {"kind": "date", "text": raw, "date": dm.group(0)}
+    tm = TIME_REGEX.search(t_fixed) if "TIME_REGEX" in globals() else None  # defined later
+    if tm:
+        return {"kind": "time", "text": raw, "time": tm.group(0)}
+
+    # Plain number (may include % etc already handled in NUMBER_REGEX)
+    nm = NUMBER_REGEX.search(t_fixed)
+    if nm:
+        num_txt = nm.group(0)
+        unit_txt = extract_units(num_txt)
+        unit_norm = normalize_unit_token(unit_txt) if unit_txt else None
+        num_clean = numeric_only(num_txt)
+        try:
+            nval = float(num_clean) if num_clean is not None else None
+        except Exception:
+            nval = None
+        return {
+            "kind": "number",
+            "text": raw,
+            "num_text": num_txt,
+            "num_clean": num_clean,
+            "nval": nval,
+            "unit_text": unit_txt,
+            "unit_norm": unit_norm,
+        }
+
+    # Unit-only token
+    um = _get_unit_regex().fullmatch(t_fixed.strip())
+    if um:
+        unit_txt = um.group(0)
+        return {"kind": "unit", "text": raw, "unit_text": unit_txt, "unit_norm": normalize_unit_token(unit_txt)}
+
+    return {"kind": "string", "text": raw}
+
+
+def _items_to_spans(items: Sequence[Any]) -> List[Dict[str, object]]:
+    """Group tokens/items into larger spans (fields) and type them via normalize_span_text()."""
+    if not items:
+        return []
+    # Compute a per-row char width scale from item widths/text lengths.
+    char_ws: List[float] = []
+    triples: List[Tuple[float, float, float, float, str, Any]] = []
+    for it in items:
+        try:
+            if isinstance(it, dict):
+                x0 = float(it.get("x0", 0.0))
+                y0 = float(it.get("y0", 0.0))
+                x1 = float(it.get("x1", 0.0))
+                y1 = float(it.get("y1", 0.0))
+                txt = str(it.get("text") or "").strip()
+            else:
+                x0 = float(it[0])
+                y0 = float(it[1])
+                x1 = float(it[2])
+                y1 = float(it[3])
+                txt = str(it[4]).strip()
+        except Exception:
+            continue
+        if not txt:
+            continue
+        triples.append((x0, y0, x1, y1, txt, it))
+        w = float(x1) - float(x0)
+        if w > 0:
+            char_ws.append(w / max(1, len(txt)))
+    if not triples:
+        return []
+    char_w = _median(char_ws) or 8.0
+    char_w = max(1.0, min(80.0, float(char_w)))
+    try:
+        gap_chars = float(os.environ.get("FIELD_GAP_CHARS", "4.0"))
+    except Exception:
+        gap_chars = 4.0
+    gap_chars = max(1.0, min(12.0, gap_chars))
+    gap_threshold = max(6.0, gap_chars * char_w)
+    # Safety cap: some OCR engines (notably Tesseract TSV) can produce very wide
+    # word boxes that inflate char_w and cause numeric columns to merge.
+    try:
+        max_gap_px = float(os.environ.get("FIELD_GAP_MAX_PX", "90.0"))
+    except Exception:
+        max_gap_px = 90.0
+    gap_threshold = min(gap_threshold, max(6.0, max_gap_px))
+    try:
+        num_gap_px = float(os.environ.get("FIELD_GAP_NUMBER_PX", "40.0"))
+    except Exception:
+        num_gap_px = 40.0
+    num_gap_px = max(6.0, min(200.0, num_gap_px))
+
+    digitish_re = re.compile(r"^[0-9OoIlI%+\-.,/\\()]+$")
+    def _digitish(s: str) -> bool:
+        return bool(digitish_re.match((s or "").replace(" ", "")))
+    def _looks_like_number_token(s: str) -> bool:
+        s = (s or "").strip()
+        if not s:
+            return False
+        s_fixed = _fix_ocr_in_numbers(s)
+        try:
+            return bool(NUMBER_REGEX.fullmatch(s_fixed))
+        except Exception:
+            return False
+
+    # Sort left-to-right
+    triples.sort(key=lambda t: t[0])
+    spans: List[List[Tuple[float, float, float, float, str, Any]]] = []
+    cur: List[Tuple[float, float, float, float, str, Any]] = []
+    prev_right: Optional[float] = None
+    prev_txt: Optional[str] = None
+    for t in triples:
+        x0 = t[0]
+        x1 = t[2]
+        gap_px = None if prev_right is None else (x0 - prev_right)
+        split = prev_right is None or (gap_px is not None and gap_px > gap_threshold)
+        # Special-case: keep numeric table columns separated even when the generic
+        # spacing heuristic would merge them (prevents "155" + "131" -> "155131").
+        if not split and gap_px is not None and prev_txt is not None:
+            if _looks_like_number_token(prev_txt) and _looks_like_number_token(t[4]) and gap_px > num_gap_px:
+                split = True
+            # Also avoid merging long digit-ish tokens across a moderate gap.
+            elif _digitish(prev_txt) and _digitish(t[4]) and len(prev_txt.strip()) >= 2 and len(t[4].strip()) >= 2 and gap_px > num_gap_px:
+                split = True
+
+        if split:
+            if cur:
+                spans.append(cur)
+            cur = [t]
+        else:
+            cur.append(t)
+        prev_right = x1
+        prev_txt = t[4]
+    if cur:
+        spans.append(cur)
+
+    # Build span dicts
+    out: List[Dict[str, object]] = []
+    def is_digitish(s: str) -> bool:
+        return _digitish(s)
+    for group in spans:
+        group_sorted = sorted(group, key=lambda t: t[0])
+        texts = [t[4] for t in group_sorted]
+        # Join digit runs without spaces; otherwise join with single spaces.
+        if texts and all(is_digitish(s) for s in texts) and len(texts) >= 2:
+            span_text = "".join(texts).strip()
+        else:
+            span_text = " ".join(texts).strip()
+        try:
+            x0 = min(t[0] for t in group_sorted)
+            y0 = min(t[1] for t in group_sorted)
+            x1 = max(t[2] for t in group_sorted)
+            y1 = max(t[3] for t in group_sorted)
+        except Exception:
+            x0 = y0 = x1 = y1 = 0.0
+        typed = normalize_span_text(span_text)
+        out.append({
+            "text": span_text,
+            "x0": float(x0), "y0": float(y0), "x1": float(x1), "y1": float(y1),
+            "cx": (float(x0) + float(x1)) / 2.0,
+            "cy": (float(y0) + float(y1)) / 2.0,
+            "tokens": [t[5] for t in group_sorted],
+            "typed": typed,
+        })
+    return out
 
 def _pdf_cache_key(pdf_path: Path) -> str:
     try:
         return str(pdf_path.resolve())
     except Exception:
         return str(pdf_path)
+
+def _ocr_use_disk_cache() -> bool:
+    """Return True when OCR results should be read/written to disk cache.
+
+    Default is OFF to force fresh OCR each run. Set `OCR_USE_DISK_CACHE=1` to re-enable.
+    """
+    try:
+        disabled = (os.environ.get("OCR_DISABLE_CACHE") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        disabled = False
+    if disabled:
+        return False
+    try:
+        enabled = (os.environ.get("OCR_USE_DISK_CACHE") or os.environ.get("OCR_USE_CACHE") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        enabled = False
+    return bool(enabled)
+
+def _ocr_use_mem_cache() -> bool:
+    """Return True when in-process OCR memoization should be used."""
+    try:
+        v = (os.environ.get("OCR_USE_MEM_CACHE") or "").strip().lower()
+    except Exception:
+        v = ""
+    if v in ("0", "false", "no", "off"):
+        return False
+    return True
 
 
 # ============================================================================
@@ -1690,6 +5385,8 @@ def _load_ocr_from_cache(pdf_path: Path, page: int, ocr_mode: str, requested_dpi
         Tuple of (page_text, cached_dpi) if cache hit with sufficient DPI
         None if no suitable cache found
     """
+    if not _ocr_use_disk_cache():
+        return None
     try:
         primary_dir = _get_ocr_cache_dir(pdf_path)
         cache_dirs = [primary_dir] + _legacy_ocr_cache_dirs(pdf_path)
@@ -1747,6 +5444,8 @@ def _save_ocr_to_cache(pdf_path: Path, page: int, ocr_mode: str, dpi: int, text:
         dpi: DPI used for OCR
         text: Extracted text
     """
+    if not _ocr_use_disk_cache():
+        return
     debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
     try:
         cache_dir = _get_ocr_cache_dir(pdf_path)
@@ -1770,6 +5469,87 @@ def _save_ocr_to_cache(pdf_path: Path, page: int, ocr_mode: str, dpi: int, text:
         if debug_mode:
             print(f"[OCR CACHE SAVE ERROR] {pdf_path.name} page {page}: {type(e).__name__}: {e}", file=sys.stderr)
         pass  # Silently fail on cache write errors
+
+
+def _load_tess_tsv_ir_from_cache(pdf_path: Path, page: int, requested_dpi: int) -> Optional[Tuple[Dict[str, object], int]]:
+    """Load cached Tesseract TSV IR (tokens + stylized text).
+
+    By default, requires an exact DPI match. Set `OCR_CACHE_ALLOW_HIGHER_DPI=1`
+    to allow satisfying a lower-DPI request with a higher-DPI cache entry.
+    """
+    if not _ocr_use_disk_cache():
+        return None
+    try:
+        primary_dir = _get_ocr_cache_dir(pdf_path)
+        cache_dirs = [primary_dir] + _legacy_ocr_cache_dirs(pdf_path)
+        debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+        ocr_mode = "tess_tsv"
+
+        try:
+            allow_higher = (os.environ.get("OCR_CACHE_ALLOW_HIGHER_DPI") or "").strip().lower() in ("1", "true", "yes", "on")
+        except Exception:
+            allow_higher = False
+        dpis_to_check = range(requested_dpi, 2000, 100) if allow_higher else (requested_dpi,)
+
+        for check_dpi in dpis_to_check:
+            candidate_keys = [_get_ocr_cache_key(pdf_path, page, ocr_mode, check_dpi)]
+            candidate_keys += _legacy_ocr_cache_keys(pdf_path, page, ocr_mode, check_dpi)
+            for cache_dir in cache_dirs:
+                cache_file = cache_dir / candidate_keys[0]
+                if not cache_file.exists():
+                    for legacy_key in candidate_keys[1:]:
+                        legacy_file = cache_dir / legacy_key
+                        if legacy_file.exists():
+                            cache_file = legacy_file
+                            break
+                if cache_file.exists():
+                    with open(cache_file, 'rb') as f:
+                        cache_data = pickle.load(f)
+                    cached_dpi = int(cache_data.get('dpi', check_dpi) or check_dpi)
+                    if cache_data.get("ocr_mode") == ocr_mode and (cached_dpi == requested_dpi or (allow_higher and cached_dpi >= requested_dpi)):
+                        if debug_mode:
+                            print(f"[OCR IR CACHE HIT] {pdf_path.name} page {page} @ DPI {cached_dpi} (requested {requested_dpi})", file=sys.stderr)
+                        try:
+                            target = primary_dir / candidate_keys[0]
+                            if not target.exists():
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(str(cache_file), str(target))
+                        except Exception:
+                            pass
+                        return cache_data, cached_dpi
+
+        if debug_mode:
+            print(f"[OCR IR CACHE MISS] {pdf_path.name} page {page} @ DPI {requested_dpi} - performing OCR", file=sys.stderr)
+        return None
+    except Exception:
+        return None
+
+
+def _save_tess_tsv_ir_to_cache(pdf_path: Path, page: int, dpi: int, ir: Dict[str, object]) -> None:
+    """Persist Tesseract TSV IR for fast re-runs (tokens + stylized text)."""
+    if not _ocr_use_disk_cache():
+        return
+    debug_mode = os.environ.get('DEBUG_MODE', '').strip() in ('1', 'true', 'yes')
+    try:
+        cache_dir = _get_ocr_cache_dir(pdf_path)
+        cache_key = _get_ocr_cache_key(pdf_path, page, "tess_tsv", dpi)
+        cache_file = cache_dir / cache_key
+        data = dict(ir or {})
+        data["ocr_mode"] = "tess_tsv"
+        data["page"] = int(page)
+        data["dpi"] = int(dpi)
+        try:
+            data["timestamp"] = str(os.path.getmtime(str(pdf_path)))
+        except Exception:
+            pass
+        with open(cache_file, 'wb') as f:
+            pickle.dump(data, f)
+        if debug_mode:
+            print(f"[OCR IR CACHE SAVE] {pdf_path.name} page {page} @ DPI {dpi} -> {cache_file}", file=sys.stderr)
+    except Exception as e:
+        if debug_mode:
+            print(f"[OCR IR CACHE SAVE ERROR] {pdf_path.name} page {page}: {type(e).__name__}: {e}", file=sys.stderr)
+        return
 
 
 def get_pdf_page_count(pdf_path: Path) -> int:
@@ -1911,8 +5691,13 @@ def _get_easyocr_reader(langs: List[str]):
 def _get_easyocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: List[str]) -> List[Dict[str, float]]:
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
         return []
+    _digitish_re = re.compile(r"^[0-9OoIlI]+$")
+    try:
+        _raw_view = (os.environ.get("OCR_RAW_VIEW") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        _raw_view = False
     cache_key = (str(pdf_path), dpi, ",".join(langs or ['en']), page)
-    if cache_key in _EASYOCR_CACHE:
+    if _ocr_use_mem_cache() and cache_key in _EASYOCR_CACHE:
         return _EASYOCR_CACHE[cache_key]
     reader = _get_easyocr_reader(langs)
     if reader is None:
@@ -1931,26 +5716,239 @@ def _get_easyocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: List[str
             import tempfile, shutil
             tmp_dir = Path(tempfile.mkdtemp(prefix='easyocr_xy_'))
             img_path = tmp_dir / ('page_%d.png' % page)
+            arr_orig = None  # keep an unmodified copy for targeted retries
             try:
-                pix.save(str(img_path))
+                try:
+                    from PIL import Image as _Image  # type: ignore
+                    import numpy as _np  # type: ignore
+                    mode = "RGB" if pix.n >= 3 else "L"
+                    img = _Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                    if mode != "RGB":
+                        img = img.convert("RGB")
+                    arr_orig = _np.array(img)
+                    arr = _np.array(img)
+                    b = _border_px
+                    arr[:b, :, :] = 255
+                    arr[-b:, :, :] = 255
+                    arr[:, :b, :] = 255
+                    arr[:, -b:, :] = 255
+                    try:
+                        import cv2  # type: ignore
+                        gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+                        _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        bw_inv = 255 - bw  # text lines become white (255)
+                        h, w = bw_inv.shape
+                        # Projection mask for heavy lines
+                        row_density = (bw_inv > 0).sum(axis=1) / float(w)
+                        col_density = (bw_inv > 0).sum(axis=0) / float(h)
+                        row_mask = (row_density > 0.32).astype(_np.uint8) * 255
+                        col_mask = (col_density > 0.32).astype(_np.uint8) * 255
+                        proj_mask = _np.zeros_like(bw_inv, dtype=_np.uint8)
+                        proj_mask[row_mask.astype(bool), :] = 255
+                        proj_mask[:, col_mask.astype(bool)] = 255
+
+                        # Connected-components based line filtering
+                        try:
+                            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(bw_inv, connectivity=8)
+                            mask_cc = _np.zeros_like(bw_inv, dtype=_np.uint8)
+                            # Absolute thresholds: thin stroke and long in one dimension
+                            min_long = max(16, int(min(h, w) * 0.05))  # ~12-20px depending on dpi/page
+                            for idx in range(1, num_labels):
+                                x = stats[idx, cv2.CC_STAT_LEFT]
+                                y = stats[idx, cv2.CC_STAT_TOP]
+                                w_cc = stats[idx, cv2.CC_STAT_WIDTH]
+                                h_cc = stats[idx, cv2.CC_STAT_HEIGHT]
+                                if w_cc <= 0 or h_cc <= 0:
+                                    continue
+                                aspect = w_cc / max(h_cc, 1)
+                                long_dim = max(w_cc, h_cc)
+                                thin_stroke = w_cc <= 4 or h_cc <= 4
+                                extreme_aspect = aspect < 0.15 or aspect > 6.5
+                                spans_page = (w_cc > 0.35 * w) or (h_cc > 0.35 * h)
+                                if (thin_stroke and long_dim >= min_long) or (extreme_aspect and long_dim >= min_long) or spans_page:
+                                    mask_cc[y:y+h_cc, x:x+w_cc] = 255
+                        except Exception:
+                            mask_cc = _np.zeros_like(bw_inv, dtype=_np.uint8)
+
+                        # Morphological line detection with larger kernels
+                        h_size = max(20, w // 40)
+                        v_size = max(20, h // 40)
+                        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (h_size, 3))
+                        v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, v_size))
+                        horiz = cv2.morphologyEx(bw_inv, cv2.MORPH_OPEN, h_kernel, iterations=1)
+                        vert = cv2.morphologyEx(bw_inv, cv2.MORPH_OPEN, v_kernel, iterations=1)
+                        mask = cv2.bitwise_or(horiz, vert)
+                        mask = cv2.bitwise_or(mask, proj_mask)
+                        mask = cv2.bitwise_or(mask, mask_cc)
+                        cleaned_inv = cv2.bitwise_and(bw_inv, cv2.bitwise_not(mask))
+                        cleaned_bw = 255 - cleaned_inv
+                        arr = cv2.cvtColor(cleaned_bw, cv2.COLOR_GRAY2RGB)
+                    except Exception:
+                        pass
+                    _Image.fromarray(arr).save(str(img_path))
+                except Exception:
+                    pix.save(str(img_path))
+
                 try:
                     res = reader.readtext(str(img_path), detail=1)  # type: ignore[attr-defined]
                 except Exception:
                     res = []
                 items: List[Dict[str, float]] = []
+                def _retry_token_on_crop(bbox, digit_only: bool = False) -> Tuple[Optional[str], float]:
+                    """Re-OCR a bbox on the unmodified image to recover dropped digits/letters."""
+                    if arr_orig is None:
+                        return None, 0.0
+                    try:
+                        import numpy as _np  # type: ignore
+                        import os as _os
+                        import shutil as _sh
+                        import subprocess as _sp
+                        import tempfile as _tmp
+                        from PIL import Image as _Image  # type: ignore
+                        _debug_local = False
+                        try:
+                            _debug_local = (os.environ.get("OCR_DEBUG_RETRY") or "").strip().lower() not in ("", "0", "false", "no")
+                        except Exception:
+                            _debug_local = False
+                        xs = [float(pt[0]) for pt in bbox]
+                        ys = [float(pt[1]) for pt in bbox]
+                        pad = 6.0
+                        x0 = max(0, int(min(xs) - pad))
+                        y0 = max(0, int(min(ys) - pad))
+                        x1 = min(arr_orig.shape[1], int(max(xs) + pad))
+                        y1 = min(arr_orig.shape[0], int(max(ys) + pad))
+                        crop = arr_orig[y0:y1, x0:x1]
+                        if crop.size == 0:
+                            return None, 0.0
+                        best_text: Optional[str] = None
+                        best_conf: float = 0.0
+                        try:
+                            allow = "0123456789.,-/" if digit_only else None
+                            res2 = reader.readtext(crop, detail=1, allowlist=allow)  # type: ignore[attr-defined]
+                        except Exception:
+                            res2 = []
+                        if res2:
+                            best = max(res2, key=lambda r: (r[2] if len(r) > 2 and r[2] is not None else 0.0))
+                            best_text = best[1].strip() if len(best) > 1 and isinstance(best[1], str) else None
+                            best_conf = float(best[2]) if len(best) > 2 and best[2] is not None else 0.0
+                        if digit_only and not _raw_view:
+                            try:
+                                tess_bin = _sh.which("tesseract")
+                                if _debug_local:
+                                    try:
+                                        print(f"[OCR TESS call] tess_bin={tess_bin}", file=sys.stderr)
+                                    except Exception:
+                                        pass
+                                if tess_bin:
+                                    with _tmp.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                                        _Image.fromarray(crop).save(tf.name)
+                                        tf_path = tf.name
+                                    cmd = [
+                                        tess_bin,
+                                        tf_path,
+                                        "stdout",
+                                        "-l",
+                                        "eng",
+                                        "--psm",
+                                        "7",
+                                        "--oem",
+                                        "3",
+                                        "-c",
+                                        "tessedit_char_whitelist=0123456789",
+                                        "tsv",
+                                    ]
+                                    proc = _sp.run(cmd, capture_output=True, text=True, check=False)
+                                    if _debug_local:
+                                        try:
+                                            print(f"[OCR TESS rc={proc.returncode}]", file=sys.stderr)
+                                        except Exception:
+                                            pass
+                                    try:
+                                        _os.remove(tf_path)
+                                    except Exception:
+                                        pass
+                                    if proc.returncode == 0 and proc.stdout:
+                                        for line in proc.stdout.splitlines():
+                                            parts = line.split("\t")
+                                            if len(parts) >= 12 and parts[11].strip():
+                                                t_txt = parts[11].strip()
+                                                try:
+                                                    t_conf = float(parts[10]) / 100.0
+                                                except Exception:
+                                                    t_conf = 0.0
+                                                if _debug_local:
+                                                    try:
+                                                        print(f"[OCR TESS] cand={t_txt!r} t_conf={t_conf} best_conf={best_conf}", file=sys.stderr)
+                                                    except Exception:
+                                                        pass
+                                                if t_txt and (t_conf > best_conf or (digit_only and best_text and t_txt != best_text and t_conf >= best_conf * 0.6)):
+                                                    best_text = t_txt
+                                                    best_conf = max(best_conf, t_conf)
+                            except Exception:
+                                pass
+                        if isinstance(best_text, str):
+                            best_text = best_text.strip()
+                        return best_text, best_conf
+                    except Exception:
+                        return None, 0.0
                 for it in res:
                     try:
                         bbox, text, conf = it
+                        txt = text.strip() if isinstance(text, str) else ""
+                        cval = float(conf) if conf is not None else 0.0
+                        if _raw_view:
+                            xs = [float(pt[0]) for pt in bbox]
+                            ys = [float(pt[1]) for pt in bbox]
+                            x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+                            cx = (x0 + x1) / 2.0
+                            cy = (y0 + y1) / 2.0
+                            if isinstance(txt, str) and txt.strip():
+                                items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': txt.strip(), 'conf': cval})
+                            continue
+                        clean_txt = txt.replace(" ", "")
+                        digit_count = sum(1 for ch in clean_txt if ch.isdigit())
+                        digitish = bool(_digitish_re.match(clean_txt))
+                        digit_heavy = digit_count >= 2 and digit_count >= max(2, int(len(clean_txt) * 0.5))
+                        has_sep = bool(re.search(r"[.,/\\-]", clean_txt))
+                        noisy_marks = bool(re.search(r"[\\[\\]|]", txt))
+                        starts_suspicious = clean_txt.startswith("10") or clean_txt.startswith("01")
+                        needs_retry = (digitish or digit_heavy) and not has_sep and (noisy_marks or starts_suspicious)
+                        # Also retry very thin/tall or wide-thin boxes with low-ish confidence
+                        xs_shape = [float(pt[0]) for pt in bbox]
+                        ys_shape = [float(pt[1]) for pt in bbox]
+                        w_box = max(xs_shape) - min(xs_shape)
+                        h_box = max(ys_shape) - min(ys_shape)
+                        aspect = w_box / max(h_box, 1.0)
+                        shape_line_like = (aspect < 0.2 and h_box > 8) or (aspect > 5.0 and w_box > 8)
+                        needs_retry = needs_retry or (shape_line_like and cval < 0.85)
+                        _debug_retry = False
+                        try:
+                            _debug_retry = (os.environ.get("OCR_DEBUG_RETRY") or "").strip() not in ("", "0", "false", "no")
+                        except Exception:
+                            _debug_retry = False
+                        if txt and needs_retry:
+                            t_retry, c_retry = _retry_token_on_crop(bbox, digit_only=True)
+                            if t_retry and _digitish_re.match(str(t_retry).replace(" ", "")):
+                                # Accept slightly lower confidence if the digit string changes (e.g., restores leading zeros)
+                                if c_retry > cval or (c_retry >= cval * 0.6 and str(t_retry).strip() != txt.strip()):
+                                    txt = str(t_retry).strip()
+                                    cval = c_retry if c_retry > cval else cval
+                                    if _debug_retry:
+                                        try:
+                                            print(f"[OCR RETRY num] {txt=!r} c_base={conf} c_retry={c_retry}", file=sys.stderr)
+                                        except Exception:
+                                            pass
                         xs = [float(pt[0]) for pt in bbox]
                         ys = [float(pt[1]) for pt in bbox]
                         x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
                         cx = (x0 + x1) / 2.0
                         cy = (y0 + y1) / 2.0
-                        if isinstance(text, str) and text.strip():
-                            items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': text.strip(), 'conf': float(conf) if conf is not None else 0.0})
+                        if isinstance(txt, str) and txt.strip():
+                            items.append({'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'cx': cx, 'cy': cy, 'text': txt.strip(), 'conf': cval})
                     except Exception:
                         pass
-                _EASYOCR_CACHE[cache_key] = items
+                if _ocr_use_mem_cache():
+                    _EASYOCR_CACHE[cache_key] = items
                 return items
             finally:
                 try:
@@ -1971,6 +5969,255 @@ def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, lan
         if items:
             boxes[p] = items
     return boxes
+
+
+def _get_ocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: Optional[List[str]] = None) -> List[Dict[str, float]]:
+    """Unified OCR token provider (prefers Tesseract TSV, falls back to EasyOCR)."""
+    # Allow explicit engine selection to stabilize behavior across environments.
+    # - OCR_BOXES_ENGINE=auto (default): prefer Tesseract TSV when available, else EasyOCR
+    # - OCR_BOXES_ENGINE=tess_tsv|tesseract: only use Tesseract TSV (no fallback)
+    # - OCR_BOXES_ENGINE=easyocr: only use EasyOCR
+    try:
+        engine = (os.environ.get("OCR_BOXES_ENGINE") or "auto").strip().lower()
+    except Exception:
+        engine = "auto"
+
+    want_easy = engine in ("easyocr", "easy")
+    want_tess = engine in ("tess_tsv", "tesseract", "tess", "tsv")
+
+    # Prefer Tesseract TSV tokens if available (or explicitly requested).
+    if not want_easy and (_HAVE_TESSERACT and _HAVE_PYMUPDF) and (engine == "auto" or want_tess):
+        try:
+            ir, _lbl = _get_tess_tsv_ir(pdf_path, page, int(dpi))
+        except Exception:
+            ir = None
+        if ir is not None:
+            try:
+                toks = ir.get("tokens")  # type: ignore[assignment]
+                items = list(toks) if isinstance(toks, list) else []
+            except Exception:
+                items = []
+            # Optional min confidence threshold (0..1)
+            try:
+                min_conf = float((os.environ.get("OCR_MIN_CONF") or "0").strip())
+            except Exception:
+                min_conf = 0.0
+            if min_conf > 0:
+                try:
+                    items = [it for it in items if float(it.get("conf", 0.0)) >= min_conf]
+                except Exception:
+                    pass
+            return items
+    if want_tess:
+        return []
+    # Fall back to EasyOCR when configured/available (or explicitly requested)
+    if langs is None:
+        langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+        langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    return _get_easyocr_boxes_page(pdf_path, page, dpi=dpi, langs=langs)
+
+
+def _get_ocr_page_bundle(pdf_path: Path, page: int, dpi: int, langs: Optional[List[str]] = None) -> Tuple[List[Dict[str, float]], List[Dict[str, object]], List[Dict[str, float]]]:
+    """Return OCR tokens + inferred table structures + virtual header tokens for one page."""
+    try:
+        engine = (os.environ.get("OCR_BOXES_ENGINE") or "auto").strip().lower()
+    except Exception:
+        engine = "auto"
+    want_easy = engine in ("easyocr", "easy")
+    want_tess = engine in ("tess_tsv", "tesseract", "tess", "tsv")
+
+    if not want_easy and (_HAVE_TESSERACT and _HAVE_PYMUPDF) and (engine == "auto" or want_tess):
+        try:
+            ir, _lbl = _get_tess_tsv_ir(pdf_path, page, int(dpi))
+        except Exception:
+            ir = None
+        if ir is not None:
+            try:
+                toks = ir.get("tokens")  # type: ignore[assignment]
+                items = list(toks) if isinstance(toks, list) else []
+            except Exception:
+                items = []
+            try:
+                tables_raw = ir.get("tables")  # type: ignore[assignment]
+                tables = list(tables_raw) if isinstance(tables_raw, list) else []
+            except Exception:
+                tables = []
+            header_virtuals: List[Dict[str, float]] = []
+            for tb in tables:
+                if not isinstance(tb, dict):
+                    continue
+                try:
+                    v = tb.get("header_virtual_tokens")
+                    if isinstance(v, list):
+                        header_virtuals.extend([t for t in v if isinstance(t, dict)])
+                except Exception:
+                    continue
+            # Optional min confidence threshold (0..1)
+            try:
+                min_conf = float((os.environ.get("OCR_MIN_CONF") or "0").strip())
+            except Exception:
+                min_conf = 0.0
+            if min_conf > 0:
+                try:
+                    items = [it for it in items if float(it.get("conf", 0.0)) >= min_conf]
+                except Exception:
+                    pass
+            return items, tables, header_virtuals
+    if want_tess:
+        return [], [], []
+    if langs is None:
+        langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+        langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    return _get_easyocr_boxes_page(pdf_path, page, dpi=dpi, langs=langs), [], []
+
+
+def _group_ocr_items_into_rows(items: List[Dict[str, float]], row_eps: float, tables: Optional[List[Dict[str, object]]] = None) -> Tuple[Dict[int, List[Dict[str, float]]], Dict[int, Dict[str, object]]]:
+    """Group OCR tokens into logical rows; prefers gridline-based table bands when available."""
+    rows: Dict[int, List[Dict[str, float]]] = {}
+    meta: Dict[int, Dict[str, object]] = {}
+    if not items:
+        return rows, meta
+
+    try:
+        table_mode = (os.environ.get("OCR_TABLE_AWARE_ROWS") or "").strip().lower()
+    except Exception:
+        table_mode = ""
+    enable_table_mode = table_mode not in ("0", "false", "no", "off", "disable", "disabled")
+
+    assigned: set[int] = set()
+    if enable_table_mode and tables:
+        for tb in tables:
+            if not isinstance(tb, dict):
+                continue
+            bbox = tb.get("bbox_px")
+            bands = tb.get("row_bands_px")
+            if not (isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(bands, list) and bands):
+                continue
+            bx0, by0, bx1, by1 = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+            w = max(1.0, bx1 - bx0)
+            label_cut = bx0 + 0.28 * w
+            bounds = None
+            try:
+                b = tb.get("col_bounds_px")
+                if isinstance(b, list) and len(b) >= 3:
+                    bounds = [float(v) for v in b]
+            except Exception:
+                bounds = None
+            if bounds is None:
+                try:
+                    rb = tb.get("row_bands_px") if isinstance(tb.get("row_bands_px"), list) else None
+                    bands2 = [(float(a), float(b)) for a, b in rb] if rb else None  # type: ignore[misc]
+                except Exception:
+                    bands2 = None
+                try:
+                    bounds = _infer_table_column_bounds_px(items, (bx0, by0, bx1, by1), row_bands_px=bands2)
+                except Exception:
+                    bounds = None
+            pad = 1.0
+            for band in bands:
+                if not (isinstance(band, (tuple, list)) and len(band) == 2):
+                    continue
+                y_top, y_bot = float(band[0]) + pad, float(band[1]) - pad
+                if y_bot <= y_top:
+                    continue
+                row_items = [
+                    it for it in items
+                    if (id(it) not in assigned)
+                    and (bx0 <= float(it.get("cx", 0.0)) <= bx1)
+                    and (y_top <= float(it.get("cy", 0.0)) <= y_bot)
+                ]
+                if not row_items:
+                    continue
+                # Split out below-table notes that sit inside a tall last band.
+                spill_items: List[Dict[str, float]] = []
+                try:
+                    row_items, spill_items = _split_table_band_row_and_spill(row_items, bounds if bounds else [bx0, bx1], (bx0, by0, bx1, by1))  # type: ignore[arg-type]
+                except Exception:
+                    spill_items = []
+                for it in row_items:
+                    assigned.add(id(it))
+                for it in spill_items:
+                    assigned.add(id(it))
+                key = int(round(0.5 * (y_top + y_bot)))
+                rows[key] = row_items
+                label_items = [it for it in row_items if float(it.get("x0", 0.0)) <= label_cut or float(it.get("cx", 0.0)) <= label_cut]
+                label_items.sort(key=lambda t: (float(t.get("y0", 0.0)), float(t.get("x0", 0.0))))
+                label_text = " ".join(str(it.get("text") or "").strip() for it in label_items).strip()
+
+                row_text_cells = None
+                cells_text = None
+                if bounds and len(bounds) >= 3:
+                    cols: List[List[Dict[str, float]]] = [[] for _ in range(len(bounds) - 1)]
+                    for it in row_items:
+                        cx = float(it.get("cx", 0.0))
+                        idx = None
+                        for i in range(len(bounds) - 1):
+                            if bounds[i] <= cx < bounds[i + 1]:
+                                idx = i
+                                break
+                        if idx is None:
+                            continue
+                        cols[idx].append(it)
+                    # Two-column key/value cleanup for row_text_cells preview.
+                    try:
+                        if len(cols) == 2 and cols[0] and cols[1]:
+                            left_txt = " ".join(str(t.get("text") or "").strip() for t in sorted(cols[0], key=lambda t: float(t.get("x0", 0.0))) if str(t.get("text") or "").strip())
+                            left_norm = re.sub(r"\s+", " ", left_txt).strip().lower()
+                            right_sorted = sorted(cols[1], key=lambda t: float(t.get("x0", 0.0)))
+                            right_txt = " ".join(str(t.get("text") or "").strip() for t in right_sorted if str(t.get("text") or "").strip())
+                            right_norm = re.sub(r"\s+", " ", right_txt).strip().lower()
+                            if (left_norm.endswith("/") or left_norm.endswith("/ component") or "serial" in left_norm) and right_norm.startswith("component "):
+                                moved = [t for t in cols[1] if str(t.get("text") or "").strip().lower() == "component"]
+                                if moved:
+                                    cols[0].extend(moved)
+                                    cols[1] = [t for t in cols[1] if t not in moved]
+                    except Exception:
+                        pass
+                    # Same rebalance as debug assembly: keep short log ref codes in the last
+                    # column, but move connector words (e.g., "at") back to the left cell.
+                    try:
+                        _logref_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
+                        if len(cols) >= 2 and cols[-1]:
+                            id_hits = [t for t in cols[-1] if _logref_re.match(str(t.get("text") or "").strip())]
+                            non_id = [t for t in cols[-1] if t not in id_hits and str(t.get("text") or "").strip()]
+                            if id_hits and non_id:
+                                non_id_txt = [str(t.get("text") or "").strip() for t in non_id]
+                                if all(len(s) <= 4 and s.isalpha() for s in non_id_txt):
+                                    cols[-2].extend(non_id)
+                                    cols[-1] = id_hits
+                    except Exception:
+                        pass
+                    try:
+                        cells_text = [_join_tokens_as_cell_text(ct) for ct in cols]
+                        row_text_cells = " | ".join([c for c in cells_text if c]).strip()
+                    except Exception:
+                        cells_text = None
+                        row_text_cells = None
+                meta[key] = {
+                    "match_text": label_text,
+                    "table_bbox_px": (bx0, by0, bx1, by1),
+                    "row_band_px": (y_top, y_bot),
+                    "cells_text": cells_text,
+                    "row_text_cells": row_text_cells,
+                    "spill_text": _join_tokens_as_cell_text(spill_items) if spill_items else None,
+                }
+
+    # Fallback: group remaining tokens by Y tolerance.
+    leftover = [it for it in items if id(it) not in assigned]
+    if leftover:
+        prev_cy: Optional[float] = None
+        current_key: Optional[int] = None
+        for it in sorted(leftover, key=lambda d: float(d.get("cy", 0.0))):
+            cy_val = float(it.get("cy", 0.0))
+            if prev_cy is None or abs(cy_val - prev_cy) > float(row_eps) or current_key is None:
+                key = int(round(cy_val))
+                rows[key] = [it]
+                current_key = key
+            else:
+                rows[current_key].append(it)  # type: ignore[index]
+            prev_cy = cy_val
+
+    return rows, meta
 
 
 def _levenshtein_distance(s1: str, s2: str) -> int:
@@ -2246,6 +6493,38 @@ def _fields_from_items(items: Sequence[Any]) -> List[str]:
     """
     if not items:
         return []
+    _digitish_re = re.compile(r"^[0-9OoIlI%+\-.,/\\()]+$")
+    def _is_digitish_token(s: str) -> bool:
+        s = (s or "").strip()
+        if not s:
+            return False
+        return bool(_digitish_re.match(s.replace(" ", "")))
+
+    # Estimate typical character width to scale the field gap threshold across
+    # different coordinate systems (PDF points vs OCR pixels/DPI).
+    char_ws: List[float] = []
+    for it in items:
+        try:
+            x0, x1, text = _token_bounds_and_text(it)
+        except Exception:
+            continue
+        txt = (text or "").strip()
+        if not txt:
+            continue
+        w = float(x1) - float(x0)
+        if w <= 0:
+            continue
+        char_ws.append(w / max(1, len(txt)))
+    char_w = _median(char_ws) or 8.0
+    char_w = max(1.0, min(80.0, float(char_w)))
+    try:
+        gap_chars = float(os.environ.get("FIELD_GAP_CHARS", "4.0"))
+    except Exception:
+        gap_chars = 4.0
+    gap_chars = max(1.0, min(12.0, gap_chars))
+    # New field only when there's a large visual whitespace gap (column break),
+    # not regular inter-word spacing.
+    gap_threshold = max(6.0, gap_chars * char_w)
     # Normalize to (x0, x1, text) triples
     triples: List[Tuple[float, float, str]] = []
     for it in items:
@@ -2263,14 +6542,13 @@ def _fields_from_items(items: Sequence[Any]) -> List[str]:
     fields: List[str] = []
     current: List[str] = []
     prev_right: Optional[float] = None
-    # Heuristic gap threshold in text units to start a new field
-    GAP = 6.0
+    prev_txt: Optional[str] = None
     for x0, x1, txt in triples:
         if prev_right is None:
             current = [txt]
         else:
             gap = x0 - prev_right
-            if gap > GAP:
+            if gap > gap_threshold:
                 field = " ".join(current).strip()
                 if field:
                     fields.append(field)
@@ -2278,8 +6556,15 @@ def _fields_from_items(items: Sequence[Any]) -> List[str]:
             else:
                 current.append(txt)
         prev_right = x1
+        prev_txt = txt
     if current:
-        field = " ".join(current).strip()
+        # If a field is composed of digit-like tokens, join without spaces so
+        # downstream numeric regex can match (e.g., "0 1 1 1 3" -> "01113").
+        digitish_parts = [p for p in current if _is_digitish_token(p)]
+        if digitish_parts and len(digitish_parts) == len(current) and len(current) >= 2:
+            field = "".join(current).strip()
+        else:
+            field = " ".join(current).strip()
         if field:
             fields.append(field)
     return fields
@@ -2296,6 +6581,12 @@ def _column_text_for_position(
     """Return concatenated text for the desired slot using header anchor positions."""
     if not tokens or not column_positions or not header_tokens:
         return None
+    _digitish_re = re.compile(r"^[0-9OoIlI%+\-.,/\\()]+$")
+    def _is_digitish_token(s: str) -> bool:
+        s = (s or "").strip()
+        if not s:
+            return False
+        return bool(_digitish_re.match(s.replace(" ", "")))
     ordered: List[Tuple[str, float]] = []
     for raw_name in header_tokens:
         raw = str(raw_name).strip()
@@ -2337,7 +6628,8 @@ def _column_text_for_position(
     left = max(left, label_right_x - 1.0)
     window_left = left - 0.5
     window_right = right + 0.5
-    pieces: List[str] = []
+    # Collect and sort by x so we can intelligently join digit runs.
+    picked: List[Tuple[float, float, str]] = []
     for token in tokens:
         x0, x1, raw_text = _token_bounds_and_text(token)
         text = raw_text.strip()
@@ -2345,10 +6637,34 @@ def _column_text_for_position(
             continue
         cx_token = (x0 + x1) / 2.0
         if window_left <= cx_token <= window_right:
-            pieces.append(text)
-    if not pieces:
+            picked.append((float(x0), float(x1), text))
+    if not picked:
         return None
-    return " ".join(pieces).strip()
+    picked.sort(key=lambda t: t[0])
+    # Estimate char width for this slice to scale a "join digits" threshold.
+    char_ws: List[float] = []
+    for x0, x1, text in picked:
+        w = float(x1) - float(x0)
+        if w > 0 and text:
+            char_ws.append(w / max(1, len(text)))
+    char_w = _median(char_ws) or 8.0
+    char_w = max(1.0, min(80.0, float(char_w)))
+
+    pieces: List[str] = []
+    prev_right: Optional[float] = None
+    prev_txt: Optional[str] = None
+    for x0, x1, text in picked:
+        if prev_right is None:
+            pieces.append(text)
+        else:
+            gap = max(0.0, float(x0) - float(prev_right))
+            if prev_txt and _is_digitish_token(prev_txt) and _is_digitish_token(text) and gap <= (2.2 * char_w):
+                pieces.append(text)
+            else:
+                pieces.append(" " + text)
+        prev_right = x1
+        prev_txt = text
+    return "".join(pieces).strip()
 
 
 def _token_norm(s: str) -> str:
@@ -2727,9 +7043,9 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
     sec_term = (getattr(spec, 'secondary_term', None) or '').strip()
     sec_norm_global = _normalize_anchor_token(sec_term) if sec_term else ""
     try:
-        _SEC_HEADER_WEIGHT = float(os.environ.get("SMART_SEC_HEADER_W", "0.7"))
+        _SEC_HEADER_WEIGHT = float(os.environ.get("SMART_SEC_HEADER_MAX", "4.0"))
     except Exception:
-        _SEC_HEADER_WEIGHT = 0.7
+        _SEC_HEADER_WEIGHT = 4.0
     debug_mode = bool(os.environ.get('SMART_DEBUG') or os.environ.get('SMART_SNAP_DEBUG'))
     # Alt-row search direction for numeric smart snaps: 'above' or 'below'
     alt_dir_raw = getattr(spec, "alt_search", None)
@@ -3213,56 +7529,74 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if debug_mode and column_positions:
                             print(f"[SMART DEBUG][PDF] column_positions page={p} {column_positions}", file=sys.stderr)
 
-                        # Build numeric candidates from tokens (captures 500psig etc.)
+                        # Build numeric candidates from spans (robust to split-digit OCR).
                         numeric_cands = []  # list of dicts with keys: text, num_clean, units, x0,y0,x1,y1
-                        for idx, t in enumerate(ordered_right_tokens):
-                            raw = t[4]
-                            m = NUMBER_REGEX.search(raw)
-                            if not m:
+                        right_spans = _items_to_spans(ordered_right_tokens)
+                        for idx, sp in enumerate(right_spans):
+                            typed = sp.get("typed") if isinstance(sp, dict) else None
+                            if not isinstance(typed, dict):
                                 continue
-                            val_txt = m.group(0)
-                            num_clean = numeric_only(val_txt)
-                            units_val = extract_units(val_txt)
-                            units_val_norm = units_val.lower() if units_val else None
-                            unit_neighbor = bool(units_val_norm)
-                            if not units_val_norm:
-                                lookahead_limit = min(len(ordered_right_tokens), idx + 3)
+                            kind = str(typed.get("kind") or "")
+                            if kind not in ("measurement", "number"):
+                                continue
+                            num_txt = str(typed.get("num_text") or "")
+                            if not num_txt:
+                                continue
+                            unit_norm = typed.get("unit_norm")
+                            unit_neighbor = bool(unit_norm)
+                            # Neighbor unit lookup (e.g., separate Units column)
+                            if not unit_norm:
+                                lookahead_limit = min(len(right_spans), idx + 3)
                                 for j in range(idx + 1, lookahead_limit):
-                                    nxt = ordered_right_tokens[j]
-                                    nxt_txt = str(nxt[4]).strip()
+                                    nxt = right_spans[j]
+                                    try:
+                                        nxt_typed = nxt.get("typed")  # type: ignore[union-attr]
+                                        nxt_txt = str(nxt.get("text") or "").strip()  # type: ignore[union-attr]
+                                    except Exception:
+                                        nxt_typed = None
+                                        nxt_txt = ""
                                     if not nxt_txt:
                                         continue
-                                    nxt_norm = nxt_txt.lower()
-                                    nxt_cx = (float(nxt[0]) + float(nxt[2])) / 2.0
-                                    units_x = column_positions.get('units')
-                                    page_x = column_positions.get('page')
-                                    if units_hint_set and nxt_norm in units_hint_set:
-                                        units_val_norm = nxt_norm
+                                    if isinstance(nxt_typed, dict) and str(nxt_typed.get("kind") or "") == "unit":
+                                        unit_norm = nxt_typed.get("unit_norm") or normalize_unit_token(nxt_txt)
                                         unit_neighbor = True
                                         break
-                                    if units_x is not None:
-                                        window = max(6.0, abs((page_x or (units_x + 30.0)) - units_x) * 0.2)
-                                        if abs(nxt_cx - units_x) <= window:
-                                            units_val_norm = nxt_norm
-                                            unit_neighbor = True
-                                            break
-                                    # Stop once the next numeric cell begins to avoid bleeding across columns
-                                    if NUMBER_REGEX.search(nxt_txt):
+                                    nxt_norm = normalize_unit_token(nxt_txt) or nxt_txt.lower()
+                                    if units_hint_set and nxt_norm in units_hint_set:
+                                        unit_norm = nxt_norm
+                                        unit_neighbor = True
                                         break
+                            num_clean = typed.get("num_clean")
                             try:
                                 nval = float(num_clean) if num_clean is not None else None
                             except Exception:
                                 nval = None
-                            numeric_cands.append({
-                                'text': val_txt,
-                                'raw': raw,
-                                'num_clean': num_clean,
-                                'nval': nval,
-                                'units': units_val_norm,
-                                'unit_neighbor': unit_neighbor,
-                                'cx': (float(t[0]) + float(t[2])) / 2.0,
-                                'x0': t[0], 'y0': t[1], 'x1': t[2], 'y1': t[3],
-                            })
+                            unit_txt = typed.get("unit_text")
+                            if unit_txt and not unit_norm:
+                                try:
+                                    unit_norm = normalize_unit_token(str(unit_txt))
+                                except Exception:
+                                    unit_norm = None
+                            candidates_to_add: List[Tuple[str, Optional[float], Optional[str]]] = []
+                            candidates_to_add.append((num_txt, nval, num_clean))
+                            dec_fix = _maybe_fix_missing_decimal_by_range(num_txt, spec.range_min, spec.range_max)
+                            if dec_fix is not None:
+                                dec_txt, dec_val = dec_fix
+                                candidates_to_add.append((dec_txt, dec_val, str(dec_val)))
+
+                            for cand_num_txt, cand_nval, cand_clean in candidates_to_add:
+                                val_txt = (f"{cand_num_txt} {unit_txt}".strip() if unit_txt else cand_num_txt)
+                                numeric_cands.append({
+                                    'text': val_txt,
+                                    'raw': str(sp.get("text") or ""),  # type: ignore[union-attr]
+                                    'num_clean': cand_clean,
+                                    'nval': cand_nval,
+                                    'units': (str(unit_norm).lower() if unit_norm else None),
+                                    'unit_neighbor': unit_neighbor,
+                                    'cx': float(sp.get("cx", 0.0)),  # type: ignore[union-attr]
+                                    'x0': float(sp.get("x0", 0.0)), 'y0': float(sp.get("y0", 0.0)),
+                                    'x1': float(sp.get("x1", 0.0)), 'y1': float(sp.get("y1", 0.0)),
+                                })
 
                         # Populate line min/max if present
                         line_min_txt = None
@@ -3304,7 +7638,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # by header alignment.
                         use_header_pos = bool(column_positions) and not has_smart_pos
                         column_text_for_pos = None
-                        fields_for_pos: List[str] = []
+                        fields_for_pos: List[Dict[str, object]] = []
                         if use_header_pos:
                             column_text_for_pos = _column_text_for_position(
                                 ordered_right_tokens,
@@ -3317,16 +7651,19 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         elif has_smart_pos:
                             # Fallback: build visual \"boxes\" from the
                             # right-of-label token stream.
-                            fields_for_pos = _fields_from_items(ordered_right_tokens)
+                            fields_for_pos = _items_to_spans(ordered_right_tokens)
                         if smart_kind == 'number' and column_text_for_pos:
-                            cand_match = NUMBER_REGEX.search(column_text_for_pos)
-                            if cand_match:
-                                cand_text = cand_match.group(0)
+                            typed = normalize_span_text(column_text_for_pos)
+                            cand_text = None
+                            nval = None
+                            if isinstance(typed, dict) and str(typed.get("kind") or "") in ("measurement", "number"):
+                                cand_text = str(typed.get("num_text") or "") or None
+                                units_value = (typed.get("unit_norm") or typed.get("unit_text") or units_value)  # type: ignore[assignment]
                                 try:
-                                    nval = float(numeric_only(cand_text)) if numeric_only(cand_text) is not None else None
+                                    nval = float(typed.get("num_clean")) if typed.get("num_clean") is not None else None
                                 except Exception:
                                     nval = None
-                                units_value = extract_units(cand_text) or units_value
+                            if cand_text:
                                 # Range check with >50% nullifier
                                 if nval is not None and (spec.range_min is not None or spec.range_max is not None):
                                     # NULLIFIER: reject values >50% outside range (skip this candidate)
@@ -3365,7 +7702,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # Smart Position for non-numeric snaps (e.g., pick the Nth
                             # status/text field to the right of the label).
                             if pos_n <= len(fields_for_pos):
-                                field_text = fields_for_pos[pos_n - 1]
+                                try:
+                                    field_text = str(fields_for_pos[pos_n - 1].get("text") or "")
+                                except Exception:
+                                    field_text = ""
                                 val = field_text.strip()
                                 if val and score > best_score:
                                     best_score = score
@@ -3381,17 +7721,24 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             # *after* the field is selected.
                             if has_smart_pos and fields_for_pos:
                                 if pos_n <= len(fields_for_pos):
-                                    field_text = fields_for_pos[pos_n - 1]
+                                    try:
+                                        field_span = fields_for_pos[pos_n - 1]
+                                        field_text = str(field_span.get("text") or "")
+                                        typed = field_span.get("typed")
+                                    except Exception:
+                                        field_text = ""
+                                        typed = None
                                     cand_text = field_text
-                                    cand_match = NUMBER_REGEX.search(field_text)
+                                    cand_match = None
                                     nval = None
-                                    if cand_match:
-                                        cand_text = cand_match.group(0)
+                                    if isinstance(typed, dict) and str(typed.get("kind") or "") in ("measurement", "number"):
+                                        cand_text = str(typed.get("num_text") or "") or cand_text
                                         try:
-                                            nval = float(numeric_only(cand_text)) if numeric_only(cand_text) is not None else None
+                                            nval = float(typed.get("num_clean")) if typed.get("num_clean") is not None else None
                                         except Exception:
                                             nval = None
-                                        units_value = extract_units(cand_text) or units_value
+                                        units_value = typed.get("unit_norm") or typed.get("unit_text") or units_value  # type: ignore[assignment]
+                                        cand_match = True
                                         # Range check with >50% nullifier
                                         if nval is not None and (spec.range_min is not None or spec.range_max is not None):
                                             # NULLIFIER: reject values >50% outside range
@@ -3400,7 +7747,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                                 tolerance_50 = 0.5 * range_span
                                                 if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
                                                     # Reject this value - treat as if no numeric match found
-                                                    cand_match = None
+                                                    cand_match = False
                                             if cand_match:  # Only annotate if not nullified
                                                 bad = False
                                                 if spec.range_min is not None and nval < spec.range_min:
@@ -3562,16 +7909,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
                                     "value_header": 0.0,
+                                    "units_hint": 0.0,
                                     "label_proximity": 0.0,
                                 }
                                 is_nullified = False  # Track candidates that fail the nullifier condition
 
-                                # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                # 1. SECONDARY HEADER SCORING
                                 # Proportional Y-axis distance scoring
                                 hdr_align = header_alignment.get(id(c))
                                 if hdr_align is not None and sec_term:
-                                    # Direct proportional scoring: max 2.0 points
-                                    delta = 2.0 * hdr_align
+                                    try:
+                                        sec_max = float(os.environ.get("SMART_SEC_HEADER_MAX", "4.0"))
+                                    except Exception:
+                                        sec_max = 4.0
+                                    sec_max = max(0.0, min(10.0, sec_max))
+                                    # Direct proportional scoring: max sec_max points
+                                    delta = sec_max * hdr_align
                                     s += delta
                                     comp["secondary_header"] += delta
 
@@ -3772,7 +8125,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 # For title/string without EXPLICIT format pattern:
                                 # Just return the full text after the label directly (no tokenization/scoring)
                                 has_explicit_format = getattr(spec, 'value_format', None) is not None
-                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format:
+                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format and not sec_term:
                                     # Use sequential tokens to get all text after label
                                     string_text_to_use = right_text_segment_sequential if right_text_segment_sequential.strip() else right_text_segment
                                     if string_text_to_use.strip():
@@ -4139,7 +8492,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
 
                 _push_dpi(os.environ.get('SMART_DPI_BASE'))
                 _push_dpi(os.environ.get('OCR_DPI'))
-                _push_dpi('700')
+                # No automatic "second pass" DPI. If you want multiple DPIs, set SMART_DPI_LIST (e.g., "500,700").
 
                 if not dpi_candidates:
                     dpi_candidates = [700]
@@ -4203,26 +8556,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                 row_eps = max(0.5, min(50.0, row_eps))
             for dpi in dpi_candidates:
                 for p in pages or []:
-                    items = _get_easyocr_boxes_page(pdf_path, p, dpi=dpi, langs=langs)
+                    items, tables, header_virtuals = _get_ocr_page_bundle(pdf_path, p, dpi=dpi, langs=langs)
                     if not items:
                         if debug_mode:
                             print(f"[SMART DEBUG] no OCR items dpi={dpi} page={p}", file=sys.stderr)
                         continue
-                    # Group OCR boxes into line rows using configurable
-                    # vertical tolerance so that all tokens from a visual
-                    # line share the same row bucket.
-                    rows: Dict[int, List[Dict[str, float]]] = {}
-                    prev_cy: Optional[float] = None
-                    current_key: Optional[int] = None
-                    for it in sorted(items, key=lambda d: float(d.get("cy", 0.0))):
-                        cy_val = float(it.get("cy", 0.0))
-                        if prev_cy is None or abs(cy_val - prev_cy) > row_eps or current_key is None:
-                            key = int(round(cy_val))
-                            rows[key] = [it]
-                            current_key = key
-                        else:
-                            rows[current_key].append(it)  # type: ignore[index]
-                        prev_cy = cy_val
+                    # Prefer table row bands when gridlines are present; fall back to Y-tolerance grouping.
+                    rows, rows_meta = _group_ocr_items_into_rows(items, row_eps=row_eps, tables=tables)
+                    items_for_headers = list(items) + list(header_virtuals)
                     group_after_tokens: List[str] = []
                     if getattr(spec, 'group_after', None):
                         raw_tokens = str(spec.group_after or "").split()
@@ -4300,7 +8641,17 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             print(f"[SMART DEBUG] row candidate dpi={dpi} page={p} cy={cy} tokens={len(row_items)} text={' '.join(str(it.get('text') or '') for it in row_items)!r}", file=sys.stderr)
                         row_items.sort(key=lambda t: (t.get('y0',0.0), t.get('x0',0.0)))
                         texts = [str(it.get('text') or '') for it in row_items]
-                        line_text = ' '.join(texts).strip()
+                        full_row_text = ' '.join(texts).strip()
+                        try:
+                            row_meta = rows_meta.get(cy) or {}
+                            match_text = str(row_meta.get("match_text") or "").strip()
+                            cell_row_text = str(row_meta.get("row_text_cells") or "").strip()
+                        except Exception:
+                            match_text = ""
+                            cell_row_text = ""
+                        if cell_row_text:
+                            full_row_text = cell_row_text
+                        line_text = match_text if match_text else full_row_text
                         if not line_text:
                             continue
                         # group filters
@@ -4443,7 +8794,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         header_map: Dict[str, Dict[str, float]] = {}
                         for hdr_name in ('value', 'min', 'max'):
                             matches = [
-                                it for it in items
+                                it for it in items_for_headers
                                 if str(it.get('text') or '').strip().lower() == hdr_name
                                 and float(it.get('cy', 0.0)) < mean_y
                                 and (group_anchor_y is None or float(it.get('cy',0.0)) >= float(group_anchor_y) - 5.0)
@@ -4451,27 +8802,59 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             if matches:
                                 header_map[hdr_name] = max(matches, key=lambda it: float(it.get('cy', 0.0)))
 
-                        # Build numeric candidates from OCR tokens
+                        # Build numeric candidates from spans (robust to split-digit OCR).
                         numeric_cands = []
-                        for it in right_items:
-                            raw = str(it.get('text') or '')
-                            m = NUMBER_REGEX.search(raw)
-                            if not m:
+                        right_spans = _items_to_spans(right_items)
+                        for idx, sp in enumerate(right_spans):
+                            typed = sp.get("typed") if isinstance(sp, dict) else None
+                            if not isinstance(typed, dict):
                                 continue
-                            val_txt = m.group(0)
-                            num_clean = numeric_only(val_txt)
+                            kind = str(typed.get("kind") or "")
+                            if kind not in ("measurement", "number"):
+                                continue
+                            num_txt = str(typed.get("num_text") or "")
+                            if not num_txt:
+                                continue
+                            num_clean = typed.get("num_clean")
                             try:
                                 nval = float(num_clean) if num_clean is not None else None
                             except Exception:
                                 nval = None
-                            units_val = extract_units(val_txt)
-                            numeric_cands.append({
-                                'text': val_txt,
-                                'raw': raw,
-                                'nval': nval,
-                                'units': units_val.lower() if units_val else None,
-                                'x0': float(it.get('x0',0.0)), 'y0': float(it.get('y0',0.0)), 'x1': float(it.get('x1',0.0)), 'y1': float(it.get('y1',0.0)),
-                            })
+                            unit_txt = typed.get("unit_text")
+                            unit_norm = typed.get("unit_norm")
+                            if unit_txt and not unit_norm:
+                                try:
+                                    unit_norm = normalize_unit_token(str(unit_txt))
+                                except Exception:
+                                    unit_norm = None
+                            # Neighbor unit lookup for separate unit-only spans
+                            if not unit_norm:
+                                lookahead_limit = min(len(right_spans), idx + 3)
+                                for j in range(idx + 1, lookahead_limit):
+                                    nxt = right_spans[j]
+                                    nxt_typed = nxt.get("typed") if isinstance(nxt, dict) else None
+                                    nxt_txt = str(nxt.get("text") or "").strip() if isinstance(nxt, dict) else ""
+                                    if not nxt_txt:
+                                        continue
+                                    if isinstance(nxt_typed, dict) and str(nxt_typed.get("kind") or "") == "unit":
+                                        unit_norm = nxt_typed.get("unit_norm") or normalize_unit_token(nxt_txt)
+                                        break
+                            val_txt = (f"{num_txt} {unit_txt}".strip() if unit_txt else num_txt)
+                            candidates_to_add: List[Tuple[str, Optional[float]]] = [(num_txt, nval)]
+                            dec_fix = _maybe_fix_missing_decimal_by_range(num_txt, spec.range_min, spec.range_max)
+                            if dec_fix is not None:
+                                dec_txt, dec_val = dec_fix
+                                candidates_to_add.append((dec_txt, dec_val))
+
+                            for cand_num_txt, cand_nval in candidates_to_add:
+                                val_txt = (f"{cand_num_txt} {unit_txt}".strip() if unit_txt else cand_num_txt)
+                                numeric_cands.append({
+                                    'text': val_txt,
+                                    'raw': str(sp.get("text") or ""),
+                                    'nval': cand_nval,
+                                    'units': str(unit_norm).lower() if unit_norm else None,
+                                    'x0': float(sp.get('x0',0.0)), 'y0': float(sp.get('y0',0.0)), 'x1': float(sp.get('x1',0.0)), 'y1': float(sp.get('y1',0.0)),
+                                })
 
                         line_min_txt = None
                         line_max_txt = None
@@ -4506,7 +8889,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         # by header alignment.
                         use_header_pos = bool(column_positions) and not has_smart_pos
                         column_text_for_pos = None
-                        fields_for_pos: List[str] = []
+                        fields_for_pos: List[Dict[str, object]] = []
                         if use_header_pos:
                             column_text_for_pos = _column_text_for_position(
                                 ordered_right_items,
@@ -4519,10 +8902,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         elif has_smart_pos:
                             # Smart Position: treat as Nth \"box\" to the right
                             # of the term. For OCR, boxes are EasyOCR tokens.
-                            fields_for_pos = _fields_from_items(ordered_right_items)
+                            fields_for_pos = _items_to_spans(ordered_right_items)
 
                             # Capture debug fields for JSON output
-                            current_debug_fields = [f"Position {idx}: '{field}'" for idx, field in enumerate(fields_for_pos, start=1)]
+                            current_debug_fields = [f"Position {idx}: '{str(field.get('text') or '')}'" for idx, field in enumerate(fields_for_pos, start=1)]
 
                             if debug_mode:
                                 print(f"[SMART DEBUG] Smart Position extraction for: {row_name}", file=sys.stderr)
@@ -4531,7 +8914,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     print(f"[SMART DEBUG]   {field_str}", file=sys.stderr)
                                 print(f"[SMART DEBUG] Requesting smart_position={pos_n}, smart_kind={smart_kind}", file=sys.stderr)
                                 if pos_n and 1 <= pos_n <= len(fields_for_pos):
-                                    print(f"[SMART DEBUG] Will extract: '{fields_for_pos[pos_n-1]}'", file=sys.stderr)
+                                    try:
+                                        print(f"[SMART DEBUG] Will extract: '{str(fields_for_pos[pos_n-1].get('text') or '')}'", file=sys.stderr)
+                                    except Exception:
+                                        pass
                                 else:
                                     print(f"[SMART DEBUG] Position {pos_n} is out of range!", file=sys.stderr)
                         if smart_kind == 'number' and column_text_for_pos:
@@ -4576,7 +8962,10 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             continue
                         elif smart_kind != 'number' and has_smart_pos and pos_n and pos_n >= 1 and fields_for_pos:
                             if pos_n <= len(fields_for_pos):
-                                field_text = fields_for_pos[pos_n - 1]
+                                try:
+                                    field_text = str(fields_for_pos[pos_n - 1].get("text") or "")
+                                except Exception:
+                                    field_text = ""
                                 val = field_text.strip()
                                 if val and score > best_score:
                                     best_score = score
@@ -4596,7 +8985,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                         if smart_kind == 'number' and pos_n and pos_n >= 1 and ordered_right_items:
                             if has_smart_pos and fields_for_pos:
                                 if pos_n <= len(fields_for_pos):
-                                    field_text = fields_for_pos[pos_n - 1]
+                                    try:
+                                        field_span = fields_for_pos[pos_n - 1]
+                                        field_text = str(field_span.get("text") or "")
+                                    except Exception:
+                                        field_text = ""
                                     # Fix common OCR errors in numbers (O→0, l→1, I→1)
                                     field_text_fixed = _fix_ocr_in_numbers(field_text)
                                     cand_match = NUMBER_REGEX.search(field_text_fixed)
@@ -4693,7 +9086,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                             sec_header_x0 = None
                             if sec_term and sec_norm_global:
                                 header_candidates: List[Tuple[float, float, float]] = []
-                                for it in items:
+                                for it in items_for_headers:
                                     txt = str(it.get('text') or '')
                                     if not txt.strip():
                                         continue
@@ -4775,16 +9168,22 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                     "secondary_vertical": 0.0,
                                     "secondary_header": 0.0,
                                     "value_header": 0.0,
+                                    "units_hint": 0.0,
                                     "label_proximity": 0.0,
                                 }
                                 is_nullified = False  # Track candidates that fail the nullifier condition
 
-                                # 1. SECONDARY HEADER SCORING (max 2.0 points)
+                                # 1. SECONDARY HEADER SCORING
                                 # Proportional Y-axis distance scoring
                                 hdr_align = header_alignment.get(id(c))
                                 if hdr_align is not None and sec_term:
-                                    # Direct proportional scoring: max 2.0 points
-                                    delta = 2.0 * hdr_align
+                                    try:
+                                        sec_max = float(os.environ.get("SMART_SEC_HEADER_MAX", "4.0"))
+                                    except Exception:
+                                        sec_max = 4.0
+                                    sec_max = max(0.0, min(10.0, sec_max))
+                                    # Direct proportional scoring: max sec_max points
+                                    delta = sec_max * hdr_align
                                     s += delta
                                     comp["secondary_header"] += delta
 
@@ -4959,7 +9358,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 sec_header_x0 = None
                                 if sec_term and sec_norm_global:
                                     header_candidates: List[Tuple[float, float, float]] = []
-                                    for it in items:
+                                    for it in items_for_headers:
                                         txt = str(it.get('text') or '')
                                         if not txt.strip():
                                             continue
@@ -4982,9 +9381,11 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
                                 string_cands = []
 
                                 # For title/string without EXPLICIT format pattern:
-                                # Just return the full text after the label directly (no tokenization/scoring)
+                                # If no secondary term is provided, return the full text after the label directly.
+                                # If a secondary term IS provided (e.g., "Units"), we must still build/score
+                                # candidates so we can target the correct column under the secondary header.
                                 has_explicit_format = getattr(spec, 'value_format', None) is not None
-                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format:
+                                if smart_kind in ('title', 'string', 'text') and not has_explicit_format and not sec_term:
                                     # For OCR, use X-filtered text since item order can be unreliable
                                     # OCR may read items in wrong sequence, but X-position is more reliable
                                     string_text_to_use = right_text_segment.strip()
@@ -5191,7 +9592,7 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
             matching label row and pick the first in-range numeric value.
             """
             try:
-                items = _get_easyocr_boxes_page(pdf_path_inner, page_num, dpi=dpi_val, langs=langs_list)
+                items = _get_ocr_boxes_page(pdf_path_inner, page_num, dpi=dpi_val, langs=langs_list)
             except Exception:
                 return None
             if not items:
@@ -5821,6 +10222,287 @@ def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermS
         except Exception:
             pass
     return None
+
+
+def scan_pdf_for_term_xy_tess_tsv(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> Optional[MatchResult]:
+    """XY table intersection using Tesseract TSV tokens (geometry-driven)."""
+    if not (_HAVE_TESSERACT and _HAVE_PYMUPDF):
+        return None
+    try:
+        fuzz = float(os.environ.get('XY_FUZZ', '0.75'))
+    except Exception:
+        fuzz = 0.75
+
+    row_name = (spec.line or spec.term or '').strip()
+    col_raw = (spec.column or '').strip()
+    col_alts = [s.strip() for s in re.split(r'[|/]', col_raw) if s.strip()] or [(spec.column or '').strip()]
+    ret_type = (spec.return_type or 'number').strip().lower()
+    value_format_text, _ = _value_format_info(_effective_value_format(spec))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
+
+    if spec.dpi is not None:
+        dpi_candidates = [spec.dpi]
+    else:
+        try:
+            dpi_base = int(os.environ.get('OCR_DPI', '700'))
+        except Exception:
+            dpi_base = 700
+        dpi_candidates = [dpi_base]
+        if dpi_base > 700:
+            dpi_candidates.append(700)
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        doc = None
+
+    pages = spec.pages if spec.pages else ([] if doc is None else list(range(1, doc.page_count + 1)))
+
+    for dpi in dpi_candidates:
+        after_found = not bool(spec.group_after)
+        before_triggered = False
+        for p in pages:
+            if before_triggered:
+                break
+            ir, _lbl = _get_tess_tsv_ir(pdf_path, p, int(dpi))
+            if ir is None:
+                continue
+            try:
+                items_raw = ir.get("tokens")  # type: ignore[assignment]
+                items = list(items_raw) if isinstance(items_raw, list) else []
+            except Exception:
+                items = []
+            if not items:
+                continue
+
+            # Optional grouping anchor: require row below this text if provided
+            group_anchor_y = None
+            group_upper_y = None
+            if spec.group_after:
+                try:
+                    anchor_norm = _normalize_anchor_token(spec.group_after)
+                    ga_thresh = max(0.45, fuzz - 0.2)
+                    matches: List[Tuple[Dict[str, float], float]] = []
+                    for it in items:
+                        txt = str(it.get('text') or '')
+                        score = _fuzzy_ratio(txt, spec.group_after)
+                        txt_norm = _normalize_anchor_token(txt)
+                        if anchor_norm and anchor_norm in txt_norm:
+                            score = max(score, 0.99)
+                        else:
+                            try:
+                                norm_ratio = difflib.SequenceMatcher(None, txt_norm, anchor_norm).ratio() if anchor_norm else 0.0
+                            except Exception:
+                                norm_ratio = 0.0
+                            if norm_ratio >= 0.7:
+                                score = max(score, norm_ratio)
+                        if score >= ga_thresh:
+                            matches.append((it, score))
+                    if matches:
+                        best_score = max(m[1] for m in matches)
+                        top_matches = [m for m in matches if m[1] >= best_score - 0.1]
+                        group_anchor_y = min(top_matches, key=lambda t: t[0]['cy'])[0]['cy']
+                        after_found = True
+                except Exception:
+                    group_anchor_y = None
+            if spec.group_before:
+                try:
+                    anchor_norm = _normalize_anchor_token(spec.group_before)
+                    gb_thresh = max(0.45, fuzz - 0.2)
+                    matches: List[Tuple[Dict[str, float], float]] = []
+                    for it in items:
+                        txt = str(it.get('text') or '')
+                        score = _fuzzy_ratio(txt, spec.group_before)
+                        txt_norm = _normalize_anchor_token(txt)
+                        if anchor_norm and anchor_norm in txt_norm:
+                            score = max(score, 0.99)
+                        else:
+                            try:
+                                norm_ratio = difflib.SequenceMatcher(None, txt_norm, anchor_norm).ratio() if anchor_norm else 0.0
+                            except Exception:
+                                norm_ratio = 0.0
+                            if norm_ratio >= 0.7:
+                                score = max(score, norm_ratio)
+                        if score >= gb_thresh:
+                            matches.append((it, score))
+                    if matches and group_anchor_y is not None:
+                        matches = [m for m in matches if m[0]['cy'] > group_anchor_y + 1.0] or matches
+                    if matches:
+                        best_score = max(m[1] for m in matches)
+                        top_matches = [m for m in matches if m[1] >= best_score - 0.1]
+                        group_upper_y = min(top_matches, key=lambda t: t[0]['cy'])[0]['cy']
+                        before_triggered = True
+                except Exception:
+                    group_upper_y = None
+            if spec.group_after and not after_found:
+                continue
+
+            # Find best row and column headers
+            row_candidates = [(it, _fuzzy_ratio(it['text'], row_name)) for it in items if row_name]
+            row_candidates = [t for t in row_candidates if t[1] >= fuzz]
+            sandwich_eps = 0.5
+            if group_anchor_y is not None:
+                row_candidates = [
+                    t for t in row_candidates
+                    if float(t[0].get('y1', t[0].get('cy', 0.0))) > group_anchor_y + sandwich_eps
+                ]
+            if group_upper_y is not None:
+                row_candidates = [
+                    t for t in row_candidates
+                    if float(t[0].get('y0', t[0].get('cy', 0.0))) < group_upper_y - sandwich_eps
+                ]
+            if not row_candidates:
+                continue
+            row_it, _ = max(row_candidates, key=lambda t: t[1])
+
+            row_label_right = float(row_it.get('x1', row_it.get('cx', 0.0) or 0.0))
+
+            col_cands: List[Tuple[float, float, Dict[str, float]]] = []  # (dy, -score, header_it)
+            for alt in col_alts:
+                for it in items:
+                    sc = _fuzzy_ratio(it['text'], alt)
+                    if sc >= fuzz and it.get('cy', 0) < row_it.get('cy', 0) and it.get('cx', 0) >= row_label_right:
+                        dy = row_it['cy'] - it['cy']
+                        col_cands.append((dy, -sc, it))
+            if not col_cands:
+                for alt in col_alts:
+                    for it in items:
+                        sc = _fuzzy_ratio(it['text'], alt)
+                        if sc >= fuzz and it.get('cy', 0) < row_it.get('cy', 0):
+                            dy = row_it['cy'] - it['cy']
+                            col_cands.append((dy, -sc, it))
+            if not col_cands:
+                for alt in col_alts:
+                    for it in items:
+                        sc = _fuzzy_ratio(it['text'], alt)
+                        if sc >= fuzz and it.get('cx', 0) >= row_label_right:
+                            dy = max(0.0, row_it['cy'] - it['cy'])
+                            col_cands.append((dy, -sc, it))
+            if not col_cands:
+                continue
+
+            col_cands.sort(key=lambda t: (t[0], t[1]))
+            _, _, hdr = col_cands[0]
+
+            row_h = max(1.0, (row_it['y1'] - row_it['y0']))
+            col_w = max(1.0, (hdr['x1'] - hdr['x0']))
+            header_h = max(1.0, (hdr['y1'] - hdr['y0']))
+            col_half_width = max(col_w, row_h * 1.2, 25.0)
+            col_half_height = max(row_h * 0.6, header_h * 0.6, 8.0)
+            y_min = max(hdr['y1'], row_it['cy'] - col_half_height)
+            y_max = row_it['cy'] + col_half_height
+            x_min = hdr['cx'] - col_half_width
+            x_max = hdr['cx'] + col_half_width
+            ix, iy = hdr['cx'], row_it['cy']
+
+            candidates: List[Tuple[Tuple[int, float], Dict[str, float], str, str]] = []
+            for it in items:
+                if not (y_min <= it['cy'] <= y_max and x_min <= it['cx'] <= x_max and it['cx'] >= row_label_right):
+                    continue
+                if group_upper_y is not None and not (it['cy'] < group_upper_y):
+                    continue
+                raw_text = str(it.get('text') or '').strip()
+                if not raw_text:
+                    continue
+                if ret_type == 'string':
+                    if fmt_pat and not fmt_pat.search(raw_text):
+                        continue
+                    val_text = raw_text
+                else:
+                    val_text = _first_numeric(raw_text)
+                    if not val_text:
+                        continue
+                dx = abs(it['cx'] - ix)
+                dy = abs(it['cy'] - iy)
+                fmt_penalty = 0
+                if fmt_pat and val_text is not None and not fmt_pat.search(val_text):
+                    fmt_penalty = 1
+                candidates.append(((fmt_penalty, dx + dy), it, val_text, raw_text))
+
+            if not candidates:
+                continue
+
+            candidates.sort(key=lambda t: t[0])
+            best_it = candidates[0][1]
+            best_val = candidates[0][2]
+            best_raw = candidates[0][3]
+            header_text = str(hdr.get('text', '') or '')
+            row_text_selected = str(row_it.get('text', '') or '')
+            method_label = "tess:xy(dpi={})".format(dpi)
+            confidence_val = float(best_it.get('conf', 0.0))
+            context_snippet = "row='{}' col='{}' value='{}'".format(row_text_selected, header_text, best_raw)
+
+            if ret_type == 'string':
+                if doc:
+                    try:
+                        doc.close()
+                    except Exception:
+                        pass
+                return MatchResult(
+                    pdf_file=pdf_path.name,
+                    serial_number=serial_number,
+                    term=spec.term,
+                    page=p,
+                    number=best_val,
+                    units=None,
+                    context=context_snippet,
+                    method=method_label,
+                    found=True,
+                    confidence=confidence_val,
+                    row_label=row_text_selected,
+                    column_label=header_text,
+                    text_source='ocr',
+                )
+
+            numeric_candidate = best_val
+            units_value = extract_units(numeric_candidate)
+            numeric_clean = numeric_only(numeric_candidate)
+            numeric_value = None
+            if numeric_clean is not None:
+                try:
+                    numeric_value = float(numeric_clean.replace(',', ''))
+                except Exception:
+                    numeric_value = None
+
+            range_violation = False
+            if numeric_value is not None and (spec.range_min is not None or spec.range_max is not None):
+                if spec.range_min is not None and numeric_value < spec.range_min:
+                    range_violation = True
+                if spec.range_max is not None and numeric_value > spec.range_max:
+                    range_violation = True
+
+            number_out = numeric_candidate.strip()
+            if range_violation and not number_out.rstrip().endswith('(range violation)'):
+                number_out = f"{number_out} (range violation)"
+
+            if doc:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=p,
+                number=number_out,
+                units=units_value,
+                context=context_snippet,
+                method=method_label,
+                found=True,
+                confidence=confidence_val,
+                row_label=row_text_selected,
+                column_label=header_text,
+                text_source='ocr',
+            )
+
+    if doc:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return None
+
 def ocr_pages_with_paddle(pdf_path: Path, pages: Sequence[int]) -> Tuple[Dict[int, str], str]:
     """OCR selected pages using PyMuPDF render + PaddleOCR (pure-Python path).
 
@@ -5963,7 +10645,7 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bo
     mode = (ocr_mode or _get_ocr_mode())
     tried = []
     if mode == 'ocr_only':
-        pt4, m4 = ocr_pages_with_easyocr(pdf_path, pages)
+        pt4, m4 = ocr_pages_with_tesseract_tsv(pdf_path, pages)
         # Normalize text
         for _p in list(pt4.keys()):
             pt4[_p] = _normalize_text_for_search(pt4.get(_p, ""))
@@ -6004,10 +10686,10 @@ def extract_pages_text(pdf_path: Path, pages: Sequence[int], do_ocr_fallback: bo
         if _force_ocr:
             empty_pages = list(pages)
 
-    # Attempt #4: EasyOCR fallback for remaining empty pages (or all if forced)
-    # Only performs OCR if EasyOCR is available and do_ocr_fallback=True.
+    # Attempt #4: OCR fallback for remaining empty pages (or all if forced)
+    # Only performs OCR if available and do_ocr_fallback=True.
     if (mode != 'no_ocr') and do_ocr_fallback and empty_pages:
-        pt4, m4 = ocr_pages_with_easyocr(source_pdf, empty_pages)
+        pt4, m4 = ocr_pages_with_tesseract_tsv(source_pdf, empty_pages)
         tried.append(m4)
         for p in empty_pages:
             if (pt4.get(p) or "").strip():
@@ -6927,7 +11609,7 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     pages_list = pages if pages else list(sorted(page_text_map.keys()))
     empty_pages = [p for p in pages_list if (page_text_map.get(p, "").strip() == "")]
     if (_mode2 != 'no_ocr') and empty_pages:
-        pt4, m4 = ocr_pages_with_easyocr(pdf_path, empty_pages)
+        pt4, m4 = ocr_pages_with_tesseract_tsv(pdf_path, empty_pages)
         # Update cache and local view
         new_pipe = pipeline if (m4 in (pipeline or "")) else (pipeline + " > " + m4 if pipeline else m4)
         # Update full_map if available, else use page_text_map as backing
@@ -7014,7 +11696,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             number=None,
             units=None,
             context="",
-            method="easyocr:xy",
+            method="ocr:xy",
             found=False,
             confidence=None,
             row_label=row_label,
@@ -7022,7 +11704,16 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             text_source=None,
             error_reason="OCR disabled for table(xy) mode"
         )
-    if not _HAVE_EASYOCR:
+    # Prefer Tesseract TSV when available; keep EasyOCR as a fallback.
+    if _HAVE_TESSERACT:
+        result = scan_pdf_for_term_xy_tess_tsv(pdf_path, serial_number, spec, window_chars, case_sensitive)
+        if result is not None:
+            return result
+    if _HAVE_EASYOCR:
+        result = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
+        if result is not None:
+            return result
+    if not (_HAVE_TESSERACT or _HAVE_EASYOCR):
         return MatchResult(
             pdf_file=pdf_path.name,
             serial_number=serial_number,
@@ -7031,18 +11722,14 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             number=None,
             units=None,
             context="",
-            method="easyocr:xy",
+            method="ocr:xy",
             found=False,
             confidence=None,
             row_label=row_label,
             column_label=column_label,
             text_source=None,
-            error_reason="EasyOCR not available for table(xy) mode"
+            error_reason="No OCR engine available for table(xy) mode"
         )
-
-    result = scan_pdf_for_term_xy_easyocr(pdf_path, serial_number, spec, window_chars, case_sensitive)
-    if result is not None:
-        return result
 
     return MatchResult(
         pdf_file=pdf_path.name,
@@ -7052,7 +11739,7 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
         number=None,
         units=None,
         context="",
-        method="easyocr:xy",
+        method=("tess:xy" if _HAVE_TESSERACT else "easyocr:xy"),
         found=False,
         confidence=None,
         row_label=row_label,
@@ -8243,9 +12930,9 @@ def run_scan(
         # Write per-PDF JSON (details + match summary metadata)
         try:
             try:
-                header_w = float(os.environ.get("SMART_SEC_HEADER_W", "0.7"))
+                header_w = float(os.environ.get("SMART_SEC_HEADER_MAX", "4.0"))
             except Exception:
-                header_w = 0.7
+                header_w = 4.0
             match_summary_row = {
                 "_kind": "match_summary",
                 "description": (
@@ -8256,7 +12943,7 @@ def run_scan(
                     f"+{header_w:.2f} * secondary_header_alignment for X alignment with the Secondary Term header, "
                     "plus smaller adjustments based on distance to Value/Min/Max headers and distance from the label."
                 ),
-                "secondary_header_weight": header_w,
+                "secondary_header_max": header_w,
                 "secondary_vertical_weight": 0.0,
                 "units_hint_weight": 0.4,
                 "range_weight_full": 0.4,
@@ -8455,9 +13142,9 @@ def run_scan(
     # Finalize JSON with a global match-summary metadata row explaining scoring weights
     try:
         try:
-            header_w = float(os.environ.get("SMART_SEC_HEADER_W", "0.7"))
+            header_w = float(os.environ.get("SMART_SEC_HEADER_MAX", "4.0"))
         except Exception:
-            header_w = 0.7
+            header_w = 4.0
         match_summary_row = {
             "_kind": "match_summary",
             "description": (
@@ -8467,7 +13154,7 @@ def run_scan(
                     f"+{header_w:.2f} * secondary_header_alignment for X alignment with the Secondary Term header, "
                 "plus smaller adjustments based on distance to Value/Min/Max headers and distance from the label."
             ),
-            "secondary_header_weight": header_w,
+            "secondary_header_max": header_w,
             "secondary_vertical_weight": 0.0,
             "units_hint_weight": 0.4,
             "range_weight_full": 0.4,
@@ -8602,8 +13289,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Scan PDFs for terms and nearest numbers, producing a matrix by data identifier (serial component)."
     )
-    parser.add_argument("--input", required=True, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
-    parser.add_argument("--pdf-folder", required=True, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')
+    parser.add_argument("--reset-state", action="store_true", help="Delete caches/run/master artifacts and exit")
+    parser.add_argument("--reset-include-debug", action="store_true", help="Also delete debug OCR exports under debug/ocr")
+    parser.add_argument("--reset-confirm", default="", help='Required when using --reset-state; must be exactly "RESET"')
+
+    parser.add_argument("--input", required=False, help="Path to terms file (.csv, .xlsx, or .xls). Headers: Term, Pages [Line, Column, Range, Units optional]")
+    parser.add_argument("--pdf-folder", required=False, help='Folder containing PDFs to scan (e.g., "EIDP import folder")')
     parser.add_argument("--output-csv", default="scan_results_flat.csv", help="Flat CSV summary (legacy)")
     parser.add_argument("--output-json", default="scan_results.json", help="Path to write JSON details")
     parser.add_argument("--output-xlsx", default="scan_results.xlsx", help="Excel workbook with 'results' and 'metadata' sheets")
@@ -8611,6 +13302,18 @@ def main() -> None:
     parser.add_argument("--case-sensitive", action="store_true", help="Enable case-sensitive term matching")
     parser.add_argument("--quiet", action="store_true", help="Reduce console output (suppress progress/debug)")
     args = parser.parse_args()
+
+    if getattr(args, "reset_state", False):
+        if (getattr(args, "reset_confirm", "") or "").strip() != "RESET":
+            print('[ERROR] Refusing to reset without --reset-confirm "RESET"', file=sys.stderr)
+            sys.exit(2)
+        report = reset_scanner_state(confirm=True, include_debug=bool(getattr(args, "reset_include_debug", False)))
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        sys.exit(0)
+
+    if not getattr(args, "input", None) or not getattr(args, "pdf_folder", None):
+        print("[ERROR] --input and --pdf-folder are required (unless using --reset-state)", file=sys.stderr)
+        sys.exit(2)
 
     # Normalize and validate file/folder paths
     input_path = Path(args.input)

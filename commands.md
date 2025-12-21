@@ -1,9 +1,16 @@
 ```powershell
+python debug\ocr_debug_runner.py path\to\file.pdf --pages 1
+
+
 PS C:\Users\zachs\Documents\DevProjects\PDF_Scanner> $env:PYTHONPATH="$PWD\EIDAT_App_Files;$env:PYTHONPATH"
 >> $env:DEBUG_MODE="1"
->> python -m ui_next.qt_main 2>&1 | Tee-Object -FilePath debug_output_new.txt
+>> python -m ui_next.qt_main
 
-$env:DEBUG_MODE="1"; python -m ui_next.qt_main 2>&1 | Tee-Object -FilePath debug_output_new.txt
+
+
+C:\Users\zachs\Documents\DevProjects\PDF_Scanner\ocr_runs_stress.py
+
+eidp_term_scanner.core.py --reset-state --reset-confirm RESET [--reset-include-debug]
 ```
 
 For **numeric** values without Smart Position:

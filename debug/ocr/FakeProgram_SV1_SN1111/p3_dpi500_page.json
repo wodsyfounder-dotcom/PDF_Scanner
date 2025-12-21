@@ -1,0 +1,1804 @@
+{
+  "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
+  "page": 3,
+  "dpi": 500,
+  "source": "ocr",
+  "lang": "eng+equ",
+  "psm": 4,
+  "img_w": 4250,
+  "img_h": 5500,
+  "elements": [
+    {
+      "type": "text",
+      "bbox_px": [
+        1215.0,
+        480.0,
+        3588.0,
+        553.0
+      ],
+      "text": "Temp Duration Requirement Log"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        542.0,
+        534.0,
+        3007.0,
+        610.0
+      ],
+      "text": "Test Deviation"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        1218.0,
+        593.0,
+        3581.0,
+        658.0
+      ],
+      "text": "(\u00b0C) (hr) Met? Ref"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        698.5,
+        3734.0,
+        2077.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          698.5,
+          3734.0,
+          2077.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          946.0,
+          1496.5,
+          1970.5,
+          2590.5,
+          3239.5,
+          3734.0
+        ],
+        "header_cells": [
+          "Test",
+          "Temp (\u00b0C)",
+          "Duration (hr)",
+          "Requirement Met?",
+          "Deviation",
+          "Log Ref"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              698.5,
+              847.5
+            ],
+            "cells_text": [
+              "Thermal Soak",
+              "Low -45",
+              "2.0",
+              "YES",
+              "+0.5",
+              "A-112"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Soak"
+              ],
+              [
+                "Low",
+                "-45"
+              ],
+              [
+                "2.0"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "+0.5"
+              ],
+              [
+                "A-112"
+              ]
+            ],
+            "row_text_cells": "Thermal Soak | Low -45 | 2.0 | YES | +0.5 | A-112",
+            "cells_kind": [
+              "string",
+              "string",
+              "number",
+              "string",
+              "number",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              847.5,
+              1109.0
+            ],
+            "cells_text": [
+              "Thermal Soak",
+              "High +95",
+              "1.5",
+              "NO",
+              "Chamber tripped at +88\u00b0C",
+              "A-118"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Soak"
+              ],
+              [
+                "+95",
+                "High"
+              ],
+              [
+                "1.5"
+              ],
+              [
+                "NO"
+              ],
+              [
+                "Chamber",
+                "at",
+                "tripped",
+                "+88\u00b0C"
+              ],
+              [
+                "A-118"
+              ]
+            ],
+            "row_text_cells": "Thermal Soak | High +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
+            "cells_kind": [
+              "string",
+              "string",
+              "number",
+              "string",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              1109.0,
+              1370.5
+            ],
+            "cells_text": [
+              "Thermal Ramp Cycling",
+              "-35+85",
+              "6cycles",
+              "YES",
+              "-",
+              "A-126"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Ramp",
+                "Cycling"
+              ],
+              [
+                "-35+85"
+              ],
+              [
+                "6cycles"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "-"
+              ],
+              [
+                "A-126"
+              ]
+            ],
+            "row_text_cells": "Thermal Ramp Cycling | -35+85 | 6cycles | YES | - | A-126",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              1370.5,
+              1516.0
+            ],
+            "cells_text": [
+              "Random Vib",
+              "(X) 14.1 grms",
+              "7 min",
+              "YES",
+              "=",
+              "V-031"
+            ],
+            "cells_tokens": [
+              [
+                "Random",
+                "Vib"
+              ],
+              [
+                "14.1",
+                "(X)",
+                "grms"
+              ],
+              [
+                "7",
+                "min"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "="
+              ],
+              [
+                "V-031"
+              ]
+            ],
+            "row_text_cells": "Random Vib | (X) 14.1 grms | 7 min | YES | = | V-031",
+            "cells_kind": [
+              "string",
+              "string",
+              "time",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              1516.0,
+              1668.5
+            ],
+            "cells_text": [
+              "Random Vib",
+              "(Z) 12.0 grms",
+              "7 min",
+              "CONDITIONAL",
+              "sensor SAT",
+              "V-035"
+            ],
+            "cells_tokens": [
+              [
+                "Random",
+                "Vib"
+              ],
+              [
+                "12.0",
+                "(Z)",
+                "grms"
+              ],
+              [
+                "7",
+                "min"
+              ],
+              [
+                "CONDITIONAL"
+              ],
+              [
+                "sensor",
+                "SAT"
+              ],
+              [
+                "V-035"
+              ]
+            ],
+            "row_text_cells": "Random Vib | (Z) 12.0 grms | 7 min | CONDITIONAL | sensor SAT | V-035",
+            "cells_kind": [
+              "string",
+              "string",
+              "time",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 5,
+            "row_band_px": [
+              1668.5,
+              2077.5
+            ],
+            "cells_text": [
+              "Sine Sweep",
+              "5-500 Hz",
+              "O5g",
+              "Not Recorded",
+              "-",
+              "V-041"
+            ],
+            "cells_tokens": [
+              [
+                "Sine",
+                "Sweep"
+              ],
+              [
+                "5-500",
+                "Hz"
+              ],
+              [
+                "O5g"
+              ],
+              [
+                "Not",
+                "Recorded"
+              ],
+              [
+                "-"
+              ],
+              [
+                "V-041"
+              ]
+            ],
+            "row_text_cells": "Sine Sweep | 5-500 Hz | O5g | Not Recorded | - | V-041",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": [
+          {
+            "band_index": 5,
+            "bbox_px": [
+              506.0,
+              1912.0,
+              3159.0,
+              1978.0
+            ],
+            "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        506.0,
+        1912.0,
+        3159.0,
+        1978.0
+      ],
+      "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        506.0,
+        2225.0,
+        2211.0,
+        2323.0
+      ],
+      "text": "4. Calibration & Trim Table"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        542.0,
+        2559.0,
+        2981.0,
+        2610.0
+      ],
+      "text": "Channel PreTrim PostTrim Allowed Delta Status Comment"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        2664.5,
+        3613.9999999999995,
+        3462.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          2664.5,
+          3613.9999999999995,
+          3462.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          849.0,
+          1198.0,
+          1582.0,
+          2105.0,
+          2509.0,
+          3613.9999999999995
+        ],
+        "header_cells": [
+          "Channel",
+          "PreTrim",
+          "PostTrim",
+          "Allowed Delta",
+          "Status",
+          "Comment"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              2664.5,
+              2817.5
+            ],
+            "cells_text": [
+              "TC-01",
+              "1.0034",
+              "0.9991",
+              "+0.0100",
+              "PASS",
+              "Temperatures within tolerance"
+            ],
+            "cells_tokens": [
+              [
+                "TC-01"
+              ],
+              [
+                "1.0034"
+              ],
+              [
+                "0.9991"
+              ],
+              [
+                "+0.0100"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "within",
+                "tolerance",
+                "Temperatures"
+              ]
+            ],
+            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | +0.0100 | PASS | Temperatures within tolerance",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              2817.5,
+              2969.5
+            ],
+            "cells_text": [
+              "TC-02",
+              "0.9989",
+              "1.0142",
+              "+0.0100",
+              "FAIL",
+              "Out-of-family high"
+            ],
+            "cells_tokens": [
+              [
+                "TC-02"
+              ],
+              [
+                "0.9989"
+              ],
+              [
+                "1.0142"
+              ],
+              [
+                "+0.0100"
+              ],
+              [
+                "FAIL"
+              ],
+              [
+                "Out-of-family",
+                "high"
+              ]
+            ],
+            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | +0.0100 | FAIL | Out-of-family high",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              2969.5,
+              3118.5
+            ],
+            "cells_text": [
+              "PT-03",
+              "1.0000",
+              "1.0000",
+              "+0.0020",
+              "PASS",
+              "Perfect match"
+            ],
+            "cells_tokens": [
+              [
+                "PT-03"
+              ],
+              [
+                "1.0000"
+              ],
+              [
+                "1.0000"
+              ],
+              [
+                "+0.0020"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "Perfect",
+                "match"
+              ]
+            ],
+            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | +0.0020 | PASS | Perfect match",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              3118.5,
+              3267.5
+            ],
+            "cells_text": [
+              "PT-07",
+              "0.9977",
+              "0.9974",
+              "+0.0020",
+              "INVESTIGATE",
+              "Delta close to limit"
+            ],
+            "cells_tokens": [
+              [
+                "PT-07"
+              ],
+              [
+                "0.9977"
+              ],
+              [
+                "0.9974"
+              ],
+              [
+                "+0.0020"
+              ],
+              [
+                "INVESTIGATE"
+              ],
+              [
+                "Delta",
+                "close",
+                "limit",
+                "to"
+              ]
+            ],
+            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | +0.0020 | INVESTIGATE | Delta close to limit",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              3267.5,
+              3462.5
+            ],
+            "cells_text": [
+              "LVDT-2",
+              "1.0040",
+              "\u2014",
+              "+0.0050",
+              "INCOMPLETE",
+              "Missing post-trim data"
+            ],
+            "cells_tokens": [
+              [
+                "LVDT-2"
+              ],
+              [
+                "1.0040"
+              ],
+              [
+                "\u2014"
+              ],
+              [
+                "+0.0050"
+              ],
+              [
+                "INCOMPLETE"
+              ],
+              [
+                "data",
+                "Missing",
+                "post-trim"
+              ]
+            ],
+            "row_text_cells": "LVDT-2 | 1.0040 | \u2014 | +0.0050 | INCOMPLETE | Missing post-trim data",
+            "cells_kind": [
+              "string",
+              "number",
+              "string",
+              "number",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        509.0,
+        3609.0,
+        2123.0,
+        3737.0
+      ],
+      "text": "9. Anomaly & Waiver Log"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        546.0,
+        3947.0,
+        3519.0,
+        4021.0
+      ],
+      "text": "ID Severity Term Description Containment Status"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        4056.5,
+        3734.0,
+        4985.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          4056.5,
+          3734.0,
+          4985.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          740.0,
+          1176.5,
+          1616.5,
+          2419.0,
+          3170.5,
+          3734.0
+        ],
+        "header_cells": [
+          "ID",
+          "Severity",
+          "Term",
+          "Description",
+          "Containment",
+          "Status"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              4056.5,
+              4423.5
+            ],
+            "cells_text": [
+              "DR-2025-014",
+              "Major",
+              "chamber_pressure",
+              "Persistent +8% over spec during burn",
+              "Added relief orifice, #2 retest pending",
+              "OPEN"
+            ],
+            "cells_tokens": [
+              [
+                "DR-",
+                "2025-",
+                "014"
+              ],
+              [
+                "Major"
+              ],
+              [
+                "chamber_pressure"
+              ],
+              [
+                "Persistent",
+                "+8%",
+                "over",
+                "burn",
+                "during",
+                "spec"
+              ],
+              [
+                "Added",
+                "relief",
+                "orifice,",
+                "#2",
+                "retest",
+                "pending"
+              ],
+              [
+                "OPEN"
+              ]
+            ],
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn | Added relief orifice, #2 retest pending | OPEN",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              4423.5,
+              4685.5
+            ],
+            "cells_text": [
+              "NCR-25-008",
+              "; Minor",
+              "resistance",
+              "Harness swapped due to 6.1 \u00a9 reading ;",
+              "Re-test verified 5.05 Q",
+              "CLOSED"
+            ],
+            "cells_tokens": [
+              [
+                "NCR-",
+                "25-008"
+              ],
+              [
+                ";",
+                "Minor"
+              ],
+              [
+                "resistance"
+              ],
+              [
+                "Harness",
+                "swapped",
+                ";",
+                "due",
+                "6.1",
+                "\u00a9",
+                "to",
+                "reading"
+              ],
+              [
+                "Re-test",
+                "verified",
+                "5.05",
+                "Q"
+              ],
+              [
+                "CLOSED"
+              ]
+            ],
+            "row_text_cells": "NCR-25-008 | ; Minor | resistance | Harness swapped due to 6.1 \u00a9 reading ; | Re-test verified 5.05 Q | CLOSED",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              4685.5,
+              4985.5
+            ],
+            "cells_text": [
+              "WA-25-002",
+              "Info",
+              "leak check ~",
+              "Leak test deferred pending new fixture",
+              "Approved by Chief QA",
+              "APPROVED"
+            ],
+            "cells_tokens": [
+              [
+                "WA-25-",
+                "002"
+              ],
+              [
+                "Info"
+              ],
+              [
+                "leak",
+                "check",
+                "~"
+              ],
+              [
+                "Leak",
+                "deferred",
+                "test",
+                "fixture",
+                "pending",
+                "new"
+              ],
+              [
+                "Chief",
+                "Approved",
+                "by",
+                "QA"
+              ],
+              [
+                "APPROVED"
+              ]
+            ],
+            "row_text_cells": "WA-25-002 | Info | leak check ~ | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        506.0,
+        5132.0,
+        2531.0,
+        5259.0
+      ],
+      "text": "6. Attachment Index (Synthetic)"
+    }
+  ],
+  "paragraphs": [],
+  "strings": [
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        506.0,
+        2225.0,
+        2211.0,
+        2323.0
+      ],
+      "text": "4. Calibration & Trim Table",
+      "line_count": 1,
+      "word_count": 4
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        509.0,
+        3609.0,
+        2123.0,
+        3737.0
+      ],
+      "text": "9. Anomaly & Waiver Log",
+      "line_count": 1,
+      "word_count": 4
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        506.0,
+        5132.0,
+        2531.0,
+        5259.0
+      ],
+      "text": "6. Attachment Index (Synthetic)",
+      "line_count": 1,
+      "word_count": 4
+    }
+  ],
+  "flow": [
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        698.5,
+        3734.0,
+        2077.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          698.5,
+          3734.0,
+          2077.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          946.0,
+          1496.5,
+          1970.5,
+          2590.5,
+          3239.5,
+          3734.0
+        ],
+        "header_cells": [
+          "Test",
+          "Temp (\u00b0C)",
+          "Duration (hr)",
+          "Requirement Met?",
+          "Deviation",
+          "Log Ref"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              698.5,
+              847.5
+            ],
+            "cells_text": [
+              "Thermal Soak",
+              "Low -45",
+              "2.0",
+              "YES",
+              "+0.5",
+              "A-112"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Soak"
+              ],
+              [
+                "Low",
+                "-45"
+              ],
+              [
+                "2.0"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "+0.5"
+              ],
+              [
+                "A-112"
+              ]
+            ],
+            "row_text_cells": "Thermal Soak | Low -45 | 2.0 | YES | +0.5 | A-112",
+            "cells_kind": [
+              "string",
+              "string",
+              "number",
+              "string",
+              "number",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              847.5,
+              1109.0
+            ],
+            "cells_text": [
+              "Thermal Soak",
+              "High +95",
+              "1.5",
+              "NO",
+              "Chamber tripped at +88\u00b0C",
+              "A-118"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Soak"
+              ],
+              [
+                "+95",
+                "High"
+              ],
+              [
+                "1.5"
+              ],
+              [
+                "NO"
+              ],
+              [
+                "Chamber",
+                "at",
+                "tripped",
+                "+88\u00b0C"
+              ],
+              [
+                "A-118"
+              ]
+            ],
+            "row_text_cells": "Thermal Soak | High +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
+            "cells_kind": [
+              "string",
+              "string",
+              "number",
+              "string",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              1109.0,
+              1370.5
+            ],
+            "cells_text": [
+              "Thermal Ramp Cycling",
+              "-35+85",
+              "6cycles",
+              "YES",
+              "-",
+              "A-126"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Ramp",
+                "Cycling"
+              ],
+              [
+                "-35+85"
+              ],
+              [
+                "6cycles"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "-"
+              ],
+              [
+                "A-126"
+              ]
+            ],
+            "row_text_cells": "Thermal Ramp Cycling | -35+85 | 6cycles | YES | - | A-126",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              1370.5,
+              1516.0
+            ],
+            "cells_text": [
+              "Random Vib",
+              "(X) 14.1 grms",
+              "7 min",
+              "YES",
+              "=",
+              "V-031"
+            ],
+            "cells_tokens": [
+              [
+                "Random",
+                "Vib"
+              ],
+              [
+                "14.1",
+                "(X)",
+                "grms"
+              ],
+              [
+                "7",
+                "min"
+              ],
+              [
+                "YES"
+              ],
+              [
+                "="
+              ],
+              [
+                "V-031"
+              ]
+            ],
+            "row_text_cells": "Random Vib | (X) 14.1 grms | 7 min | YES | = | V-031",
+            "cells_kind": [
+              "string",
+              "string",
+              "time",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              1516.0,
+              1668.5
+            ],
+            "cells_text": [
+              "Random Vib",
+              "(Z) 12.0 grms",
+              "7 min",
+              "CONDITIONAL",
+              "sensor SAT",
+              "V-035"
+            ],
+            "cells_tokens": [
+              [
+                "Random",
+                "Vib"
+              ],
+              [
+                "12.0",
+                "(Z)",
+                "grms"
+              ],
+              [
+                "7",
+                "min"
+              ],
+              [
+                "CONDITIONAL"
+              ],
+              [
+                "sensor",
+                "SAT"
+              ],
+              [
+                "V-035"
+              ]
+            ],
+            "row_text_cells": "Random Vib | (Z) 12.0 grms | 7 min | CONDITIONAL | sensor SAT | V-035",
+            "cells_kind": [
+              "string",
+              "string",
+              "time",
+              "string",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 5,
+            "row_band_px": [
+              1668.5,
+              2077.5
+            ],
+            "cells_text": [
+              "Sine Sweep",
+              "5-500 Hz",
+              "O5g",
+              "Not Recorded",
+              "-",
+              "V-041"
+            ],
+            "cells_tokens": [
+              [
+                "Sine",
+                "Sweep"
+              ],
+              [
+                "5-500",
+                "Hz"
+              ],
+              [
+                "O5g"
+              ],
+              [
+                "Not",
+                "Recorded"
+              ],
+              [
+                "-"
+              ],
+              [
+                "V-041"
+              ]
+            ],
+            "row_text_cells": "Sine Sweep | 5-500 Hz | O5g | Not Recorded | - | V-041",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": [
+          {
+            "band_index": 5,
+            "bbox_px": [
+              506.0,
+              1912.0,
+              3159.0,
+              1978.0
+            ],
+            "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "kind": "paragraph",
+      "bbox_px": [
+        506.0,
+        1912.0,
+        3159.0,
+        1978.0
+      ],
+      "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions.",
+      "line_count": 1,
+      "word_count": 12
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        506.0,
+        2225.0,
+        2211.0,
+        2323.0
+      ],
+      "text": "4. Calibration & Trim Table",
+      "line_count": 1,
+      "word_count": 4
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        2664.5,
+        3613.9999999999995,
+        3462.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          2664.5,
+          3613.9999999999995,
+          3462.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          849.0,
+          1198.0,
+          1582.0,
+          2105.0,
+          2509.0,
+          3613.9999999999995
+        ],
+        "header_cells": [
+          "Channel",
+          "PreTrim",
+          "PostTrim",
+          "Allowed Delta",
+          "Status",
+          "Comment"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              2664.5,
+              2817.5
+            ],
+            "cells_text": [
+              "TC-01",
+              "1.0034",
+              "0.9991",
+              "+0.0100",
+              "PASS",
+              "Temperatures within tolerance"
+            ],
+            "cells_tokens": [
+              [
+                "TC-01"
+              ],
+              [
+                "1.0034"
+              ],
+              [
+                "0.9991"
+              ],
+              [
+                "+0.0100"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "within",
+                "tolerance",
+                "Temperatures"
+              ]
+            ],
+            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | +0.0100 | PASS | Temperatures within tolerance",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              2817.5,
+              2969.5
+            ],
+            "cells_text": [
+              "TC-02",
+              "0.9989",
+              "1.0142",
+              "+0.0100",
+              "FAIL",
+              "Out-of-family high"
+            ],
+            "cells_tokens": [
+              [
+                "TC-02"
+              ],
+              [
+                "0.9989"
+              ],
+              [
+                "1.0142"
+              ],
+              [
+                "+0.0100"
+              ],
+              [
+                "FAIL"
+              ],
+              [
+                "Out-of-family",
+                "high"
+              ]
+            ],
+            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | +0.0100 | FAIL | Out-of-family high",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              2969.5,
+              3118.5
+            ],
+            "cells_text": [
+              "PT-03",
+              "1.0000",
+              "1.0000",
+              "+0.0020",
+              "PASS",
+              "Perfect match"
+            ],
+            "cells_tokens": [
+              [
+                "PT-03"
+              ],
+              [
+                "1.0000"
+              ],
+              [
+                "1.0000"
+              ],
+              [
+                "+0.0020"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "Perfect",
+                "match"
+              ]
+            ],
+            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | +0.0020 | PASS | Perfect match",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              3118.5,
+              3267.5
+            ],
+            "cells_text": [
+              "PT-07",
+              "0.9977",
+              "0.9974",
+              "+0.0020",
+              "INVESTIGATE",
+              "Delta close to limit"
+            ],
+            "cells_tokens": [
+              [
+                "PT-07"
+              ],
+              [
+                "0.9977"
+              ],
+              [
+                "0.9974"
+              ],
+              [
+                "+0.0020"
+              ],
+              [
+                "INVESTIGATE"
+              ],
+              [
+                "Delta",
+                "close",
+                "limit",
+                "to"
+              ]
+            ],
+            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | +0.0020 | INVESTIGATE | Delta close to limit",
+            "cells_kind": [
+              "string",
+              "number",
+              "number",
+              "number",
+              "string",
+              "string"
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              3267.5,
+              3462.5
+            ],
+            "cells_text": [
+              "LVDT-2",
+              "1.0040",
+              "\u2014",
+              "+0.0050",
+              "INCOMPLETE",
+              "Missing post-trim data"
+            ],
+            "cells_tokens": [
+              [
+                "LVDT-2"
+              ],
+              [
+                "1.0040"
+              ],
+              [
+                "\u2014"
+              ],
+              [
+                "+0.0050"
+              ],
+              [
+                "INCOMPLETE"
+              ],
+              [
+                "data",
+                "Missing",
+                "post-trim"
+              ]
+            ],
+            "row_text_cells": "LVDT-2 | 1.0040 | \u2014 | +0.0050 | INCOMPLETE | Missing post-trim data",
+            "cells_kind": [
+              "string",
+              "number",
+              "string",
+              "number",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        509.0,
+        3609.0,
+        2123.0,
+        3737.0
+      ],
+      "text": "9. Anomaly & Waiver Log",
+      "line_count": 1,
+      "word_count": 4
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        502.0,
+        4056.5,
+        3734.0,
+        4985.5
+      ],
+      "table": {
+        "bbox_px": [
+          502.0,
+          4056.5,
+          3734.0,
+          4985.5
+        ],
+        "col_bounds_px": [
+          502.0,
+          740.0,
+          1176.5,
+          1616.5,
+          2419.0,
+          3170.5,
+          3734.0
+        ],
+        "header_cells": [
+          "ID",
+          "Severity",
+          "Term",
+          "Description",
+          "Containment",
+          "Status"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              4056.5,
+              4423.5
+            ],
+            "cells_text": [
+              "DR-2025-014",
+              "Major",
+              "chamber_pressure",
+              "Persistent +8% over spec during burn",
+              "Added relief orifice, #2 retest pending",
+              "OPEN"
+            ],
+            "cells_tokens": [
+              [
+                "DR-",
+                "2025-",
+                "014"
+              ],
+              [
+                "Major"
+              ],
+              [
+                "chamber_pressure"
+              ],
+              [
+                "Persistent",
+                "+8%",
+                "over",
+                "burn",
+                "during",
+                "spec"
+              ],
+              [
+                "Added",
+                "relief",
+                "orifice,",
+                "#2",
+                "retest",
+                "pending"
+              ],
+              [
+                "OPEN"
+              ]
+            ],
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn | Added relief orifice, #2 retest pending | OPEN",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              4423.5,
+              4685.5
+            ],
+            "cells_text": [
+              "NCR-25-008",
+              "; Minor",
+              "resistance",
+              "Harness swapped due to 6.1 \u00a9 reading ;",
+              "Re-test verified 5.05 Q",
+              "CLOSED"
+            ],
+            "cells_tokens": [
+              [
+                "NCR-",
+                "25-008"
+              ],
+              [
+                ";",
+                "Minor"
+              ],
+              [
+                "resistance"
+              ],
+              [
+                "Harness",
+                "swapped",
+                ";",
+                "due",
+                "6.1",
+                "\u00a9",
+                "to",
+                "reading"
+              ],
+              [
+                "Re-test",
+                "verified",
+                "5.05",
+                "Q"
+              ],
+              [
+                "CLOSED"
+              ]
+            ],
+            "row_text_cells": "NCR-25-008 | ; Minor | resistance | Harness swapped due to 6.1 \u00a9 reading ; | Re-test verified 5.05 Q | CLOSED",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "paragraph",
+              "string"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              4685.5,
+              4985.5
+            ],
+            "cells_text": [
+              "WA-25-002",
+              "Info",
+              "leak check ~",
+              "Leak test deferred pending new fixture",
+              "Approved by Chief QA",
+              "APPROVED"
+            ],
+            "cells_tokens": [
+              [
+                "WA-25-",
+                "002"
+              ],
+              [
+                "Info"
+              ],
+              [
+                "leak",
+                "check",
+                "~"
+              ],
+              [
+                "Leak",
+                "deferred",
+                "test",
+                "fixture",
+                "pending",
+                "new"
+              ],
+              [
+                "Chief",
+                "Approved",
+                "by",
+                "QA"
+              ],
+              [
+                "APPROVED"
+              ]
+            ],
+            "row_text_cells": "WA-25-002 | Info | leak check ~ | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        506.0,
+        5132.0,
+        2531.0,
+        5259.0
+      ],
+      "text": "6. Attachment Index (Synthetic)",
+      "line_count": 1,
+      "word_count": 4
+    }
+  ]
+}
