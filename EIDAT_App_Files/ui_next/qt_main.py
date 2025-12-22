@@ -2085,7 +2085,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dpi_layout.addLayout(dpi_header)
         self.sld_ocr_dpi = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.sld_ocr_dpi.setRange(100, 1000)
-        self.sld_ocr_dpi.setSingleStep(100)
+        self.sld_ocr_dpi.setSingleStep(50)
         self.sld_ocr_dpi.setValue(500)
         self.sld_ocr_dpi.setStyleSheet("""
             QSlider::groove:horizontal {
@@ -4799,7 +4799,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_dpi_slider(self, value: int):
         try:
-            snapped = max(100, min(1000, int(round(value / 100.0) * 100)))
+            snapped = max(100, min(1000, int(round(value / 50.0) * 50)))
             if snapped != value:
                 self.sld_ocr_dpi.blockSignals(True)
                 self.sld_ocr_dpi.setValue(snapped)

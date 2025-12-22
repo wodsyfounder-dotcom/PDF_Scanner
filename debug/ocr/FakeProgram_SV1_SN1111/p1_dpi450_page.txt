@@ -1,0 +1,71 @@
+PDF: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\user_inputs\Staging_Selected\FakeProgram_SV1_SN1111.pdf
+Page: 1  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
+Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/48)
+Image: 3825x4950
+
+[STRING bbox_px=(538.0,505.0,2055.0,564.0)]
+e Synthetic End ltem Data Package (Debug Reference)
+
+[STRING bbox_px=(675.0,603.0,1203.0,649.0)]
+« Document Profile
+
+[STRING bbox_px=(675.0,701.0,1698.0,760.0)]
+e 1. Functional Acceptance Snapshot
+
+[STRING bbox_px=(675.0,796.0,1429.0,842.0)]
+« 2. Performance KPI Table
+
+[STRING bbox_px=(675.0,895.0,1691.0,941.0)]
+e 3. Environmental Endurance Matrix
+
+[STRING bbox_px=(675.0,996.0,1452.0,1042.0)]
+« 4. Calibration & Trim Table
+
+[STRING bbox_px=(675.0,1095.0,1419.0,1154.0)]
+* 5 Anomaly & Waiver Log
+
+[STRING bbox_px=(675.0,1193.0,1587.0,1252.0)]
+e 6. Attachment Index (Synthetic)
+
+[STRING bbox_px=(810.0,1288.0,1203.0,1347.0)]
+e Usage Hints
+
+[STRING bbox_px=(462.0,1475.0,2852.0,1737.0)]
+Synthetic End Item Data Package (Debug Reference)
+
+[PARA bbox_px=(459.0,1891.0,3281.0,2143.0)]
+This document intentionally blends nominal, off-nominal, and incomplete data so the scanner can be exercised against a broad set of scenarios (duplicate terms, missing units, multi-value tables, etc.). Only synthetic values are used.
+
+[STRING bbox_px=(469.0,2291.0,1475.0,2379.0)]
+Document Profile
+
+[TABLE 0 bbox_px=(459.0,2689.0,2344.0,3682.0) rows=7 cols=2]
+col_bounds_px: [459.0, 862.0, 2344.0]
++--------------------+---------------------------------------+
+| Field              | Value                                 |
++-==================-+-=====================================-+
+| Program            | Hyperion Dragonfly Propulsion Demo    |
++--------------------+---------------------------------------+
+| Vehicle            | SV3 (Block 2)                         |
++--------------------+---------------------------------------+
+| serial / Component | SN42-AX                               |
++--------------------+---------------------------------------+
+| Build Revision     | Rev E (04)                            |
++--------------------+---------------------------------------+
+| Date Compiled      | 2025-01-17                            |
++--------------------+---------------------------------------+
+| Compiler           | QA Test Harness                       |
++--------------------+---------------------------------------+
+| Source Bundle      | /Data Packages/Hyperion_SV3_SN42_RevE |
++--------------------+---------------------------------------+
+
+[STRING bbox_px=(469.0,3814.0,2531.0,3929.0)]
+1. Functional Acceptance Snapshot
+
+[TABLE 1 bbox_px=(459.0,4312.5,3471.0,4741.5) rows=1 cols=8]
+col_bounds_px: [459.0, 857.0, 1447.5, 1891.5, 2246.5, 2509.0, 2763.0, 3086.5, 3471.0]
++------------------+-------------------------------+---------------+----------------+--------+--------+--------------+---------------------+
+| Term             | Description P                 | Requirement Ω | Measured Value | Units  | Page g | Data Quality | Notes               |
++-================-+-=============================-+-=============-+-==============-+-======-+-======-+-============-+-===================-+
+| a ignition_delay | Time between arm and ignition | = 0.85        | 0.62           | $s     | 5      | PASS         | sample nominal case |
++------------------+-------------------------------+---------------+----------------+--------+--------+--------------+---------------------+

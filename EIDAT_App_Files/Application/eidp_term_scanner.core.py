@@ -483,6 +483,9 @@ class MatchResult:
     debug_fuzzy_match_threshold: Optional[float] = None
     # True when fallback EPS was triggered due to low score
     debug_fallback_eps_used: Optional[bool] = None
+    # Debug: token traceability for selected value
+    debug_token_ids: Optional[List[int]] = None
+    debug_token_confidence: Optional[float] = None
 
 
 # Regex to detect numbers (int/float) with optional thousands separators and units
@@ -695,6 +698,10 @@ def extract_units(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     s = value.replace("\xa0", " ").strip()
+    try:
+        s = _fix_mojibake_symbols(s)
+    except Exception:
+        pass
     # Look for optional whitespace + unit at the end of the string.
     try:
         unit_re = _get_unit_regex()
@@ -735,7 +742,7 @@ NUMBER_REGEX = re.compile(
     (?:\s?(?:{_AERO_UNITS}))?      # optional aerospace units
     (?![A-Za-z0-9_.-])            # right boundary
     """,
-    re.VERBOSE,
+    re.VERBOSE | re.IGNORECASE,
 )
 
 
@@ -1717,6 +1724,509 @@ def _parse_tesseract_tsv(tsv_text: str) -> List[Dict[str, float]]:
     return out
 
 
+def _classify_token_kind_for_retry(text: str) -> str:
+    """Roughly classify a token so we can choose PSM/allowlists for re-OCR."""
+    if not text:
+        return "other"
+    try:
+        t = str(text).strip()
+    except Exception:
+        return "other"
+    has_digit = any(ch.isdigit() for ch in t)
+    has_alpha = any(ch.isalpha() for ch in t)
+    try:
+        unit_re = _get_unit_regex()
+    except Exception:
+        unit_re = None
+    if unit_re is not None:
+        try:
+            if unit_re.fullmatch(t):
+                return "unit"
+        except Exception:
+            pass
+    if has_digit and not has_alpha:
+        return "numeric"
+    if has_digit and has_alpha:
+        digit_count = sum(1 for ch in t if ch.isdigit())
+        if digit_count >= max(2, int(len(t) * 0.5)):
+            return "numeric"
+    if has_alpha:
+        return "label"
+    return "other"
+
+
+def _table_context_for_token(token: Dict[str, float], tables: Optional[List[Dict[str, object]]]) -> Optional[Dict[str, object]]:
+    """Return table context for a token: kind + best-effort cell bbox for re-OCR."""
+    if not tables or not isinstance(token, dict):
+        return None
+    try:
+        cx = float(token.get("cx", 0.0))
+        cy = float(token.get("cy", 0.0))
+    except Exception:
+        return None
+    if cx <= 0 or cy <= 0:
+        return None
+    for tb in tables:
+        if not isinstance(tb, dict):
+            continue
+        bbox = tb.get("bbox_px")
+        bounds = tb.get("col_bounds_px")
+        bands = tb.get("row_bands_px")
+        if not (isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(bounds, list) and len(bounds) >= 3):
+            continue
+        try:
+            x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+        except Exception:
+            continue
+        if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+            continue
+        try:
+            b = [float(v) for v in bounds]
+        except Exception:
+            continue
+        col = None
+        for i in range(len(b) - 1):
+            if b[i] <= cx <= b[i + 1]:
+                col = i
+                break
+        if col is None:
+            continue
+        # Determine row band for a tighter "cell" crop when available.
+        cell_y0, cell_y1 = y0, y1
+        if isinstance(bands, list) and bands:
+            for band in bands:
+                if not (isinstance(band, (tuple, list)) and len(band) == 2):
+                    continue
+                try:
+                    by0, by1 = float(band[0]), float(band[1])
+                except Exception:
+                    continue
+                if by0 <= cy <= by1:
+                    cell_y0, cell_y1 = by0, by1
+                    break
+        cell_bbox = (float(b[col]), float(cell_y0), float(b[col + 1]), float(cell_y1))
+        # Heuristic: when table has the common 8-column layout used in the scanner exports,
+        # map by position: Term, Description, Requirement, Measured, Units, Page, Quality, Notes.
+        if len(b) - 1 >= 8:
+            if col == 0:
+                return {"kind": "term", "cell_bbox_px": cell_bbox}
+            if col == 1:
+                return {"kind": "desc", "cell_bbox_px": cell_bbox}
+            if col in (2, 3):
+                return {"kind": "numeric", "cell_bbox_px": cell_bbox}
+            if col == 4:
+                return {"kind": "unit", "cell_bbox_px": cell_bbox}
+            if col == 5:
+                return {"kind": "page", "cell_bbox_px": cell_bbox}
+            if col == 6:
+                return {"kind": "quality", "cell_bbox_px": cell_bbox}
+            if col >= 7:
+                return {"kind": "notes", "cell_bbox_px": cell_bbox}
+        # Fallback for other tables: treat far-right columns as numbers/units if digit-heavy.
+        try:
+            txt = str(token.get("text") or "")
+        except Exception:
+            txt = ""
+        if txt and any(ch.isdigit() for ch in txt):
+            return {"kind": "numeric", "cell_bbox_px": cell_bbox}
+        return {"kind": "label", "cell_bbox_px": cell_bbox}
+    return None
+
+
+def _tess_ocr_crop_tsv(img, lang: str, psm: int, allowlist: Optional[str], *, numeric_mode: bool = False) -> Tuple[Optional[str], float]:
+    """Run Tesseract TSV on a cropped region; return (text, conf 0..1)."""
+    try:
+        import tempfile as _tmp
+        import subprocess as _sp
+        import shutil as _sh
+        import os as _os
+    except Exception:
+        return None, 0.0
+    try:
+        tess_bin = _detect_tesseract_binary()
+    except Exception:
+        tess_bin = None
+    if not tess_bin:
+        return None, 0.0
+    try:
+        with _tmp.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            img.save(tf.name)
+            tf_path = tf.name
+        args = [tess_bin, tf_path, "stdout", "--psm", str(psm), "-l", lang]
+        try:
+            oem = (os.environ.get("TESS_OEM") or "").strip()
+        except Exception:
+            oem = ""
+        if oem:
+            args.extend(["--oem", oem])
+        args.append("tsv")
+        if allowlist:
+            args.insert(-1, "-c")
+            args.insert(-1, f"tessedit_char_whitelist={allowlist}")
+        # Numeric mode can help for digit-heavy crops.
+        if numeric_mode:
+            try:
+                args.insert(-1, "-c")
+                args.insert(-1, "classify_bln_numeric_mode=1")
+            except Exception:
+                pass
+        proc = _sp.run(args, capture_output=True, text=True, check=False)
+        try:
+            _os.remove(tf_path)
+        except Exception:
+            pass
+        if proc.returncode != 0 or not proc.stdout:
+            return None, 0.0
+        lines = proc.stdout.splitlines()
+        if len(lines) < 2:
+            return None, 0.0
+        header = lines[0].split("\t")
+        idx = {name: i for i, name in enumerate(header)}
+        text_idx = idx.get("text")
+        conf_idx = idx.get("conf")
+        best_txt: Optional[str] = None
+        best_conf: float = 0.0
+        for row in lines[1:]:
+            cols = row.split("\t")
+            if len(cols) <= max(text_idx or 0, conf_idx or 0):
+                continue
+            txt_raw = cols[text_idx] if text_idx is not None else ""
+            conf_raw = cols[conf_idx] if conf_idx is not None else ""
+            txt = str(txt_raw or "").strip()
+            if not txt:
+                continue
+            try:
+                cval = float(conf_raw)
+            except Exception:
+                cval = -1.0
+            c = 0.0 if cval < 0 else max(0.0, min(1.0, cval / 100.0))
+            if c > best_conf or (c >= best_conf * 0.9 and best_txt is None):
+                best_txt = txt
+                best_conf = c
+        return best_txt, best_conf
+    except Exception:
+        return None, 0.0
+
+
+def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lang: str, base_label: str, tables: Optional[List[Dict[str, object]]] = None) -> Tuple[List[Dict[str, float]], str]:
+    """Re-OCR low-confidence tokens with region-aware Tesseract settings."""
+    if not tokens or not img_path.exists():
+        return tokens, base_label
+    try:
+        from PIL import Image as _Image  # type: ignore
+    except Exception:
+        return tokens, base_label
+    try:
+        import math as _math
+    except Exception:
+        return tokens, base_label
+    try:
+        conf_min = float(os.environ.get("TESS_RETRY_MIN_CONF", "0.82"))
+    except Exception:
+        conf_min = 0.82
+    try:
+        max_retry = int(os.environ.get("TESS_RETRY_MAX_TOKENS", "48"))
+    except Exception:
+        max_retry = 48
+    try:
+        scale = float(os.environ.get("TESS_RETRY_SCALE", "2.0"))
+    except Exception:
+        scale = 2.0
+    scale = max(1.0, min(4.0, float(scale)))
+    attempted = 0
+    improved = 0
+    try:
+        img = _Image.open(str(img_path)).convert("RGB")
+    except Exception:
+        return tokens, base_label
+    w, h = img.size
+
+    def _prep_variants(crop_img, kind: str):
+        variants = []
+        variants.append(("raw", crop_img))
+        try:
+            if kind in ("numeric", "unit", "page", "term", "quality") and scale > 1.01:
+                crop2 = crop_img.resize((int(crop_img.size[0] * scale), int(crop_img.size[1] * scale)))
+            else:
+                crop2 = crop_img
+            variants.append(("scaled", crop2))
+        except Exception:
+            pass
+        try:
+            from PIL import ImageOps as _ImageOps  # type: ignore
+            g = crop_img.convert("L")
+            g = _ImageOps.autocontrast(g)
+            variants.append(("auto", g))
+            if kind in ("numeric", "page"):
+                for thr in (140, 160, 180):
+                    bw = g.point(lambda p: 255 if p > thr else 0, mode="1").convert("L")
+                    variants.append((f"thr{thr}", bw))
+        except Exception:
+            pass
+        return variants
+
+    def _postprocess_retry_text(kind: str, s: Optional[str]) -> Optional[str]:
+        if s is None:
+            return None
+        t = str(s).strip()
+        if not t:
+            return None
+        if kind == "numeric":
+            # Extract a clean numeric/range fragment from noisy cell OCR.
+            m = re.search(r"[-+]?\d+(?:\.\d+)?(?:\s*(?:\u00b1|\\+|-)\s*\d+(?:\.\d+)?)?", t)
+            if m:
+                return m.group(0).strip()
+        if kind == "page":
+            m = re.search(r"\b\d+\b", t)
+            if m:
+                return m.group(0)
+        return t
+
+    def _valid(kind: str, s: str) -> bool:
+        s = (s or "").strip()
+        if not s:
+            return False
+        if kind == "page":
+            return s.isdigit()
+        if kind == "numeric":
+            return bool(re.search(r"\d", s))
+        if kind == "unit":
+            try:
+                u = extract_units(s) or s
+                return bool(normalize_unit_token(u))
+            except Exception:
+                return bool(re.search(r"[A-Za-zΩµμ]", s))
+        if kind in ("term", "quality", "label"):
+            return bool(re.search(r"[A-Za-z0-9]", s))
+        return True
+
+    def _pattern_bonus(kind: str, s: str, orig: str) -> float:
+        s = (s or "").strip()
+        if not s:
+            return 0.0
+        if kind == "page":
+            return 0.35 if s.isdigit() else 0.0
+        if kind == "numeric":
+            bonus = 0.0
+            if re.search(r"\d", s) and re.search(r"(?:\u00b1|\\+|-)\s*\d", s):
+                bonus += 0.06
+            if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", s):
+                bonus += 0.18
+            if "." in s:
+                bonus += 0.05
+            if ("." in orig) and ("." not in s) and s.replace(" ", "") == orig.replace(".", "").replace(" ", ""):
+                bonus -= 0.05
+            return bonus
+        if kind == "unit":
+            try:
+                u = extract_units(s) or s
+                return 0.25 if normalize_unit_token(u) else 0.0
+            except Exception:
+                return 0.0
+        return 0.05 if _valid(kind, s) else 0.0
+
+    def _choose_best_candidate(kind: str, orig_text: str, candidates: List[Tuple[str, float, str]]) -> Tuple[Optional[str], float, str]:
+        best_txt: Optional[str] = None
+        best_conf: float = 0.0
+        best_score: float = -1.0
+        best_tag: str = ""
+        for txt2, c2, tag in candidates:
+            txt2_pp = _postprocess_retry_text(kind, txt2)
+            score = float(c2) + _pattern_bonus(kind, txt2_pp or "", orig_text)
+            if score > best_score:
+                best_score = score
+                best_txt = txt2_pp
+                best_conf = float(c2)
+                best_tag = tag
+        return best_txt, best_conf, best_tag
+
+    # Heuristic pass (not selection rules): if a numeric requirement cell contains "N +"
+    # but no RHS digits token exists, probe just to the right of the '+' to recover it.
+    try:
+        enable_range_probe = (os.environ.get("TESS_RETRY_RANGE_PROBE") or "").strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
+    except Exception:
+        enable_range_probe = True
+    if enable_range_probe and isinstance(tables, list) and tables:
+        for tb in tables:
+            if not isinstance(tb, dict):
+                continue
+            bounds = tb.get("col_bounds_px")
+            bands = tb.get("row_bands_px")
+            bbox = tb.get("bbox_px")
+            if not (isinstance(bounds, list) and len(bounds) >= 9 and isinstance(bands, list) and bands and isinstance(bbox, (tuple, list)) and len(bbox) == 4):
+                continue
+            # Require 8-col layout and use the "Requirement" column (index 2)
+            try:
+                x_cell_l = float(bounds[2])
+                x_cell_r = float(bounds[3])
+            except Exception:
+                continue
+            for band in bands:
+                if not (isinstance(band, (tuple, list)) and len(band) == 2):
+                    continue
+                try:
+                    y_band0, y_band1 = float(band[0]), float(band[1])
+                except Exception:
+                    continue
+                # Tokens in the requirement cell
+                cell_tokens = [
+                    t for t in tokens
+                    if isinstance(t, dict)
+                    and x_cell_l <= float(t.get("cx", 0.0)) <= x_cell_r
+                    and y_band0 <= float(t.get("cy", 0.0)) <= y_band1
+                ]
+                if not cell_tokens:
+                    continue
+                plus_tokens = [t for t in cell_tokens if str(t.get("text") or "").strip() == "+"]
+                if not plus_tokens:
+                    continue
+                # If we already have RHS digits as a token, skip.
+                rhs_digits = [t for t in cell_tokens if float(t.get("cx", 0.0)) > float(plus_tokens[0].get("cx", 0.0)) and re.fullmatch(r"\d+", str(t.get("text") or "").strip() or "")]
+                if rhs_digits:
+                    continue
+                # Need an LHS number token.
+                lhs_digits = [t for t in cell_tokens if re.search(r"\d", str(t.get("text") or "")) and float(t.get("cx", 0.0)) < float(plus_tokens[0].get("cx", 0.0))]
+                if not lhs_digits:
+                    continue
+                plus_tok = sorted(plus_tokens, key=lambda t: float(t.get("cx", 0.0)))[0]
+                try:
+                    px1 = float(plus_tok.get("x1", 0.0))
+                except Exception:
+                    px1 = float(plus_tok.get("cx", 0.0))
+                # Crop a narrow probe region to the right of '+' inside the same cell band.
+                pad_x = 2.0
+                pad_y = 2.0
+                x0p = max(0, int(_math.floor(px1 - pad_x)))
+                x1p = min(w, int(_math.ceil(x_cell_r + pad_x)))
+                y0p = max(0, int(_math.floor(y_band0 - pad_y)))
+                y1p = min(h, int(_math.ceil(y_band1 + pad_y)))
+                if x1p <= x0p or y1p <= y0p:
+                    continue
+                probe = img.crop((x0p, y0p, x1p, y1p))
+                candidates: List[Tuple[str, float, str]] = []
+                for tag, img_var in _prep_variants(probe, "numeric"):
+                    for psm_try in (10, 8, 7):
+                        txt2, c2 = _tess_ocr_crop_tsv(img_var, lang=lang, psm=int(psm_try), allowlist="0123456789", numeric_mode=True)
+                        txt2 = _postprocess_retry_text("page", txt2)  # just digits
+                        if txt2:
+                            candidates.append((txt2, float(c2), f"range_rhs:{tag}:psm{psm_try}"))
+                        else:
+                            candidates.append(("", float(c2), f"range_rhs:{tag}:psm{psm_try}"))
+                best_rhs, best_rhs_conf, best_rhs_tag = _choose_best_candidate("page", "", candidates)
+                if best_rhs and best_rhs.strip().isdigit():
+                    # Update '+' token text to include the recovered RHS digits.
+                    try:
+                        plus_tok["rehocr_rhs_text"] = str(best_rhs).strip()
+                        plus_tok["rehocr_rhs_conf"] = float(best_rhs_conf)
+                        plus_tok["rehocr_rhs_tag"] = best_rhs_tag
+                        plus_tok["text"] = f"\u00b1 {str(best_rhs).strip()}"
+                    except Exception:
+                        pass
+
+    for tok in tokens:
+        if attempted >= max_retry:
+            break
+        try:
+            conf = float(tok.get("conf", 0.0))
+        except Exception:
+            conf = 0.0
+        if conf >= conf_min:
+            continue
+        try:
+            txt = str(tok.get("text") or "").strip()
+        except Exception:
+            txt = ""
+        ctx = _table_context_for_token(tok, tables)
+        kind = (str(ctx.get("kind")) if isinstance(ctx, dict) else "") or _classify_token_kind_for_retry(txt)
+        if kind == "other" and conf > 0.7:
+            continue
+        try:
+            x0 = float(tok.get("x0", 0.0))
+            y0 = float(tok.get("y0", 0.0))
+            x1 = float(tok.get("x1", 0.0))
+            y1 = float(tok.get("y1", 0.0))
+        except Exception:
+            continue
+        # Prefer full cell crops when we know the table cell bounds; otherwise crop just the token bbox.
+        if isinstance(ctx, dict) and isinstance(ctx.get("cell_bbox_px"), tuple):
+            try:
+                cx0, cy0, cx1, cy1 = ctx.get("cell_bbox_px")  # type: ignore[misc]
+                x0, y0, x1, y1 = float(cx0), float(cy0), float(cx1), float(cy1)
+            except Exception:
+                pass
+        pad = 4.0 if kind in ("numeric", "unit", "page", "term", "quality") else 2.0
+        x0p = max(0, int(_math.floor(x0 - pad)))
+        y0p = max(0, int(_math.floor(y0 - pad)))
+        x1p = min(w, int(_math.ceil(x1 + pad)))
+        y1p = min(h, int(_math.ceil(y1 + pad)))
+        if x1p <= x0p or y1p <= y0p:
+            continue
+        crop = img.crop((x0p, y0p, x1p, y1p))
+
+        # Intentional settings per region type.
+        psm_base = 7
+        if kind in ("desc", "notes"):
+            psm_base = 6
+        if kind in ("numeric", "page"):
+            allow = "0123456789.+-/%"
+        elif kind == "unit":
+            # Keep allowlist ASCII-only; unicode symbols (Ω/µ/±) are normalized downstream.
+            allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/%ohmu.-"
+        elif kind in ("label", "term", "quality"):
+            allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_#-/:."
+        else:
+            allow = None
+
+        # Try multiple intentional variants and choose the best by (conf + pattern bonus).
+        cand_best_txt: Optional[str] = None
+        cand_best_conf: float = 0.0
+        cand_best_score: float = -1.0
+        cand_best_tag: str = ""
+        numeric_mode = kind in ("numeric", "page")
+        psms = [psm_base]
+        if psm_base == 7:
+            psms.append(8)  # single word can help for short cells
+        variants = _prep_variants(crop, kind)
+        for tag, img_var in variants:
+            for psm_try in psms:
+                txt2, c2 = _tess_ocr_crop_tsv(img_var, lang=lang, psm=int(psm_try), allowlist=allow, numeric_mode=numeric_mode)
+                txt2 = _postprocess_retry_text(kind, txt2)
+                attempted += 1
+                score = float(c2) + _pattern_bonus(kind, txt2 or "", txt)
+                if score > cand_best_score:
+                    cand_best_score = score
+                    cand_best_txt = txt2
+                    cand_best_conf = float(c2)
+                    cand_best_tag = f"{tag}:psm{psm_try}"
+                if attempted >= max_retry:
+                    break
+            if attempted >= max_retry:
+                break
+        # Persist best candidate for inspection
+        try:
+            if cand_best_txt is not None:
+                tok["rehocr_text"] = str(cand_best_txt)
+            tok["rehocr_conf"] = float(cand_best_conf)
+            tok["rehocr_tag"] = cand_best_tag
+        except Exception:
+            pass
+        if not cand_best_txt:
+            continue
+
+        # Accept improvements by confidence OR by validity when the original is clearly wrong.
+        orig_ok = _valid(kind, txt)
+        new_ok = _valid(kind, cand_best_txt)
+        orig_score = float(conf) + _pattern_bonus(kind, txt, txt)
+        new_score = float(cand_best_conf) + _pattern_bonus(kind, cand_best_txt, txt)
+        if (new_score > orig_score + 0.06) or (not orig_ok and new_ok and new_score >= orig_score * 0.7) or (conf < 0.4 and new_ok and new_score >= orig_score):
+            tok["text"] = cand_best_txt
+            tok["conf"] = cand_best_conf
+            improved += 1
+    if attempted:
+        return tokens, f"{base_label}+rehocr({improved}/{attempted})"
+    return tokens, base_label
+
+
 def _median(vals: List[float]) -> Optional[float]:
     if not vals:
         return None
@@ -1902,6 +2412,7 @@ def _maybe_export_tess_ir(pdf_path: Path, page: int, dpi: int, ir: Dict[str, obj
         "page": int(page),
         "dpi": int(dpi),
         "source": source,
+        "pipeline": ir.get("pipeline"),
         "lang": ir.get("lang"),
         "psm": ir.get("psm"),
         "img_w": ir.get("img_w"),
@@ -2955,6 +3466,7 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
     rows_out: List[Dict[str, object]] = []
     spill_blocks: List[Dict[str, object]] = []
     _logref_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
+    _punct_only_re = re.compile(r"^[\.\,\;\:\u00b7\u2022]+$")
     for band_idx, band in enumerate(bands):
         if not (isinstance(band, (tuple, list)) and len(band) == 2):
             continue
@@ -3003,15 +3515,32 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
             })
         cols: List[List[Dict[str, float]]] = [[] for _ in range(len(col_bounds) - 1)]
         for it in row_items:
-            cx = float(it.get("cx", 0.0))
-            idx = None
-            for i in range(len(col_bounds) - 1):
-                if col_bounds[i] <= cx < col_bounds[i + 1]:
-                    idx = i
-                    break
-            if idx is None:
+            try:
+                x0 = float(it.get("x0", 0.0))
+                x1 = float(it.get("x1", 0.0))
+                cx = float(it.get("cx", (x0 + x1) / 2.0))
+            except Exception:
                 continue
-            cols[idx].append(it)
+            best_idx = None
+            best_overlap = 0.0
+            for i in range(len(col_bounds) - 1):
+                left = float(col_bounds[i])
+                right = float(col_bounds[i + 1])
+                overlap = max(0.0, min(x1, right) - max(x0, left))
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_idx = i
+            if best_idx is None or best_overlap <= 0.0:
+                idx = None
+                for i in range(len(col_bounds) - 1):
+                    if col_bounds[i] <= cx < col_bounds[i + 1]:
+                        idx = i
+                        break
+                if idx is None:
+                    continue
+                cols[idx].append(it)
+            else:
+                cols[best_idx].append(it)
         # Two-column key/value table cleanup: if the key label is split across
         # columns (e.g., "Serial /" + "Component SN42-AX"), move the label word(s)
         # back into the key column.
@@ -3029,6 +3558,64 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
                         cols[1] = [t for t in cols[1] if t not in moved]
         except Exception:
             pass
+        # Boundary-crossing tokens: if a token spans a column boundary but sits
+        # tightly next to the previous token, keep them together.
+        try:
+            row_sorted = sorted(row_items, key=lambda t: float(t.get("x0", 0.0)))
+            char_ws: List[float] = []
+            for t in row_sorted:
+                txt = str(t.get("text") or "").strip()
+                if not txt:
+                    continue
+                w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+                if w > 0:
+                    char_ws.append(w / max(1, len(txt)))
+            char_w = _median(char_ws) or 8.0
+            char_w = max(1.0, min(80.0, float(char_w)))
+            join_gap = max(4.0, min(140.0, 2.4 * char_w))
+            col_map: Dict[int, int] = {}
+            for ci, col in enumerate(cols):
+                for t in col:
+                    col_map[id(t)] = ci
+            for idx, t in enumerate(row_sorted):
+                ci = col_map.get(id(t))
+                if ci is None or ci <= 0:
+                    continue
+                try:
+                    x0 = float(t.get("x0", 0.0))
+                    x1 = float(t.get("x1", 0.0))
+                except Exception:
+                    continue
+                boundary = float(col_bounds[ci])
+                if not (x0 < boundary < x1):
+                    continue
+                if idx <= 0:
+                    continue
+                prev = row_sorted[idx - 1]
+                prev_ci = col_map.get(id(prev))
+                if prev_ci != ci - 1:
+                    continue
+                try:
+                    px1 = float(prev.get("x1", 0.0))
+                    gap = max(0.0, x0 - px1)
+                except Exception:
+                    gap = 0.0
+                try:
+                    y0 = float(t.get("y0", 0.0))
+                    y1 = float(t.get("y1", 0.0))
+                    py0 = float(prev.get("y0", 0.0))
+                    py1 = float(prev.get("y1", 0.0))
+                    overlap = max(0.0, min(y1, py1) - max(y0, py0))
+                    denom = max(1.0, min(y1 - y0, py1 - py0))
+                    overlap_ratio = overlap / denom
+                except Exception:
+                    overlap_ratio = 0.0
+                if gap <= join_gap and overlap_ratio >= 0.35:
+                    cols[ci] = [tok for tok in cols[ci] if tok is not t]
+                    cols[ci - 1].append(t)
+                    col_map[id(t)] = ci - 1
+        except Exception:
+            pass
         # If the last column is a short reference code (e.g., A-118) and has
         # a stray word (e.g., "at A-118"), move the stray token to the left.
         try:
@@ -3044,14 +3631,70 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
                         cols[-1] = id_hits
         except Exception:
             pass
+
+        def _filter_spurious_punct(col_toks: List[Dict[str, float]]) -> List[Dict[str, float]]:
+            """Drop tiny punctuation-only tokens that are likely table/scan noise (e.g., leading '.' before a label)."""
+            if not col_toks:
+                return col_toks
+            ordered = sorted(col_toks, key=lambda t: float(t.get("x0", 0.0)))
+            parts = [str(t.get("text") or "").strip() for t in ordered]
+            if not any(re.search(r"[A-Za-z0-9]", p) for p in parts if p):
+                return col_toks
+            # Estimate a typical token height in this column.
+            hs: List[float] = []
+            for t in ordered:
+                try:
+                    h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                except Exception:
+                    continue
+                if h > 0:
+                    hs.append(h)
+            med_h = _median(hs) or 14.0
+            keep: List[Dict[str, float]] = []
+            for i, t in enumerate(ordered):
+                txt = str(t.get("text") or "").strip()
+                if txt and _punct_only_re.fullmatch(txt):
+                    try:
+                        conf = float(t.get("conf", 0.0))
+                    except Exception:
+                        conf = 0.0
+                    try:
+                        h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                        w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+                    except Exception:
+                        h, w = med_h, 0.0
+                    # Keep punctuation when it looks like part of a decimal (digit . digit)
+                    left = parts[i - 1] if i - 1 >= 0 else ""
+                    right = parts[i + 1] if i + 1 < len(parts) else ""
+                    decimalish = (txt == ".") and bool(re.search(r"\d$", left)) and bool(re.search(r"^\d", right))
+                    if decimalish:
+                        keep.append(t)
+                        continue
+                    # Otherwise drop tiny low-confidence punctuation specks.
+                    if conf < 0.85 and h <= 0.45 * float(med_h) and w <= 0.9 * float(med_h):
+                        continue
+                keep.append(t)
+            return keep
+
+        cols = [_filter_spurious_punct(ct) for ct in cols]
         cells_text = [_join_tokens_as_cell_text(ct) for ct in cols]
-        cell_tokens = [[str(t.get("text") or "").strip() for t in sorted(ct, key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0)))) if str(t.get("text") or "").strip()] for ct in cols]
+        cell_tokens = [[str(t.get("text") or "").strip() for t in sorted(ct, key=lambda t: float(t.get("x0", 0.0))) if str(t.get("text") or "").strip()] for ct in cols]
         row_text_cells = " | ".join([c for c in cells_text if c]).strip()
+        try:
+            cells_token_ids = [[int(t.get("_tid")) for t in ct if isinstance(t.get("_tid"), (int, float))] for ct in cols]
+        except Exception:
+            cells_token_ids = None
+        try:
+            row_token_ids = [int(t.get("_tid")) for t in row_items if isinstance(t.get("_tid"), (int, float))]
+        except Exception:
+            row_token_ids = None
         rows_out.append({
             "band_index": int(band_idx),
             "row_band_px": (float(y_top), float(y_bot)),
             "cells_text": cells_text,
             "cells_tokens": cell_tokens,
+            "cells_token_ids": cells_token_ids,
+            "row_token_ids": row_token_ids,
             "row_text_cells": row_text_cells,
         })
 
@@ -3320,6 +3963,7 @@ def _group_tokens_into_text_blocks(tokens: List[Dict[str, float]]) -> List[Dict[
         text = " ".join(str(t.get("text") or "").strip() for t in ln_sorted if str(t.get("text") or "").strip()).strip()
         if not text:
             continue
+        token_ids = [t.get("_tid") for t in ln_sorted if t.get("_tid") is not None]
         try:
             x0s = [float(t.get("x0", 0.0)) for t in ln_sorted]
             y0s = [float(t.get("y0", 0.0)) for t in ln_sorted]
@@ -3328,7 +3972,7 @@ def _group_tokens_into_text_blocks(tokens: List[Dict[str, float]]) -> List[Dict[
             bbox = (min(x0s), min(y0s), max(x1s), max(y1s))
         except Exception:
             bbox = (0.0, 0.0, 0.0, 0.0)
-        blocks.append({"text": text, "bbox_px": bbox})
+        blocks.append({"text": text, "bbox_px": bbox, "token_ids": token_ids})
     blocks.sort(key=lambda b: (float((b.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[1]), float((b.get("bbox_px") or (0.0, 0.0, 0.0, 0.0))[0])))
     return blocks
 
@@ -3396,6 +4040,7 @@ def _build_text_flow_items_from_blocks(
             continue
         x0, y0, x1, y1 = bb
         h = max(1.0, y1 - y0)
+        tok_ids = b.get("token_ids") if isinstance(b.get("token_ids"), list) else []
         lines.append(
             {
                 "text": txt,
@@ -3407,6 +4052,7 @@ def _build_text_flow_items_from_blocks(
                 "h": float(h),
                 "words": int(_word_count(txt)),
                 "bullet": bool(_is_bullet_like(txt)),
+                "token_ids": tok_ids,
             }
         )
     if not lines:
@@ -3571,6 +4217,11 @@ def _build_text_flow_items_from_blocks(
         is_header = _looks_like_headerish(text, float(h_med))
         is_bullet = any(bool(it.get("bullet")) for it in g)
         atomic = _classify_atomic_kind(text)
+        token_ids: List[int] = []
+        for it in g:
+            tids = it.get("token_ids")
+            if isinstance(tids, list):
+                token_ids.extend([int(v) for v in tids if isinstance(v, (int, float))])
 
         if atomic in ("date", "time", "number"):
             kind = atomic
@@ -3579,7 +4230,15 @@ def _build_text_flow_items_from_blocks(
         else:
             kind = "string"
 
-        item = {"type": "text", "kind": kind, "bbox_px": bbox, "text": text, "line_count": len(g), "word_count": wc}
+        item = {
+            "type": "text",
+            "kind": kind,
+            "bbox_px": bbox,
+            "text": text,
+            "line_count": len(g),
+            "word_count": wc,
+            "token_ids": sorted(set(token_ids)) if token_ids else [],
+        }
         flow_items.append(item)
         if kind == "paragraph":
             paragraphs.append(item)
@@ -3590,7 +4249,15 @@ def _build_text_flow_items_from_blocks(
     return flow_items, paragraphs, strings
 
 
-def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str, object], source: str) -> Dict[str, object]:
+def _assemble_page_debug_json(
+    pdf_path: Path,
+    page: int,
+    dpi: int,
+    ir: Dict[str, object],
+    source: str,
+    *,
+    include_artifacts: bool = False,
+) -> Dict[str, object]:
     """Build a structured, table-aware page representation for debug inspection."""
     try:
         tokens_raw = ir.get("tokens")  # type: ignore[assignment]
@@ -3616,6 +4283,13 @@ def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str,
                     t["cy"] = (y0 + y1) / 2.0
             except Exception:
                 continue
+    # Stable token ids for traceability.
+    for idx, t in enumerate(tokens):
+        try:
+            if "_tid" not in t:
+                t["_tid"] = int(idx)
+        except Exception:
+            continue
     try:
         tables_raw = ir.get("tables")  # type: ignore[assignment]
         tables_list = list(tables_raw) if isinstance(tables_raw, list) else []
@@ -3920,6 +4594,13 @@ def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str,
                         prev["bbox_px"] = merged_bbox
                         prev["kind"] = new_kind
                         try:
+                            prev_ids = prev.get("token_ids") if isinstance(prev.get("token_ids"), list) else []
+                            cur_ids = el.get("token_ids") if isinstance(el.get("token_ids"), list) else []
+                            merged_ids = sorted(set(int(v) for v in (prev_ids + cur_ids) if isinstance(v, (int, float))))
+                            prev["token_ids"] = merged_ids
+                        except Exception:
+                            pass
+                        try:
                             prev["line_count"] = int(prev.get("line_count") or 1) + int(el.get("line_count") or 1)
                         except Exception:
                             prev["line_count"] = prev.get("line_count") or 1
@@ -3933,11 +4614,12 @@ def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str,
     except Exception:
         pass
 
-    return {
+    page_bundle = {
         "pdf_file": str(pdf_path),
         "page": int(page),
         "dpi": int(dpi),
         "source": source,
+        "pipeline": ir.get("pipeline"),
         "lang": ir.get("lang"),
         "psm": ir.get("psm"),
         "img_w": ir.get("img_w"),
@@ -3947,6 +4629,20 @@ def _assemble_page_debug_json(pdf_path: Path, page: int, dpi: int, ir: Dict[str,
         "strings": [e for e in flow if isinstance(e, dict) and str(e.get("type") or "") == "text" and str(e.get("kind") or "") != "paragraph"],
         "flow": flow,
     }
+    if include_artifacts:
+        page_bundle["artifacts"] = {
+            "tokens": tokens,
+            "tables": ir.get("tables"),
+            "lines": ir.get("lines"),
+            "grid": ir.get("grid"),
+            "img_w": ir.get("img_w"),
+            "img_h": ir.get("img_h"),
+            "lang": ir.get("lang"),
+            "psm": ir.get("psm"),
+            "pipeline": ir.get("pipeline"),
+            "source": source,
+        }
+    return page_bundle
 
 
 def _page_bundle_as_text(page_bundle: Dict[str, object]) -> str:
@@ -3960,7 +4656,11 @@ def _page_bundle_as_text(page_bundle: Dict[str, object]) -> str:
         return str(b)
 
     def _wrap_cell(s: str, width: int) -> List[str]:
-        s = re.sub(r"\s+", " ", (s or "").strip())
+        try:
+            s = _normalize_ocr_text_for_display(s or "")
+        except Exception:
+            s = s or ""
+        s = re.sub(r"\s+", " ", s.strip())
         if not s:
             return [""]
         return textwrap.wrap(s, width=width, break_long_words=False, break_on_hyphens=False) or [""]
@@ -3968,6 +4668,12 @@ def _page_bundle_as_text(page_bundle: Dict[str, object]) -> str:
     lines: List[str] = []
     lines.append(f"PDF: {page_bundle.get('pdf_file')}")
     lines.append(f"Page: {page_bundle.get('page')}  DPI: {page_bundle.get('dpi')}  Source: {page_bundle.get('source')}  Lang: {page_bundle.get('lang')}  PSM: {page_bundle.get('psm')}")
+    try:
+        pipeline = str(page_bundle.get("pipeline") or "").strip()
+    except Exception:
+        pipeline = ""
+    if pipeline:
+        lines.append(f"Pipeline: {pipeline}")
     lines.append(f"Image: {page_bundle.get('img_w')}x{page_bundle.get('img_h')}")
     lines.append("")
 
@@ -4065,6 +4771,130 @@ def _page_bundle_as_text(page_bundle: Dict[str, object]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _flow_phrase_equal(text: str, query: str, case_sensitive: bool) -> bool:
+    if not text or not query:
+        return False
+    if case_sensitive:
+        return re.sub(r"\s+", " ", text.strip()) == re.sub(r"\s+", " ", query.strip())
+    return _normalize_anchor_token(text) == _normalize_anchor_token(query)
+
+
+def _flow_phrase_score(text: str, query: str, case_sensitive: bool, allow_fuzzy: bool) -> float:
+    if _flow_phrase_equal(text, query, case_sensitive):
+        return 1.0
+    if not allow_fuzzy:
+        return 0.0
+    try:
+        return _fuzzy_ratio(text, query)
+    except Exception:
+        return 0.0
+
+
+def _flow_anchor_y(flow: List[Dict[str, object]], anchor: Optional[str], case_sensitive: bool) -> Optional[float]:
+    if not anchor:
+        return None
+    anchor_norm = _normalize_anchor_token(anchor if case_sensitive else anchor.lower())
+    if not anchor_norm:
+        return None
+    best_y: Optional[float] = None
+    for it in flow:
+        if not isinstance(it, dict) or str(it.get("type") or "") != "text":
+            continue
+        txt = str(it.get("text") or "")
+        if not txt:
+            continue
+        txt_norm = _normalize_anchor_token(txt if case_sensitive else txt.lower())
+        if anchor_norm and anchor_norm in txt_norm:
+            try:
+                bb = it.get("bbox_px")
+                if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                    y0 = float(bb[1])
+                else:
+                    y0 = None
+            except Exception:
+                y0 = None
+            if y0 is None:
+                continue
+            if best_y is None or y0 < best_y:
+                best_y = y0
+    return best_y
+
+
+def _mean_token_conf(tokens: List[Dict[str, float]], token_ids: List[int]) -> Optional[float]:
+    if not tokens or not token_ids:
+        return None
+    confs: List[float] = []
+    for tid in token_ids:
+        try:
+            tok = tokens[tid]
+        except Exception:
+            continue
+        try:
+            conf = float(tok.get("conf", 0.0))
+        except Exception:
+            continue
+        confs.append(conf)
+    if not confs:
+        return None
+    return float(sum(confs) / max(1, len(confs)))
+
+
+def _get_flow_page_bundle(pdf_path: Path, page: int, dpi: int, langs: Optional[List[str]] = None) -> Optional[Dict[str, object]]:
+    try:
+        engine = (os.environ.get("OCR_BOXES_ENGINE") or "auto").strip().lower()
+    except Exception:
+        engine = "auto"
+    if langs is None:
+        langs_raw = (os.environ.get('EASYOCR_LANGS') or os.environ.get('OCR_LANGS') or 'en')
+        langs = [s.strip() for s in re.split(r'[;,]', langs_raw) if s.strip()]
+    lang_key = ",".join(langs or ["en"])
+    cache_key = (_pdf_cache_key(pdf_path), int(page), int(dpi), engine, lang_key)
+    try:
+        cached = _PAGE_BUNDLE_CACHE.get(cache_key)
+    except Exception:
+        cached = None
+    if isinstance(cached, dict):
+        return cached
+
+    # Prefer Tesseract IR when available for table structure + artifacts.
+    if engine not in ("easyocr", "easy") and _HAVE_TESSERACT and _HAVE_PYMUPDF:
+        try:
+            ir, _lbl = _get_tess_tsv_ir(pdf_path, int(page), int(dpi))
+        except Exception:
+            ir = None
+        if isinstance(ir, dict):
+            try:
+                bundle = _assemble_page_debug_json(pdf_path, int(page), int(dpi), ir, source="tess_tsv", include_artifacts=True)
+                _PAGE_BUNDLE_CACHE[cache_key] = bundle
+                return bundle
+            except Exception:
+                pass
+
+    # Fallback: build a minimal IR from OCR tokens (tables may be empty).
+    try:
+        items, tables, _header_virtuals = _get_ocr_page_bundle(pdf_path, int(page), int(dpi), langs=langs)
+    except Exception:
+        items, tables = [], []
+    if not items:
+        return None
+    ir_min: Dict[str, object] = {
+        "tokens": items,
+        "tables": tables,
+        "lines": None,
+        "grid": None,
+        "img_w": None,
+        "img_h": None,
+        "lang": "+".join(langs or []),
+        "psm": None,
+    }
+    try:
+        bundle = _assemble_page_debug_json(pdf_path, int(page), int(dpi), ir_min, source="ocr_flow", include_artifacts=True)
+        _PAGE_BUNDLE_CACHE[cache_key] = bundle
+        return bundle
+    except Exception:
+        return None
+
+
 def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict[str, object]], str]:
     """Get per-page OCR IR via Tesseract TSV."""
     # In-memory cache first (optional)
@@ -4140,7 +4970,7 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
         if err or not tsv_text:
             return None, f"tess_tsv:ocr_error:{err or 'empty'}"
         tokens = _parse_tesseract_tsv(tsv_text)
-        styled_text, line_entries = _stylize_tokens_as_text(tokens)
+        label_tag = f"tess_tsv:ocr(lang={lang},psm={psm})"
         grid = _detect_gridlines(img_path, img_w, img_h)
         try:
             tables = _table_clusters_from_grid(grid, int(img_w), int(img_h), tokens=tokens)
@@ -4185,6 +5015,9 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
                     tb["header_virtual_tokens"] = []
         except Exception:
             tables = []
+        # Re-OCR low-confidence tokens now that we (may) know table column bounds.
+        tokens, label_tag = _rehocr_tokens_if_needed(tokens, img_path, lang, label_tag, tables)
+        styled_text, line_entries = _stylize_tokens_as_text(tokens)
         ir: Dict[str, object] = {
             "text": styled_text,
             "tokens": tokens,
@@ -4193,6 +5026,7 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
             "img_h": int(img_h),
             "lang": lang,
             "psm": int(psm),
+            "pipeline": label_tag,
             "grid": grid,
             "tables": tables,
         }
@@ -4206,7 +5040,7 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
             _maybe_export_tess_ir(pdf_path, page, dpi, ir, source="ocr")
         except Exception:
             pass
-        return ir, f"tess_tsv:ocr(lang={lang},psm={psm})"
+        return ir, label_tag
     finally:
         try:
             shutil.rmtree(str(tmp_dir), ignore_errors=True)
@@ -4721,6 +5555,7 @@ _EASYOCR_READER_CACHE: Dict[str, object] = {}
 _PAGE_TEXT_CACHE: Dict[str, Tuple[Dict[int, str], str, int]] = {}
 # Per-PDF in-memory OCR geometry/text cache (Tesseract TSV IR)
 _PAGE_OCR_IR_CACHE: Dict[Tuple[str, int, int], Dict[str, object]] = {}
+_PAGE_BUNDLE_CACHE: Dict[Tuple[str, int, int, str, str], Dict[str, object]] = {}
 _OCR_DEBUG_EXPORT_DONE: set[Tuple[str, int, int]] = set()
 _NORMALIZATION_SUPPORT_CACHE: Optional[Dict[str, object]] = None
 _UNIT_ALIAS_MAP_CACHE: Optional[Dict[str, str]] = None
@@ -4771,6 +5606,7 @@ def reset_scanner_state(confirm: bool = False, include_debug: bool = False) -> D
         _EASYOCR_READER_CACHE.clear()
         _PAGE_TEXT_CACHE.clear()
         _PAGE_OCR_IR_CACHE.clear()
+        _PAGE_BUNDLE_CACHE.clear()
         _OCR_DEBUG_EXPORT_DONE.clear()
     except Exception:
         pass
@@ -4876,6 +5712,30 @@ def _load_normalization_support() -> Dict[str, object]:
     return default
 
 
+def _fix_mojibake_symbols(text: str) -> str:
+    """Fix common UTF-8->Latin-1 mojibake sequences for special symbols.
+
+    Example: "Â°" -> "°". This is intentionally narrow so we don't munge real text.
+    """
+    if not text:
+        return ""
+    out = str(text)
+    return (
+        out.replace("Â°", "°")
+        .replace("Âº", "º")
+        .replace("Â˚", "˚")
+        .replace("Âµ", "µ")
+        .replace("Âμ", "μ")
+        .replace("Î¼", "μ")
+        .replace("Â±", "±")
+        .replace("Â×", "×")
+        .replace("Â·", "·")
+        .replace("ÂΩ", "Ω")
+        .replace("ÂΩ", "Ω")
+        .replace("Î©", "Ω")
+    )
+
+
 def _normalize_ocr_text_for_display(text: str) -> str:
     """Best-effort OCR text cleanup for human-readable debug views.
 
@@ -4888,7 +5748,7 @@ def _normalize_ocr_text_for_display(text: str) -> str:
         support = _load_normalization_support()
     except Exception:
         support = {}
-    out = str(text)
+    out = _fix_mojibake_symbols(str(text))
 
     # Normalize common mojibake/special glyph variants into canonical symbols.
     try:
@@ -4914,6 +5774,9 @@ def _normalize_ocr_text_for_display(text: str) -> str:
                         vv = str(v)
                     except Exception:
                         continue
+                    # Avoid turning normal words like "text" into "te×t".
+                    if key == "times" and vv == "x":
+                        continue
                     if vv and vv in out:
                         out = out.replace(vv, canon)
 
@@ -4938,11 +5801,26 @@ def _normalize_unit_key(s: str) -> str:
     """Normalize a unit/alias token for lookup (case-insensitive, strip separators)."""
     if not s:
         return ""
-    t = str(s).strip().lower()
+    raw = _fix_mojibake_symbols(str(s)).strip()
+    t = raw.lower()
     # Normalize common OCR variants
     t = t.replace("\u00A0", " ")
     t = t.replace(" ", "")
-    t = t.replace("·", "")
+    # Degree symbol is cosmetic in units: "°C" == "C"
+    t = t.replace("°", "").replace("º", "").replace("˚", "")
+    # Some bad decodes/fonts yield sequences like "AøC" / "A§C" / "EsC" for "°C"
+    t = t.replace(f"a\u00f8", "").replace(f"a\u00a7", "")
+    if t.startswith("es") and len(t) in (3, 4) and t[2] in ("c", "f", "r", "k"):
+        t = t[2:]
+    # Micro sign: normalize to ASCII 'u' ("µs" == "us")
+    t = t.replace("µ", "u").replace("μ", "u")
+    t = t.replace(f"a\u00e6", "u").replace(f"i\u00ac", "u")
+    # Ohm symbol: normalize to a stable token for alias matching
+    t = t.replace("Ω", "ohm").replace("Ω", "ohm")
+    # Dots/middle-dots used as separators in compound units: "N·m" == "Nm"
+    t = t.replace("·", "").replace("•", "").replace("⋅", "").replace("∙", "")
+    t = t.replace(f"a\u00fa", "")
+    t = t.replace(".", "")
     t = t.replace("-", "")
     t = t.replace("_", "")
     t = t.replace("(", "").replace(")", "")
@@ -5038,6 +5916,41 @@ def _get_unit_regex() -> re.Pattern:
     return _UNIT_REGEX_CACHE
 
 
+def _refresh_number_regex_from_unit_regex() -> None:
+    """Rebuild NUMBER_REGEX using the support-driven unit lexicon (when available).
+
+    NUMBER_REGEX is defined early in the file, before _get_unit_regex exists, so it
+    can only use the legacy unit set on first pass. We patch it here once the unit
+    regex is available.
+    """
+    global NUMBER_REGEX, _AERO_UNITS
+    try:
+        unit_pat = _get_unit_regex().pattern
+    except Exception:
+        return
+    _AERO_UNITS = unit_pat
+    try:
+        NUMBER_REGEX = re.compile(
+            rf"""
+            (?<![A-Za-z0-9_.-])           # left boundary
+            [-+]?                         # optional sign
+            (?:\d{{1,3}}(?:,\d{{3}})+|\d+)    # integer with thousands or plain digits
+            (?:\.\d+)?                    # optional decimal part
+            (?:\s?(?:{_AERO_UNITS}))?      # optional aerospace units
+            (?![A-Za-z0-9_.-])            # right boundary
+            """,
+            re.VERBOSE | re.IGNORECASE,
+        )
+    except Exception:
+        return
+
+
+try:
+    _refresh_number_regex_from_unit_regex()
+except Exception:
+    pass
+
+
 def _get_measurement_regexes() -> Tuple[re.Pattern, re.Pattern]:
     """Return (suffix, prefix) measurement regexes."""
     global _MEASUREMENT_REGEX_CACHE, _MEASUREMENT_PREFIX_REGEX_CACHE
@@ -5062,6 +5975,7 @@ def normalize_span_text(text: str) -> Dict[str, object]:
         return {"kind": "empty", "text": ""}
     # Light unicode normalization for matching
     t = raw.replace("\u00A0", " ")
+    t = _fix_mojibake_symbols(t)
     t = t.replace("\u2212", "-")  # minus sign
     # Common OCR: "O" used for 0 in numeric context
     t_fixed = _fix_ocr_in_numbers(t)
@@ -5971,16 +6885,24 @@ def _easyocr_boxes_for_pages(pdf_path: Path, pages: Sequence[int], dpi: int, lan
     return boxes
 
 
+def _default_ocr_boxes_engine() -> str:
+    """Prefer Tesseract TSV when available; fall back to auto unless overridden by env."""
+    try:
+        override = (os.environ.get("OCR_BOXES_ENGINE") or "").strip().lower()
+    except Exception:
+        override = ""
+    if override:
+        return override
+    return "tess_tsv" if (_HAVE_TESSERACT and _HAVE_PYMUPDF) else "auto"
+
+
 def _get_ocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: Optional[List[str]] = None) -> List[Dict[str, float]]:
     """Unified OCR token provider (prefers Tesseract TSV, falls back to EasyOCR)."""
     # Allow explicit engine selection to stabilize behavior across environments.
     # - OCR_BOXES_ENGINE=auto (default): prefer Tesseract TSV when available, else EasyOCR
     # - OCR_BOXES_ENGINE=tess_tsv|tesseract: only use Tesseract TSV (no fallback)
     # - OCR_BOXES_ENGINE=easyocr: only use EasyOCR
-    try:
-        engine = (os.environ.get("OCR_BOXES_ENGINE") or "auto").strip().lower()
-    except Exception:
-        engine = "auto"
+    engine = _default_ocr_boxes_engine()
 
     want_easy = engine in ("easyocr", "easy")
     want_tess = engine in ("tess_tsv", "tesseract", "tess", "tsv")
@@ -6019,10 +6941,7 @@ def _get_ocr_boxes_page(pdf_path: Path, page: int, dpi: int, langs: Optional[Lis
 
 def _get_ocr_page_bundle(pdf_path: Path, page: int, dpi: int, langs: Optional[List[str]] = None) -> Tuple[List[Dict[str, float]], List[Dict[str, object]], List[Dict[str, float]]]:
     """Return OCR tokens + inferred table structures + virtual header tokens for one page."""
-    try:
-        engine = (os.environ.get("OCR_BOXES_ENGINE") or "auto").strip().lower()
-    except Exception:
-        engine = "auto"
+    engine = _default_ocr_boxes_engine()
     want_easy = engine in ("easyocr", "easy")
     want_tess = engine in ("tess_tsv", "tesseract", "tess", "tsv")
 
@@ -7034,6 +7953,14 @@ def scan_pdf_for_term_smart(pdf_path: Path, serial_number: str, spec: TermSpec, 
         "numeric_candidates_nullified": False,  # All numeric candidates were out of range
         "smart_pos_non_numeric": None,    # Text found at smart position when expecting number
     }
+
+    # Flow-first path: use page_bundle/flow as the canonical search surface.
+    try:
+        flow_res = _scan_pdf_for_term_smart_flow(pdf_path, serial_number, spec, window_chars, case_sensitive)
+    except Exception:
+        flow_res = None
+    if flow_res is not None:
+        return flow_res
 
     # Helper to extract for one line
     value_format_text, double_height_mode = _value_format_info(_effective_value_format(spec))
@@ -9934,6 +10861,803 @@ def _locate_group_anchor(text: str, anchor: Optional[str], case_sensitive: bool,
     return start + seg_len if after else start
 
 
+def _scan_pdf_for_term_smart_flow(
+    pdf_path: Path,
+    serial_number: str,
+    spec: TermSpec,
+    window_chars: int,
+    case_sensitive: bool,
+) -> Optional[MatchResult]:
+    row_name = (spec.anchor or spec.line or spec.term or "").strip()
+    if not row_name:
+        return None
+    try:
+        fuzz = float(os.environ.get("XY_FUZZ", "0.75"))
+    except Exception:
+        fuzz = 0.75
+    try:
+        allow_fuzzy = (os.environ.get("FLOW_ALLOW_FUZZY", "") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        allow_fuzzy = False
+
+    value_format_text, _double_height_mode = _value_format_info(_effective_value_format(spec))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
+    units_hints = [str(u).strip().lower() for u in (spec.units_hint or []) if str(u).strip()]
+    units_value: Optional[str] = None
+    sec_term = (getattr(spec, 'secondary_term', None) or '').strip()
+
+    try:
+        min_score = 0.6
+        ga = (spec.group_after or "").strip().lower()
+        gb = (spec.group_before or "").strip().lower()
+        if "field value" in ga and "functional acceptance snapshot" in gb:
+            min_score = 0.45
+    except Exception:
+        min_score = 0.6
+
+    def _extract_from_line(line_text: str, right_text: str, smart_kind: str) -> Optional[str]:
+        nonlocal units_value
+        target_text = right_text if right_text and right_text.strip() else line_text
+        if smart_kind == 'date':
+            m = DATE_REGEX.search(target_text)
+            return m.group(0) if m else None
+        if smart_kind == 'time':
+            m = TIME_REGEX.search(target_text)
+            return m.group(0) if m else None
+        if smart_kind == 'number':
+            target_text_fixed = _fix_ocr_in_numbers(target_text)
+            matches = list(NUMBER_REGEX.finditer(target_text_fixed))
+            if not matches:
+                return None
+            pick = None
+            if units_hints:
+                for m in matches:
+                    ui = extract_units(m.group(0))
+                    if ui and ui.strip().lower() in units_hints:
+                        pick = m
+                        break
+            if pick is None:
+                pick = matches[0]
+            cand = pick.group(0)
+            units_value = extract_units(cand)
+            try:
+                nclean = numeric_only(cand)
+                nval = float(nclean) if nclean is not None else None
+            except Exception:
+                nval = None
+            if nval is not None and (spec.range_min is not None or spec.range_max is not None):
+                if spec.range_min is not None and spec.range_max is not None:
+                    range_span = spec.range_max - spec.range_min
+                    tolerance_50 = 0.5 * range_span
+                    if (nval < spec.range_min - tolerance_50 or nval > spec.range_max + tolerance_50):
+                        return None
+                bad = False
+                if spec.range_min is not None and nval < spec.range_min:
+                    bad = True
+                if spec.range_max is not None and nval > spec.range_max:
+                    bad = True
+                if bad and not cand.rstrip().endswith('(range violation)'):
+                    cand = f"{cand} (range violation)"
+            return cand
+        pos_n = spec.smart_position or spec.field_index
+        if fmt_pat:
+            matches = list(fmt_pat.finditer(target_text))
+            if matches:
+                if pos_n and 1 <= pos_n <= len(matches):
+                    return matches[pos_n - 1].group(0)
+                return matches[0].group(0)
+        fields = _split_fields_by_spacing(target_text)
+        if fields:
+            if pos_n and 1 <= pos_n <= len(fields):
+                return fields[pos_n - 1]
+            return fields[0]
+        t = right_text.strip()
+        return t if t else None
+
+    def _flow_anchor_info(flow: List[Dict[str, object]], anchor: Optional[str]) -> Optional[Tuple[float, str]]:
+        if not anchor:
+            return None
+        anchor_norm = _normalize_anchor_token(anchor if case_sensitive else anchor.lower())
+        if not anchor_norm:
+            return None
+        best: Optional[Tuple[float, str]] = None
+        for it in flow:
+            if not isinstance(it, dict) or str(it.get("type") or "") != "text":
+                continue
+            txt = str(it.get("text") or "")
+            if not txt:
+                continue
+            txt_norm = _normalize_anchor_token(txt if case_sensitive else txt.lower())
+            if anchor_norm and anchor_norm in txt_norm:
+                bb = it.get("bbox_px")
+                if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                    try:
+                        y0 = float(bb[1])
+                    except Exception:
+                        y0 = None
+                else:
+                    y0 = None
+                if y0 is None:
+                    continue
+                if best is None or y0 < best[0]:
+                    best = (y0, txt)
+        return best
+
+    def _token_items_from_ids(tokens_art: Optional[List[Dict[str, float]]], token_ids: Optional[List[int]]) -> List[Tuple[int, Dict[str, float]]]:
+        if not tokens_art or not token_ids:
+            return []
+        out: List[Tuple[int, Dict[str, float]]] = []
+        for tid in token_ids:
+            try:
+                idx = int(tid)
+            except Exception:
+                continue
+            if idx < 0 or idx >= len(tokens_art):
+                continue
+            tok = tokens_art[idx]
+            if not isinstance(tok, dict):
+                continue
+            out.append((idx, tok))
+        return out
+
+    # Use per-term DPI if specified, otherwise use global DPI
+    if spec.dpi is not None:
+        dpi_candidates = [spec.dpi]
+    else:
+        try:
+            dpi_base = int(os.environ.get("OCR_DPI", "700"))
+        except Exception:
+            dpi_base = 700
+        dpi_candidates = [dpi_base]
+        if dpi_base > 700:
+            dpi_candidates.append(700)
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        doc = None
+    pages = spec.pages if spec.pages else ([] if doc is None else list(range(1, doc.page_count + 1)))
+
+    best_score = 0.0
+    best_order: Optional[Tuple[int, float, int]] = None
+    best_info: Optional[Tuple[int, str, str, str, str, Optional[List[int]], bool, Optional[str]]] = None
+    best_dpi: Optional[int] = None
+    best_token_conf: Optional[float] = None
+    best_extracted_term: Optional[str] = None
+    best_units_value: Optional[str] = None
+    best_sec_found: Optional[bool] = None
+    best_label_used: Optional[str] = None
+    best_label_norm: Optional[str] = None
+
+    debug_group_after_page_global: Optional[int] = None
+    debug_group_after_text_global: Optional[str] = None
+    debug_group_before_page_global: Optional[int] = None
+    debug_group_before_text_global: Optional[str] = None
+    debug_group_region_applied_global: Optional[bool] = None
+
+    for dpi in dpi_candidates:
+        group_after_seen = spec.group_after is None
+        group_before_seen = spec.group_before is None
+        group_after_page: Optional[int] = None
+        group_before_page: Optional[int] = None
+        group_after_text: Optional[str] = None
+        group_before_text: Optional[str] = None
+        for p in pages:
+            if group_before_seen and group_before_page is not None and p > group_before_page:
+                break
+            bundle = _get_flow_page_bundle(pdf_path, p, dpi)
+            if not bundle:
+                continue
+            flow = bundle.get("flow")
+            if not isinstance(flow, list):
+                continue
+            tokens_art = None
+            try:
+                art = bundle.get("artifacts")
+                if isinstance(art, dict) and isinstance(art.get("tokens"), list):
+                    tokens_art = art.get("tokens")
+            except Exception:
+                tokens_art = None
+
+            group_after_info = _flow_anchor_info(flow, spec.group_after) if spec.group_after else None
+            group_before_info = _flow_anchor_info(flow, spec.group_before) if spec.group_before else None
+            group_anchor_y = group_after_info[0] if group_after_info else None
+            group_before_y = group_before_info[0] if group_before_info else None
+
+            if spec.group_after and group_after_info and not group_after_seen:
+                group_after_seen = True
+                group_after_page = p
+                group_after_text = group_after_info[1]
+                if debug_group_after_page_global is None:
+                    debug_group_after_page_global = p
+                    debug_group_after_text_global = group_after_info[1]
+                    if debug_group_region_applied_global is None:
+                        debug_group_region_applied_global = True
+            if spec.group_before and group_before_info:
+                if spec.group_after and group_after_page is not None and p == group_after_page and group_anchor_y is not None:
+                    if group_before_y is not None and group_before_y <= group_anchor_y + 0.5:
+                        group_before_y = None
+                if group_before_y is not None and not group_before_seen and group_after_seen:
+                    group_before_seen = True
+                    group_before_page = p
+                    group_before_text = group_before_info[1]
+                    if debug_group_before_page_global is None:
+                        debug_group_before_page_global = p
+                        debug_group_before_text_global = group_before_info[1]
+                        if debug_group_region_applied_global is None:
+                            debug_group_region_applied_global = True
+
+            if spec.group_after and not group_after_seen:
+                continue
+
+            for order_idx, el in enumerate(flow):
+                if not isinstance(el, dict):
+                    continue
+                et = str(el.get("type") or "")
+                if et == "text":
+                    bb = el.get("bbox_px")
+                    if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                        try:
+                            y0 = float(bb[1])
+                            y1 = float(bb[3])
+                        except Exception:
+                            y0 = None
+                            y1 = None
+                    else:
+                        y0 = None
+                        y1 = None
+                    if group_anchor_y is not None and group_after_page is not None and p == group_after_page and y0 is not None:
+                        if y0 <= group_anchor_y + 0.5:
+                            continue
+                    if spec.group_before and group_before_page is not None and p == group_before_page and y1 is not None and group_before_y is not None:
+                        if y1 >= group_before_y - 0.5:
+                            continue
+
+                    line_text = str(el.get("text") or "").strip()
+                    if not line_text:
+                        continue
+                    score = _fuzzy_ratio(line_text, row_name) if row_name else 0.0
+                    anchor_tokens_ok = _anchor_tokens_present(row_name, line_text) if row_name else True
+                    if anchor_tokens_ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(line_text):
+                        score = max(score, 0.99)
+                    if score < min_score or not anchor_tokens_ok:
+                        continue
+
+                    token_ids = el.get("token_ids") if isinstance(el.get("token_ids"), list) else None
+                    line_items = _token_items_from_ids(tokens_art, token_ids)
+                    line_items.sort(key=lambda t: (float(t[1].get("y0", 0.0)), float(t[1].get("x0", 0.0))))
+                    token_texts = [str(t[1].get("text") or "") for t in line_items]
+                    tok_norms = [_normalize_anchor_token(t) for t in token_texts]
+                    span = _match_anchor_on_line(row_name, token_texts if case_sensitive else [t.lower() for t in token_texts], tok_norms) if token_texts else None
+                    label_right_x = None
+                    anchor_end_index = -1
+                    extracted_term = None
+                    if span and line_items:
+                        _, j = span
+                        ext_idx, extracted_term = _extend_label_boundary([t[1] for t in line_items], j)
+                        anchor_end_index = ext_idx
+                        try:
+                            label_right_x = float(line_items[ext_idx][1].get("x1", 0.0))
+                        except Exception:
+                            label_right_x = None
+                    if label_right_x is None:
+                        try:
+                            label_right_x = min(float(t[1].get("x0", 0.0)) for t in line_items)
+                        except Exception:
+                            label_right_x = None
+
+                    if anchor_end_index >= 0 and line_items:
+                        items_after_label = [line_items[i] for i in range(anchor_end_index + 1, len(line_items)) if str(line_items[i][1].get("text") or "").strip()]
+                    else:
+                        items_after_label = []
+                    if label_right_x is not None and line_items:
+                        right_items = [it for i, it in enumerate(line_items) if float(it[1].get("x0", 0.0)) >= label_right_x - 1.0 and (anchor_end_index < 0 or i != anchor_end_index)]
+                    else:
+                        right_items = []
+
+                    right_text_seq = " ".join(str(it[1].get("text") or "").strip() for it in items_after_label if str(it[1].get("text") or "").strip()).strip()
+                    right_items_sorted = sorted(right_items, key=lambda t: (float(t[1].get("x0", 0.0)), float(t[1].get("y0", 0.0))))
+                    right_text_x = " ".join(str(it[1].get("text") or "").strip() for it in right_items_sorted if str(it[1].get("text") or "").strip()).strip()
+                    detect_text = right_text_seq or right_text_x or line_text
+                    smart_kind = _detect_smart_type(spec.smart_snap_type, detect_text)
+
+                    pos_n = spec.smart_position or spec.field_index
+                    smart_pos_used = False
+                    if pos_n and right_items_sorted:
+                        fields_for_pos = _fields_from_items([it[1] for it in right_items_sorted])
+                        if fields_for_pos and 1 <= pos_n <= len(fields_for_pos):
+                            right_text = fields_for_pos[pos_n - 1]
+                            smart_pos_used = True
+                        else:
+                            right_text = right_text_x if smart_kind == "number" else (right_text_seq or right_text_x)
+                    else:
+                        right_text = right_text_x if smart_kind == "number" else (right_text_seq or right_text_x)
+
+                    units_value = None
+                    val = _extract_from_line(line_text, right_text, smart_kind)
+                    if not val:
+                        continue
+                    cand_units = units_value
+
+                    token_ids_used = [tid for tid, _tok in (right_items_sorted or line_items)] if (right_items_sorted or line_items) else None
+                    token_conf = _mean_token_conf(tokens_art, token_ids_used) if (tokens_art and token_ids_used) else None
+                    order_key = (p, float(y0 or 0.0), order_idx)
+                    if best_info is None or score > best_score or (score == best_score and (best_order is None or order_key < best_order)):
+                        best_score = score
+                        best_order = order_key
+                        best_info = (p, line_text, right_text, val, smart_kind, token_ids_used, smart_pos_used, extracted_term)
+                        best_dpi = dpi
+                        best_token_conf = token_conf
+                        best_units_value = cand_units
+                        best_sec_found = None
+                        best_label_used = row_name
+                        best_label_norm = _normalize_anchor_token(row_name) if row_name else None
+                        best_extracted_term = extracted_term
+
+                elif et == "table":
+                    tb = el.get("table")
+                    if not isinstance(tb, dict):
+                        continue
+                    headers = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+                    rows = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+                    for ridx, row in enumerate(rows):
+                        if not isinstance(row, dict):
+                            continue
+                        cells = row.get("cells_text") if isinstance(row.get("cells_text"), list) else []
+                        if not cells:
+                            continue
+                        cells_kind = row.get("cells_kind") if isinstance(row.get("cells_kind"), list) else None
+
+                        label_idx = None
+                        label_text = None
+                        label_score = 0.0
+                        anchor_tokens_ok = False
+                        for ci, cell in enumerate(cells):
+                            cell_txt = str(cell or "").strip()
+                            if not cell_txt:
+                                continue
+                            sc = _fuzzy_ratio(cell_txt, row_name) if row_name else 0.0
+                            ok = _anchor_tokens_present(row_name, cell_txt) if row_name else True
+                            if ok and _normalize_anchor_token(row_name) and _normalize_anchor_token(row_name) in _normalize_anchor_token(cell_txt):
+                                sc = max(sc, 0.99)
+                            if sc > label_score:
+                                label_score = sc
+                                label_idx = ci
+                                label_text = cell_txt
+                                anchor_tokens_ok = ok
+                        if label_idx is None or not label_text:
+                            continue
+                        if label_score < min_score or not anchor_tokens_ok:
+                            continue
+
+                        row_band = row.get("row_band_px")
+                        row_y0 = None
+                        row_y1 = None
+                        if isinstance(row_band, (tuple, list)) and len(row_band) == 2:
+                            try:
+                                row_y0 = float(row_band[0])
+                                row_y1 = float(row_band[1])
+                            except Exception:
+                                row_y0 = None
+                                row_y1 = None
+                        if group_anchor_y is not None and group_after_page is not None and p == group_after_page and row_y0 is not None:
+                            if row_y0 <= group_anchor_y + 0.5:
+                                continue
+                        if spec.group_before and group_before_page is not None and p == group_before_page and row_y1 is not None and group_before_y is not None:
+                            if row_y1 >= group_before_y - 0.5:
+                                continue
+
+                        right_cells = [i for i in range(label_idx + 1, len(cells)) if str(cells[i] or "").strip()]
+                        if not right_cells:
+                            continue
+                        join_right = " ".join(str(cells[i] or "").strip() for i in right_cells if str(cells[i] or "").strip()).strip()
+                        smart_kind = _detect_smart_type(spec.smart_snap_type, join_right or label_text)
+
+                        value_idx: Optional[int] = None
+                        smart_pos_used = False
+                        sec_found = False
+                        if sec_term and headers:
+                            best_hdr_score = 0.0
+                            best_hdr_idx = None
+                            for hi, hdr in enumerate(headers):
+                                hdr_txt = str(hdr or "").strip()
+                                if not hdr_txt:
+                                    continue
+                                sc = _flow_phrase_score(hdr_txt, sec_term, case_sensitive, allow_fuzzy)
+                                if sc <= 0:
+                                    continue
+                                if (not allow_fuzzy and sc < 1.0) or (allow_fuzzy and sc < fuzz):
+                                    continue
+                                if sc > best_hdr_score:
+                                    best_hdr_score = sc
+                                    best_hdr_idx = hi
+                            if best_hdr_idx is not None and best_hdr_idx > label_idx and best_hdr_idx < len(cells):
+                                value_idx = best_hdr_idx
+                                sec_found = True
+
+                        if value_idx is None:
+                            pos_n = spec.smart_position or spec.field_index
+                            if pos_n and label_idx is not None:
+                                cand_idx = label_idx + pos_n
+                                if 0 <= cand_idx < len(cells):
+                                    value_idx = cand_idx
+                                    smart_pos_used = True
+
+                        if value_idx is None:
+                            chosen = None
+                            for ci in right_cells:
+                                cell_txt = str(cells[ci] or "").strip()
+                                if not cell_txt:
+                                    continue
+                                kind = str(cells_kind[ci] if cells_kind and ci < len(cells_kind) else "").strip().lower()
+                                if smart_kind == "number":
+                                    if kind == "number" or NUMBER_REGEX.search(cell_txt):
+                                        chosen = ci
+                                        break
+                                elif smart_kind == "date":
+                                    if kind == "date" or DATE_REGEX.search(cell_txt):
+                                        chosen = ci
+                                        break
+                                elif smart_kind == "time":
+                                    if kind == "time" or TIME_REGEX.search(cell_txt):
+                                        chosen = ci
+                                        break
+                                else:
+                                    chosen = ci
+                                    break
+                            value_idx = chosen
+
+                        if value_idx is None:
+                            continue
+                        cell_text = str(cells[value_idx] or "").strip()
+                        if not cell_text:
+                            continue
+                        if fmt_pat and not fmt_pat.search(cell_text):
+                            continue
+                        units_value = None
+                        val = _extract_from_line(label_text, cell_text, smart_kind)
+                        if not val:
+                            continue
+                        cand_units = units_value
+
+                        token_ids = None
+                        cells_token_ids = row.get("cells_token_ids") if isinstance(row.get("cells_token_ids"), list) else None
+                        if isinstance(cells_token_ids, list) and value_idx < len(cells_token_ids) and isinstance(cells_token_ids[value_idx], list):
+                            token_ids = [int(v) for v in cells_token_ids[value_idx] if isinstance(v, (int, float))]
+                        token_conf = _mean_token_conf(tokens_art, token_ids) if (tokens_art and token_ids) else None
+
+                        order_key = (p, float(row_y0 or 0.0), order_idx + ridx + 1)
+                        if best_info is None or label_score > best_score or (label_score == best_score and (best_order is None or order_key < best_order)):
+                            best_score = label_score
+                            best_order = order_key
+                            best_info = (p, label_text, cell_text, val, smart_kind, token_ids, smart_pos_used, label_text)
+                            best_dpi = dpi
+                            best_token_conf = token_conf
+                            best_units_value = cand_units
+                            best_sec_found = sec_found
+                            best_label_used = row_name
+                            best_label_norm = _normalize_anchor_token(row_name) if row_name else None
+                            best_extracted_term = label_text
+
+    if doc:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+    if best_info is None:
+        return None
+
+    page_hit, context_line_text, right_text, value_text, smart_kind, token_ids_used, smart_pos_used, extracted_term = best_info
+    if smart_kind == 'title' and not smart_pos_used:
+        value_text = _strip_label_tokens(value_text, row_name)
+        value_text = _extract_status_from_title(value_text)
+    confidence_val = best_score
+    token_conf = best_token_conf
+
+    if spec.group_after or spec.group_before:
+        group_region_applied = bool((debug_group_after_page_global is not None) or (debug_group_before_page_global is not None))
+    else:
+        group_region_applied = None
+    if debug_group_region_applied_global is None and group_region_applied is not None:
+        debug_group_region_applied_global = group_region_applied
+
+    sel_method = "smart_position" if smart_pos_used else "smart_score"
+    return MatchResult(
+        pdf_file=pdf_path.name,
+        serial_number=serial_number,
+        term=spec.term,
+        page=page_hit,
+        number=value_text,
+        units=best_units_value,
+        context=right_text,
+        method="smart:flow(dpi={})".format(best_dpi if best_dpi is not None else dpi_candidates[0]),
+        found=True,
+        confidence=confidence_val,
+        row_label=context_line_text,
+        column_label=None,
+        text_source="ocr_flow",
+        smart_snap_context=context_line_text,
+        smart_snap_type=smart_kind,
+        smart_conflict=None,
+        smart_secondary_found=best_sec_found,
+        smart_score_breakdown=None,
+        smart_selection_method=sel_method,
+        debug_label_used=best_label_used,
+        debug_label_normalized=best_label_norm,
+        debug_extracted_term=best_extracted_term,
+        debug_group_after_page=debug_group_after_page_global,
+        debug_group_after_text=debug_group_after_text_global,
+        debug_group_before_page=debug_group_before_page_global,
+        debug_group_before_text=debug_group_before_text_global,
+        debug_group_region_applied=debug_group_region_applied_global,
+        debug_fuzzy_match_score=best_score,
+        debug_fuzzy_match_threshold=min_score,
+        debug_token_ids=token_ids_used or None,
+        debug_token_confidence=token_conf,
+    )
+
+
+def _scan_pdf_for_term_xy_flow(
+    pdf_path: Path,
+    serial_number: str,
+    spec: TermSpec,
+    window_chars: int,
+    case_sensitive: bool,
+) -> Optional[MatchResult]:
+    row_name = (spec.line or spec.term or "").strip()
+    col_raw = (spec.column or "").strip()
+    col_alts = [s.strip() for s in re.split(r"[|/]", col_raw) if s.strip()] or [col_raw]
+    if not row_name or not col_alts:
+        return None
+
+    try:
+        fuzz = float(os.environ.get("XY_FUZZ", "0.75"))
+    except Exception:
+        fuzz = 0.75
+    try:
+        allow_fuzzy = (os.environ.get("FLOW_ALLOW_FUZZY", "") or "").strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        allow_fuzzy = False
+
+    ret_type = (spec.return_type or "number").strip().lower()
+    value_format_text, _ = _value_format_info(_effective_value_format(spec))
+    fmt_pat = _compile_value_regex(value_format_text) if value_format_text else None
+
+    # Use per-term DPI if specified, otherwise use global DPI
+    if spec.dpi is not None:
+        dpi_candidates = [spec.dpi]
+    else:
+        try:
+            dpi_base = int(os.environ.get("OCR_DPI", "700"))
+        except Exception:
+            dpi_base = 700
+        dpi_candidates = [dpi_base]
+        if dpi_base > 700:
+            dpi_candidates.append(700)
+
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+    except Exception:
+        doc = None
+    pages = spec.pages if spec.pages else ([] if doc is None else list(range(1, doc.page_count + 1)))
+
+    for dpi in dpi_candidates:
+        after_found = not bool(spec.group_after)
+        before_triggered = False
+        for p in pages:
+            if before_triggered:
+                break
+            bundle = _get_flow_page_bundle(pdf_path, p, dpi)
+            if not bundle:
+                continue
+            flow = bundle.get("flow")
+            if not isinstance(flow, list):
+                continue
+
+            group_anchor_y = _flow_anchor_y(flow, spec.group_after, case_sensitive) if spec.group_after else None
+            if spec.group_after and group_anchor_y is not None:
+                after_found = True
+            if spec.group_after and not after_found:
+                continue
+            group_before_y = _flow_anchor_y(flow, spec.group_before, case_sensitive) if spec.group_before else None
+            if spec.group_before and group_before_y is not None:
+                before_triggered = True
+
+            best: Optional[Tuple[float, Dict[str, object], Dict[str, object], int, str]] = None
+            tokens_art = None
+            try:
+                art = bundle.get("artifacts")
+                if isinstance(art, dict):
+                    tokens_art = art.get("tokens") if isinstance(art.get("tokens"), list) else None
+            except Exception:
+                tokens_art = None
+
+            for el in flow:
+                if not isinstance(el, dict) or str(el.get("type") or "") != "table":
+                    continue
+                tb = el.get("table")
+                if not isinstance(tb, dict):
+                    continue
+                bbox = el.get("bbox_px")
+                if isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+                    try:
+                        y0 = float(bbox[1])
+                    except Exception:
+                        y0 = None
+                else:
+                    y0 = None
+                if group_anchor_y is not None and y0 is not None and y0 <= group_anchor_y + 1.0:
+                    continue
+                if group_before_y is not None and y0 is not None and y0 >= group_before_y - 1.0:
+                    continue
+
+                headers = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+                if not headers:
+                    continue
+
+                best_col_idx = None
+                best_col_score = 0.0
+                best_header = None
+                for alt in col_alts:
+                    for i, hdr in enumerate(headers):
+                        hdr_txt = str(hdr or "").strip()
+                        if not hdr_txt:
+                            continue
+                        score = _flow_phrase_score(hdr_txt, alt, case_sensitive, allow_fuzzy)
+                        if score <= 0:
+                            continue
+                        if (not allow_fuzzy and score < 1.0) or (allow_fuzzy and score < fuzz):
+                            continue
+                        if score > best_col_score:
+                            best_col_score = score
+                            best_col_idx = i
+                            best_header = hdr_txt
+                if best_col_idx is None:
+                    continue
+
+                rows = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    cells = row.get("cells_text") if isinstance(row.get("cells_text"), list) else []
+                    if not cells:
+                        continue
+                    row_label = ""
+                    for c in cells:
+                        c_txt = str(c or "").strip()
+                        if c_txt:
+                            row_label = c_txt
+                            break
+                    if not row_label:
+                        continue
+                    row_score = _flow_phrase_score(row_label, row_name, case_sensitive, allow_fuzzy)
+                    if row_score <= 0:
+                        continue
+                    if (not allow_fuzzy and row_score < 1.0) or (allow_fuzzy and row_score < fuzz):
+                        continue
+                    # Respect group bounds using row bands if available
+                    rb = row.get("row_band_px")
+                    if isinstance(rb, (tuple, list)) and len(rb) == 2:
+                        try:
+                            ry0 = float(rb[0])
+                        except Exception:
+                            ry0 = None
+                        if group_anchor_y is not None and ry0 is not None and ry0 <= group_anchor_y + 1.0:
+                            continue
+                        if group_before_y is not None and ry0 is not None and ry0 >= group_before_y - 1.0:
+                            continue
+
+                    if best is None or row_score > best[0]:
+                        best = (row_score, row, tb, best_col_idx, row_label)
+
+            if best is None:
+                continue
+            _score, best_row, best_tb, col_idx, row_label = best
+            cells = best_row.get("cells_text") if isinstance(best_row.get("cells_text"), list) else []
+            cell_text = str(cells[col_idx] or "").strip() if col_idx < len(cells) else ""
+            if not cell_text:
+                continue
+            if ret_type == "string":
+                if fmt_pat and not fmt_pat.search(cell_text):
+                    continue
+                value_out = cell_text
+            else:
+                value_out = _first_numeric(cell_text)
+                if not value_out:
+                    continue
+
+            confidence_val = None
+            token_ids = []
+            cells_token_ids = best_row.get("cells_token_ids") if isinstance(best_row.get("cells_token_ids"), list) else None
+            if isinstance(cells_token_ids, list) and col_idx < len(cells_token_ids) and isinstance(cells_token_ids[col_idx], list):
+                token_ids = [int(v) for v in cells_token_ids[col_idx] if isinstance(v, (int, float))]
+            if tokens_art is not None and token_ids:
+                confidence_val = _mean_token_conf(tokens_art, token_ids)
+
+            context_snippet = "row='{}' col='{}' value='{}'".format(row_label, best_tb.get("header_cells")[col_idx] if isinstance(best_tb.get("header_cells"), list) and col_idx < len(best_tb.get("header_cells")) else "", cell_text)
+            method_label = "flow:xy(dpi={})".format(dpi)
+            header_text = str(best_tb.get("header_cells")[col_idx] or "") if isinstance(best_tb.get("header_cells"), list) and col_idx < len(best_tb.get("header_cells")) else (col_raw or "")
+
+            if ret_type == "string":
+                if doc:
+                    try:
+                        doc.close()
+                    except Exception:
+                        pass
+                return MatchResult(
+                    pdf_file=pdf_path.name,
+                    serial_number=serial_number,
+                    term=spec.term,
+                    page=p,
+                    number=value_out,
+                    units=None,
+                    context=context_snippet,
+                    method=method_label,
+                    found=True,
+                    confidence=confidence_val,
+                    row_label=row_label,
+                    column_label=header_text,
+                    text_source="ocr_flow",
+                    debug_extracted_term=row_label,
+                    debug_label_used=row_label,
+                    debug_label_normalized=_normalize_anchor_token(row_label) if row_label else None,
+                    debug_token_ids=token_ids or None,
+                    debug_token_confidence=confidence_val,
+                )
+
+            units_value = extract_units(value_out)
+            numeric_value = None
+            try:
+                numeric_value = float((numeric_only(value_out) or "").replace(",", ""))
+            except Exception:
+                numeric_value = None
+
+            range_violation = False
+            if numeric_value is not None and (spec.range_min is not None or spec.range_max is not None):
+                if spec.range_min is not None and numeric_value < spec.range_min:
+                    range_violation = True
+                if spec.range_max is not None and numeric_value > spec.range_max:
+                    range_violation = True
+
+            number_out = value_out.strip()
+            if range_violation and not number_out.rstrip().endswith("(range violation)"):
+                number_out = f"{number_out} (range violation)"
+
+            if doc:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=spec.term,
+                page=p,
+                number=number_out,
+                units=units_value,
+                context=context_snippet,
+                method=method_label,
+                found=True,
+                confidence=confidence_val,
+                row_label=row_label,
+                column_label=header_text,
+                text_source="ocr_flow",
+                debug_extracted_term=row_label,
+                debug_label_used=row_label,
+                debug_label_normalized=_normalize_anchor_token(row_label) if row_label else None,
+                debug_token_ids=token_ids or None,
+                debug_token_confidence=confidence_val,
+            )
+
+    if doc:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return None
+
+
 def scan_pdf_for_term_xy_easyocr(pdf_path: Path, serial_number: str, spec: TermSpec, window_chars: int, case_sensitive: bool) -> Optional[MatchResult]:
     if not (_HAVE_EASYOCR and _HAVE_PYMUPDF):
         return None
@@ -11704,6 +13428,13 @@ def scan_pdf_for_term_xy(pdf_path: Path, serial_number: str, spec: TermSpec, win
             text_source=None,
             error_reason="OCR disabled for table(xy) mode"
         )
+    # Flow-first path: use page_bundle/flow as the canonical search surface.
+    try:
+        flow_res = _scan_pdf_for_term_xy_flow(pdf_path, serial_number, spec, window_chars, case_sensitive)
+    except Exception:
+        flow_res = None
+    if flow_res is not None:
+        return flow_res
     # Prefer Tesseract TSV when available; keep EasyOCR as a fallback.
     if _HAVE_TESSERACT:
         result = scan_pdf_for_term_xy_tess_tsv(pdf_path, serial_number, spec, window_chars, case_sensitive)
@@ -12838,6 +14569,9 @@ def run_scan(
                 # Fuzzy matching debug info
                 "debug_fuzzy_match_score": getattr(res, 'debug_fuzzy_match_score', None),
                 "debug_fuzzy_match_threshold": getattr(res, 'debug_fuzzy_match_threshold', None),
+                # Token traceability
+                "debug_token_ids": getattr(res, 'debug_token_ids', None),
+                "debug_token_confidence": getattr(res, 'debug_token_confidence', None),
             }
 
             meta = {

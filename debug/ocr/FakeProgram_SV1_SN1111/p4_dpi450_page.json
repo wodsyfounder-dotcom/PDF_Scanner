@@ -1,0 +1,956 @@
+{
+  "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
+  "page": 4,
+  "dpi": 450,
+  "source": "ocr",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(2/48)",
+  "lang": "eng+equ",
+  "psm": 4,
+  "img_w": 3825,
+  "img_h": 4950,
+  "elements": [
+    {
+      "type": "text",
+      "bbox_px": [
+        474.0,
+        436.0,
+        2611.0,
+        504.0
+      ],
+      "text": "Attachment File Name Pages Notes"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        437.0,
+        536.5,
+        3392.0,
+        1426.0
+      ],
+      "table": {
+        "bbox_px": [
+          437.0,
+          536.5,
+          3392.0,
+          1426.0
+        ],
+        "col_bounds_px": [
+          437.0,
+          995.5,
+          1779.5,
+          2356.5,
+          3392.0
+        ],
+        "header_cells": [
+          "Attachment",
+          "File Name",
+          "Pages",
+          "Notes"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              536.5,
+              773.0
+            ],
+            "cells_text": [
+              "A Test tance Test Test Report",
+              "ATR Hyperion SV3_SN42.pdf",
+              "124",
+              "Contains Sections 3 & 4 tables"
+            ],
+            "cells_tokens": [
+              [
+                "A",
+                "Report",
+                "Test",
+                "tance",
+                "Test",
+                "Test"
+              ],
+              [
+                "ATR",
+                "Hyperion",
+                "SV3_SN42.pdf"
+              ],
+              [
+                "124"
+              ],
+              [
+                "Contains",
+                "Sections",
+                "3",
+                "&",
+                "4",
+                "tables"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                5,
+                20,
+                8,
+                6,
+                7,
+                9
+              ],
+              [
+                10,
+                11,
+                12
+              ],
+              [
+                13
+              ],
+              [
+                14,
+                15,
+                16,
+                17,
+                18,
+                19
+              ]
+            ],
+            "row_token_ids": [
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20
+            ],
+            "row_text_cells": "A Test tance Test Test Report | ATR Hyperion SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "cells_kind": [
+              "paragraph",
+              "paragraph",
+              "number",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              773.0,
+              1012.0
+            ],
+            "cells_text": [
+              "Thermal Test Log",
+              "THERM_SV3_SN42_ revC.pdf",
+              "56",
+              "Page numbers offset by +2 in footer"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Test",
+                "Log"
+              ],
+              [
+                "THERM_SV3_SN42_",
+                "revC.pdf"
+              ],
+              [
+                "56"
+              ],
+              [
+                "footer",
+                "Page",
+                "numbers",
+                "offset",
+                "by",
+                "+2",
+                "in"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                27,
+                28,
+                29
+              ],
+              [
+                30,
+                31
+              ],
+              [
+                32
+              ],
+              [
+                33,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26
+              ]
+            ],
+            "row_token_ids": [
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33
+            ],
+            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_ revC.pdf | 56 | Page numbers offset by +2 in footer",
+            "cells_kind": [
+              "string",
+              "paragraph",
+              "number",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              1012.0,
+              1251.5
+            ],
+            "cells_text": [
+              "Vib Test Photos",
+              "VIB_IMG_SN42.zip",
+              "24 images",
+              "Use to test non-PDF assets"
+            ],
+            "cells_tokens": [
+              [
+                "Vib",
+                "Test",
+                "Photos"
+              ],
+              [
+                "VIB_IMG_SN42.zip"
+              ],
+              [
+                "24",
+                "images"
+              ],
+              [
+                "Use",
+                "to",
+                "test",
+                "non-PDF",
+                "assets"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                37,
+                38,
+                39
+              ],
+              [
+                40
+              ],
+              [
+                36,
+                46
+              ],
+              [
+                41,
+                42,
+                43,
+                44,
+                45
+              ]
+            ],
+            "row_token_ids": [
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46
+            ],
+            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              1251.5,
+              1426.0
+            ],
+            "cells_text": [
+              "Calibration Data",
+              "CAL_SN42_revE.xlsx",
+              "4sheets",
+              "Multi-tab workbook"
+            ],
+            "cells_tokens": [
+              [
+                "Calibration",
+                "Data"
+              ],
+              [
+                "CAL_SN42_revE.xlsx"
+              ],
+              [
+                "4sheets"
+              ],
+              [
+                "Multi-tab",
+                "workbook"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                47,
+                48
+              ],
+              [
+                49
+              ],
+              [
+                50
+              ],
+              [
+                51,
+                52
+              ]
+            ],
+            "row_token_ids": [
+              47,
+              48,
+              49,
+              50,
+              51,
+              52
+            ],
+            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4sheets | Multi-tab workbook",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        444.0,
+        1564.0,
+        1065.0,
+        1667.0
+      ],
+      "text": "Usage Hints"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        514.0,
+        1807.0,
+        2697.0,
+        1866.0
+      ],
+      "text": "1. Place this Markdown file alongside PDFs to validate mixed content detection."
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        507.0,
+        1906.0,
+        2687.0,
+        1966.0
+      ],
+      "text": "2. Convert to PDF (e.g., via pandoc) if you want to test page-scoped extraction."
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        507.0,
+        2006.0,
+        2667.0,
+        2066.0
+      ],
+      "text": "3. Adjust term lists so at least one expected value lives in every section above."
+    }
+  ],
+  "paragraphs": [],
+  "strings": [
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        444.0,
+        1564.0,
+        1065.0,
+        1667.0
+      ],
+      "text": "Usage Hints",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        53,
+        54
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        514.0,
+        1807.0,
+        2697.0,
+        1866.0
+      ],
+      "text": "1. Place this Markdown file alongside PDFs to validate mixed content detection.",
+      "line_count": 1,
+      "word_count": 12,
+      "token_ids": [
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        507.0,
+        1906.0,
+        2687.0,
+        1966.0
+      ],
+      "text": "2. Convert to PDF (e.g., via pandoc) if you want to test page-scoped extraction.",
+      "line_count": 1,
+      "word_count": 15,
+      "token_ids": [
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        507.0,
+        2006.0,
+        2667.0,
+        2066.0
+      ],
+      "text": "3. Adjust term lists so at least one expected value lives in every section above.",
+      "line_count": 1,
+      "word_count": 15,
+      "token_ids": [
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95
+      ]
+    }
+  ],
+  "flow": [
+    {
+      "type": "table",
+      "bbox_px": [
+        437.0,
+        536.5,
+        3392.0,
+        1426.0
+      ],
+      "table": {
+        "bbox_px": [
+          437.0,
+          536.5,
+          3392.0,
+          1426.0
+        ],
+        "col_bounds_px": [
+          437.0,
+          995.5,
+          1779.5,
+          2356.5,
+          3392.0
+        ],
+        "header_cells": [
+          "Attachment",
+          "File Name",
+          "Pages",
+          "Notes"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              536.5,
+              773.0
+            ],
+            "cells_text": [
+              "A Test tance Test Test Report",
+              "ATR Hyperion SV3_SN42.pdf",
+              "124",
+              "Contains Sections 3 & 4 tables"
+            ],
+            "cells_tokens": [
+              [
+                "A",
+                "Report",
+                "Test",
+                "tance",
+                "Test",
+                "Test"
+              ],
+              [
+                "ATR",
+                "Hyperion",
+                "SV3_SN42.pdf"
+              ],
+              [
+                "124"
+              ],
+              [
+                "Contains",
+                "Sections",
+                "3",
+                "&",
+                "4",
+                "tables"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                5,
+                20,
+                8,
+                6,
+                7,
+                9
+              ],
+              [
+                10,
+                11,
+                12
+              ],
+              [
+                13
+              ],
+              [
+                14,
+                15,
+                16,
+                17,
+                18,
+                19
+              ]
+            ],
+            "row_token_ids": [
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20
+            ],
+            "row_text_cells": "A Test tance Test Test Report | ATR Hyperion SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "cells_kind": [
+              "paragraph",
+              "paragraph",
+              "number",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              773.0,
+              1012.0
+            ],
+            "cells_text": [
+              "Thermal Test Log",
+              "THERM_SV3_SN42_ revC.pdf",
+              "56",
+              "Page numbers offset by +2 in footer"
+            ],
+            "cells_tokens": [
+              [
+                "Thermal",
+                "Test",
+                "Log"
+              ],
+              [
+                "THERM_SV3_SN42_",
+                "revC.pdf"
+              ],
+              [
+                "56"
+              ],
+              [
+                "footer",
+                "Page",
+                "numbers",
+                "offset",
+                "by",
+                "+2",
+                "in"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                27,
+                28,
+                29
+              ],
+              [
+                30,
+                31
+              ],
+              [
+                32
+              ],
+              [
+                33,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26
+              ]
+            ],
+            "row_token_ids": [
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33
+            ],
+            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_ revC.pdf | 56 | Page numbers offset by +2 in footer",
+            "cells_kind": [
+              "string",
+              "paragraph",
+              "number",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              1012.0,
+              1251.5
+            ],
+            "cells_text": [
+              "Vib Test Photos",
+              "VIB_IMG_SN42.zip",
+              "24 images",
+              "Use to test non-PDF assets"
+            ],
+            "cells_tokens": [
+              [
+                "Vib",
+                "Test",
+                "Photos"
+              ],
+              [
+                "VIB_IMG_SN42.zip"
+              ],
+              [
+                "24",
+                "images"
+              ],
+              [
+                "Use",
+                "to",
+                "test",
+                "non-PDF",
+                "assets"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                37,
+                38,
+                39
+              ],
+              [
+                40
+              ],
+              [
+                36,
+                46
+              ],
+              [
+                41,
+                42,
+                43,
+                44,
+                45
+              ]
+            ],
+            "row_token_ids": [
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46
+            ],
+            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "paragraph"
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              1251.5,
+              1426.0
+            ],
+            "cells_text": [
+              "Calibration Data",
+              "CAL_SN42_revE.xlsx",
+              "4sheets",
+              "Multi-tab workbook"
+            ],
+            "cells_tokens": [
+              [
+                "Calibration",
+                "Data"
+              ],
+              [
+                "CAL_SN42_revE.xlsx"
+              ],
+              [
+                "4sheets"
+              ],
+              [
+                "Multi-tab",
+                "workbook"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                47,
+                48
+              ],
+              [
+                49
+              ],
+              [
+                50
+              ],
+              [
+                51,
+                52
+              ]
+            ],
+            "row_token_ids": [
+              47,
+              48,
+              49,
+              50,
+              51,
+              52
+            ],
+            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4sheets | Multi-tab workbook",
+            "cells_kind": [
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        444.0,
+        1564.0,
+        1065.0,
+        1667.0
+      ],
+      "text": "Usage Hints",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        53,
+        54
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        514.0,
+        1807.0,
+        2697.0,
+        1866.0
+      ],
+      "text": "1. Place this Markdown file alongside PDFs to validate mixed content detection.",
+      "line_count": 1,
+      "word_count": 12,
+      "token_ids": [
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        507.0,
+        1906.0,
+        2687.0,
+        1966.0
+      ],
+      "text": "2. Convert to PDF (e.g., via pandoc) if you want to test page-scoped extraction.",
+      "line_count": 1,
+      "word_count": 15,
+      "token_ids": [
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        507.0,
+        2006.0,
+        2667.0,
+        2066.0
+      ],
+      "text": "3. Adjust term lists so at least one expected value lives in every section above.",
+      "line_count": 1,
+      "word_count": 15,
+      "token_ids": [
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95
+      ]
+    }
+  ]
+}

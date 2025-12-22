@@ -5,11 +5,42 @@
     "Add aliases for common OCR variants (e.g., psig vs psi(g), degC vs °C)."
   ],
   "special_symbols": {
-    "degree": ["°", "º", "˚"],
-    "micro": ["µ", "μ"],
-    "plus_minus": ["±"],
-    "times": ["×", "x"],
-    "dot": ["·", "•"]
+    "degree": [
+      "A\u00f8",
+      "A\u00a7",
+      "Es",
+      "\u00b0",
+      "\u00ba",
+      "\u02da",
+      "\u00c2\u00b0",
+      "\u00c2\u00ba",
+      "\u00c2\u02da"
+    ],
+    "micro": [
+      "A\u00e6",
+      "I\u00ac",
+      "\u00b5",
+      "\u03bc",
+      "\u00c2\u00b5",
+      "\u00c2\u03bc"
+    ],
+    "plus_minus": [
+      "A\u00f1",
+      "\u00b1",
+      "\u00c2\u00b1"
+    ],
+    "times": [
+      "A-",
+      "\u00d7",
+      "\u00c2\u00d7"
+    ],
+    "dot": [
+      "A\u00fa",
+      "\u00b7",
+      "\u2022",
+      "\u22c5",
+      "\u00c2\u00b7"
+    ]
   },
   "unit_aliases": {
     "psig": ["psig", "psi g", "psi(g)", "psi-g", "ps i g", "p sig"],
@@ -34,11 +65,38 @@
     "kg": ["kg", "kilogram", "kilograms"],
     "g": ["g", "gram", "grams"],
     "mg": ["mg", "milligram", "milligrams"],
-    "ug": ["ug", "µg", "μg"],
+    "ug": ["ug", "A\u00e6g", "I\u00acg", "\u00b5g", "\u03bcg", "\u00c2\u00b5g", "\u00c2\u03bcg"],
 
-    "nm": ["n·m", "n-m", "nm", "newton·meter", "newton-meter"],
-    "inlbf": ["in·lbf", "in-lbf", "inlbf", "in lb f", "in-lb"],
-    "ftlbf": ["ft·lbf", "ft-lbf", "ftlbf", "ft lb f", "ft-lb"],
+    "nm": [
+      "n\u00b7m",
+      "n\u2022m",
+      "n\u22c5m",
+      "n-m",
+      "nm",
+      "newton\u00b7meter",
+      "newton-meter",
+      "nA\u00fam"
+    ],
+    "inlbf": [
+      "in\u00b7lbf",
+      "in\u2022lbf",
+      "in\u22c5lbf",
+      "in-lbf",
+      "inlbf",
+      "in lb f",
+      "in-lb",
+      "inA\u00falbf"
+    ],
+    "ftlbf": [
+      "ft\u00b7lbf",
+      "ft\u2022lbf",
+      "ft\u22c5lbf",
+      "ft-lbf",
+      "ftlbf",
+      "ft lb f",
+      "ft-lb",
+      "ftA\u00falbf"
+    ],
 
     "mm": ["mm", "millimeter", "millimeters"],
     "cm": ["cm", "centimeter", "centimeters"],
@@ -49,16 +107,17 @@
 
     "s": ["s", "sec", "secs", "second", "seconds"],
     "ms": ["ms", "msec", "msecs"],
+    "us": ["us", "usec", "usecs", "\u00b5s", "\u03bcs", "\u00b5sec", "\u03bcsec", "microsec", "microsecs", "microsecond", "microseconds"],
     "min": ["min", "mins", "minute", "minutes"],
     "h": ["h", "hr", "hrs", "hour", "hours"],
 
     "rpm": ["rpm"],
     "hz": ["hz"],
 
-    "c": ["c", "°c", "degc", "deg c"],
-    "f": ["f", "°f", "degf", "deg f"],
+    "c": ["c", "\u00b0c", "\u00b0 c", "A\u00f8c", "degc", "deg c"],
+    "f": ["f", "\u00b0f", "\u00b0 f", "A\u00f8f", "degf", "deg f"],
     "k": ["k", "kelvin"],
-    "r": ["°r", "degr", "rankine"],
+    "r": ["r", "\u00b0r", "\u00b0 r", "A\u00f8r", "degr", "rankine"],
 
     "percent": ["%", "percent"],
     "ppm": ["ppm"],
@@ -68,7 +127,7 @@
     "mv": ["mv"],
     "a": ["a", "amp", "amps", "ampere", "amperes"],
     "ma": ["ma"],
-    "ohm": ["ohm", "Ω", "omega", "Q", "q"],
+    "ohm": ["ohm", "\u03a9", "\u2126", "omega", "Q", "q", "Ic"],
 
     "w": ["w", "watt", "watts"],
     "kw": ["kw"],
@@ -107,6 +166,7 @@
     "ft",
     "s",
     "ms",
+    "us",
     "min",
     "h",
     "rpm",
@@ -114,8 +174,8 @@
     "%",
     "ppm",
     "ppb",
-    "°c",
-    "°f",
+    "\u00b0c",
+    "\u00b0f",
     "degc",
     "degf",
     "k"
