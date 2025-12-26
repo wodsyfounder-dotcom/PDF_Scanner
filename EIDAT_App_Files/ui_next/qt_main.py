@@ -1508,10 +1508,18 @@ class MainWindow(QtWidgets.QMainWindow):
         # Initialize core OCR settings and language defaults for this session
         try:
             env = be.parse_scanner_env()
-            env["OCR_ROW_EPS"] = "15"
-            env["OCR_DPI"] = "500"
-            env.setdefault("EASYOCR_LANGS", "en")
-            be.save_scanner_env(env)
+            changed = False
+            if not (env.get("OCR_ROW_EPS") or "").strip():
+                env["OCR_ROW_EPS"] = "15"
+                changed = True
+            if not (env.get("OCR_DPI") or "").strip():
+                env["OCR_DPI"] = "500"
+                changed = True
+            if not (env.get("EASYOCR_LANGS") or "").strip():
+                env["EASYOCR_LANGS"] = "en"
+                changed = True
+            if changed:
+                be.save_scanner_env(env)
         except Exception:
             pass
         self._refresh_plot_series_after_worker = False

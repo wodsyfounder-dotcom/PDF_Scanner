@@ -3,7 +3,7 @@
   "page": 3,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -710,10 +710,7 @@
       "block": 8.0,
       "par": 1.0,
       "line": 2.0,
-      "word": 3.0,
-      "rehocr_text": "cLow-45",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 3.0
     },
     {
       "x0": 1093.0,
@@ -727,10 +724,7 @@
       "block": 8.0,
       "par": 1.0,
       "line": 2.0,
-      "word": 4.0,
-      "rehocr_text": "-45",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 4.0
     },
     {
       "x0": 1440.0,
@@ -977,15 +971,12 @@
       "y1": 1132.0,
       "cx": 1219.0,
       "cy": 1109.5,
-      "text": "359485",
-      "conf": 0.57932175,
+      "text": "-35++85",
+      "conf": 0.47024161999999997,
       "block": 8.0,
       "par": 3.0,
       "line": 1.0,
-      "word": 1.0,
-      "rehocr_text": "359485",
-      "rehocr_conf": 0.57932175,
-      "rehocr_tag": "thr180:psm7"
+      "word": 1.0
     },
     {
       "x0": 1440.0,
@@ -1011,15 +1002,15 @@
       "y1": 1145.0,
       "cx": 1575.5,
       "cy": 1116.0,
-      "text": "6cycles",
-      "conf": 0.0,
+      "text": "cycles",
+      "conf": 0.9664762100000001,
       "block": 8.0,
       "par": 3.0,
       "line": 1.0,
       "word": 3.0,
-      "rehocr_text": "6cycles",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_text": "cycles",
+      "rehocr_conf": 0.9664762100000001,
+      "rehocr_tag": "auto:psm8"
     },
     {
       "x0": 1855.0,
@@ -1481,7 +1472,10 @@
       "block": 8.0,
       "par": 3.0,
       "line": 5.0,
-      "word": 8.0
+      "word": 8.0,
+      "rehocr_text": "FtiCisSS",
+      "rehocr_conf": 0.0,
+      "rehocr_tag": "raw:psm7"
     },
     {
       "x0": 3121.0,
@@ -2554,12 +2548,15 @@
       "y1": 3745.0,
       "cx": 1805.0,
       "cy": 3742.0,
-      "text": ".",
-      "conf": 0.38825821,
+      "text": "n",
+      "conf": 0.58987087,
       "block": 21.0,
       "par": 1.0,
       "line": 9.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "n",
+      "rehocr_conf": 0.58987087,
+      "rehocr_tag": "raw:psm8"
     },
     {
       "x0": 2611.0,
@@ -2582,12 +2579,15 @@
       "y1": 3745.0,
       "cx": 2751.5,
       "cy": 3742.0,
-      "text": ",",
-      "conf": 0.0,
+      "text": "a",
+      "conf": 0.9485529300000001,
       "block": 21.0,
       "par": 1.0,
       "line": 9.0,
-      "word": 4.0
+      "word": 4.0,
+      "rehocr_text": "a",
+      "rehocr_conf": 0.9485529300000001,
+      "rehocr_tag": "auto:psm7"
     },
     {
       "x0": 1675.0,
@@ -2848,12 +2848,15 @@
       "y1": 4076.0,
       "cx": 843.0,
       "cy": 4072.5,
-      "text": ".",
-      "conf": 0.27378387,
+      "text": "n",
+      "conf": 0.49693798,
       "block": 21.0,
       "par": 2.0,
       "line": 3.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "n",
+      "rehocr_conf": 0.49693798,
+      "rehocr_tag": "auto:psm8"
     },
     {
       "x0": 1675.0,
@@ -2960,12 +2963,15 @@
       "y1": 4128.0,
       "cx": 2155.0,
       "cy": 4124.5,
-      "text": ":",
-      "conf": 0.0,
+      "text": "n",
+      "conf": 0.69790756,
       "block": 21.0,
       "par": 3.0,
       "line": 1.0,
-      "word": 3.0
+      "word": 3.0,
+      "rehocr_text": "n",
+      "rehocr_conf": 0.69790756,
+      "rehocr_tag": "auto:psm8"
     },
     {
       "x0": 2984.0,
@@ -3386,7 +3392,7 @@
       "cy": 1063.25
     },
     {
-      "text": "359485    6  6cycles       YES                -                      A-126",
+      "text": "-35++85    6  cycles       YES                -                      A-126",
       "bbox": [
         1093.0,
         1087.0,
@@ -3536,7 +3542,7 @@
       "cy": 3581.5833333333335
     },
     {
-      "text": "DR-                                       .                           .     ,",
+      "text": "DR-                                       n                           .     a",
       "bbox": [
         491.0,
         3690.0,
@@ -3576,7 +3582,7 @@
       "cy": 3870.9285714285716
     },
     {
-      "text": "NCR-       .                           Harness  swapped       Re-test  verified  5.05",
+      "text": "NCR-       n                           Harness  swapped       Re-test  verified  5.05",
       "bbox": [
         491.0,
         4016.0,
@@ -3586,7 +3592,7 @@
       "cy": 4049.0714285714284
     },
     {
-      "text": "Minor      resistance                          :                           CLOSED",
+      "text": "Minor      resistance                          n                           CLOSED",
       "bbox": [
         789.0,
         4065.0,
@@ -3736,7 +3742,7 @@
       "text_norm": "Thermal  Ramp"
     },
     {
-      "text": "359485    6  6cycles       YES                -                      A-126",
+      "text": "-35++85    6  cycles       YES                -                      A-126",
       "bbox": [
         1093.0,
         1087.0,
@@ -3744,7 +3750,7 @@
         1145.0
       ],
       "cy": 1111.6666666666667,
-      "text_norm": "359485    6  6cycles       YES                -                      \u00d7126"
+      "text_norm": "-35++85    6  cycles       YES                -                      \u00d7126"
     },
     {
       "text": "Cycling",
@@ -3901,7 +3907,7 @@
       "text_norm": "ID         Severity   Term               Description            Containment         Status"
     },
     {
-      "text": "DR-                                       .                           .     ,",
+      "text": "DR-                                       n                           .     a",
       "bbox": [
         491.0,
         3690.0,
@@ -3909,7 +3915,7 @@
         3745.0
       ],
       "cy": 3734.625,
-      "text_norm": "DR-                                       .                           .     ,"
+      "text_norm": "DR-                                       n                           .     a"
     },
     {
       "text": "Persistent  +8%  over     Added  relief  orifice,",
@@ -3945,7 +3951,7 @@
       "text_norm": "014                                    spec  during  burn  #2     retest  pending"
     },
     {
-      "text": "NCR-       .                           Harness  swapped       Re-test  verified  5.05",
+      "text": "NCR-       n                           Harness  swapped       Re-test  verified  5.05",
       "bbox": [
         491.0,
         4016.0,
@@ -3953,10 +3959,10 @@
         4083.0
       ],
       "cy": 4049.0714285714284,
-      "text_norm": "NCR-       .                           Harness  swapped       Re-test  verified  5.05"
+      "text_norm": "NCR-       n                           Harness  swapped       Re-test  verified  5.05"
     },
     {
-      "text": "Minor      resistance                          :                           CLOSED",
+      "text": "Minor      resistance                          n                           CLOSED",
       "bbox": [
         789.0,
         4065.0,
@@ -3964,7 +3970,7 @@
         4132.0
       ],
       "cy": 4101.75,
-      "text_norm": "Minor      resistance                          :                           CLOSED"
+      "text_norm": "Minor      resistance                          n                           CLOSED"
     },
     {
       "text": "25-008                                 due  to6.1Qreading     Q",

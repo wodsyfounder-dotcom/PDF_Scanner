@@ -3,7 +3,7 @@
   "page": 2,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -687,10 +687,7 @@
       "block": 8.0,
       "par": 1.0,
       "line": 4.0,
-      "word": 4.0,
-      "rehocr_text": ".",
-      "rehocr_conf": 0.22459373,
-      "rehocr_tag": "scaled:psm8"
+      "word": 4.0
     },
     {
       "x0": 2766.0,
@@ -758,15 +755,12 @@
       "y1": 828.0,
       "cx": 507.5,
       "cy": 805.0,
-      "text": "isp",
-      "conf": 0.96314774,
+      "text": "=P",
+      "conf": 0.7741867100000001,
       "block": 8.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 1.0,
-      "rehocr_text": "isp",
-      "rehocr_conf": 0.96314774,
-      "rehocr_tag": "raw:psm7"
+      "word": 1.0
     },
     {
       "x0": 1047.0,
@@ -789,15 +783,12 @@
       "y1": 877.0,
       "cx": 2296.5,
       "cy": 827.5,
-      "text": "sec",
-      "conf": 0.94301346,
+      "text": "see",
+      "conf": 0.69233994,
       "block": 8.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 3.0,
-      "rehocr_text": "sec",
-      "rehocr_conf": 0.94301346,
-      "rehocr_tag": "raw:psm7"
+      "word": 3.0
     },
     {
       "x0": 3128.0,
@@ -918,15 +909,12 @@
       "y1": 1256.0,
       "cx": 1264.0,
       "cy": 1225.0,
-      "text": "ssure",
-      "conf": 0.8934368100000001,
+      "text": "P,,",
+      "conf": 0.7130062100000001,
       "block": 8.0,
       "par": 1.0,
       "line": 10.0,
-      "word": 3.0,
-      "rehocr_text": "ssure",
-      "rehocr_conf": 0.8934368100000001,
-      "rehocr_tag": "auto:psm6"
+      "word": 3.0
     },
     {
       "x0": 1458.0,
@@ -1103,15 +1091,15 @@
       "y1": 1586.0,
       "cx": 771.0,
       "cy": 1582.5,
-      "text": "burn_duratior",
-      "conf": 0.91070129,
+      "text": "on",
+      "conf": 0.49445152,
       "block": 8.0,
       "par": 1.0,
       "line": 14.0,
       "word": 1.0,
-      "rehocr_text": "burn_duratior",
-      "rehocr_conf": 0.91070129,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_text": "on",
+      "rehocr_conf": 0.49445152,
+      "rehocr_tag": "scaled:psm7"
     },
     {
       "x0": 1050.0,
@@ -1176,12 +1164,15 @@
       "y1": 1527.0,
       "cx": 3362.0,
       "cy": 1510.5,
-      "text": "rors",
-      "conf": 0.12637969999999998,
+      "text": "statuses",
+      "conf": 0.9661097700000001,
       "block": 8.0,
       "par": 1.0,
       "line": 14.0,
-      "word": 6.0
+      "word": 6.0,
+      "rehocr_text": "statuses",
+      "rehocr_conf": 0.9661097700000001,
+      "rehocr_tag": "auto:psm6"
     },
     {
       "x0": 468.0,
@@ -1260,12 +1251,15 @@
       "y1": 1642.0,
       "cx": 3071.5,
       "cy": 1608.5,
-      "text": "_",
-      "conf": 0.61253391,
+      "text": "statuses",
+      "conf": 0.9661097700000001,
       "block": 8.0,
       "par": 1.0,
       "line": 15.0,
-      "word": 6.0
+      "word": 6.0,
+      "rehocr_text": "statuses",
+      "rehocr_conf": 0.9661097700000001,
+      "rehocr_tag": "auto:psm6"
     },
     {
       "x0": 3128.0,
@@ -1293,7 +1287,10 @@
       "block": 8.0,
       "par": 1.0,
       "line": 16.0,
-      "word": 1.0
+      "word": 1.0,
+      "rehocr_text": "a",
+      "rehocr_conf": 0.24929146,
+      "rehocr_tag": "scaled:psm7"
     },
     {
       "x0": 1047.0,
@@ -1330,12 +1327,15 @@
       "y1": 1638.0,
       "cx": 2909.5,
       "cy": 1634.5,
-      "text": "~",
-      "conf": 0.28752861,
+      "text": "NOT_RUN",
+      "conf": 0.9176948500000001,
       "block": 8.0,
       "par": 1.0,
       "line": 16.0,
-      "word": 4.0
+      "word": 4.0,
+      "rehocr_text": "NOT_RUN",
+      "rehocr_conf": 0.9176948500000001,
+      "rehocr_tag": "raw:psm7"
     },
     {
       "x0": 3128.0,
@@ -1400,12 +1400,15 @@
       "y1": 1870.0,
       "cx": 3212.0,
       "cy": 1847.0,
-      "text": "gg",
-      "conf": 0.46546470999999995,
+      "text": "numeric",
+      "conf": 0.96741814,
       "block": 8.0,
       "par": 1.0,
       "line": 19.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "numeric",
+      "rehocr_conf": 0.96741814,
+      "rehocr_tag": "raw:psm6"
     },
     {
       "x0": 3128.0,
@@ -1554,12 +1557,15 @@
       "y1": 2112.0,
       "cx": 3185.5,
       "cy": 2108.5,
-      "text": ".",
-      "conf": 0.0,
+      "text": "numeric",
+      "conf": 0.96741814,
       "block": 8.0,
       "par": 1.0,
       "line": 23.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "numeric",
+      "rehocr_conf": 0.96741814,
+      "rehocr_tag": "raw:psm6"
     },
     {
       "x0": 3125.0,
@@ -3038,7 +3044,7 @@
       "cy": 797.0
     },
     {
-      "text": "isp                  specific                                  sec                           tolerance",
+      "text": "=P                  specific                                  see                           tolerance",
       "bbox": [
         472.0,
         778.0,
@@ -3078,7 +3084,7 @@
       "cy": 1177.5
     },
     {
-      "text": "chamber_pressure   Mean  ssure      185+10        201          psia       6       WARN",
+      "text": "chamber_pressure   Mean  P,,      185+10        201          psia       6       WARN",
       "bbox": [
         468.0,
         1193.0,
@@ -3118,7 +3124,7 @@
       "cy": 1508.25
     },
     {
-      "text": "burn_duratior          Hot-fire                      0  (not                                     use    rors",
+      "text": "on          Hot-fire                       0  (not                                     use    statuses",
       "bbox": [
         766.0,
         1494.0,
@@ -3128,7 +3134,7 @@
       "cy": 1544.4166666666667
     },
     {
-      "text": "burn_duration                     42-48                      s          6       NOT_RUN _  textual",
+      "text": "burn_duration                     42-48                      s          6       NOT_RUN statuses  textual",
       "bbox": [
         468.0,
         1575.0,
@@ -3138,7 +3144,7 @@
       "cy": 1604.7857142857142
     },
     {
-      "text": "~               duration                      testable)                          ~",
+      "text": "~               duration                      testable)                          NOT_RUN",
       "bbox": [
         586.0,
         1621.0,
@@ -3168,7 +3174,7 @@
       "cy": 1834.75
     },
     {
-      "text": "Injector                                         gg",
+      "text": "Injector                                         numeric",
       "bbox": [
         1050.0,
         1824.0,
@@ -3208,7 +3214,7 @@
       "cy": 2036.5
     },
     {
-      "text": "resistance                                         .",
+      "text": "resistance                                         numeric",
       "bbox": [
         1047.0,
         2055.0,
@@ -3278,7 +3284,7 @@
       "cy": 2601.5
     },
     {
-      "text": "Helium  leak                  Not                                      missing",
+      "text": "Helium  leak                   Not                                      missing",
       "bbox": [
         1050.0,
         2666.0,
@@ -3486,7 +3492,7 @@
       "text_norm": "\u00b1 3"
     },
     {
-      "text": "isp                  specific                                  sec                           tolerance",
+      "text": "=P                  specific                                  see                           tolerance",
       "bbox": [
         472.0,
         778.0,
@@ -3494,7 +3500,7 @@
         877.0
       ],
       "cy": 830.125,
-      "text_norm": "isp                  specific                                  sec                           tolerance"
+      "text_norm": "=P                  specific                                  see                           tolerance"
     },
     {
       "text": "impulse                                         window",
@@ -3530,7 +3536,7 @@
       "text_norm": "requirement,"
     },
     {
-      "text": "chamber_pressure   Mean  ssure      185+10        201          psia       6       WARN",
+      "text": "chamber_pressure   Mean  P,,      185+10        201          psia       6       WARN",
       "bbox": [
         468.0,
         1193.0,
@@ -3538,7 +3544,7 @@
         1260.0
       ],
       "cy": 1221.95,
-      "text_norm": "chamber_pressure   Mean  ssure      185 \u00b1 10        201          psia       6       WARN"
+      "text_norm": "chamber_pressure   Mean  Pcc      185 \u00b1 10        201          psia       6       WARN"
     },
     {
       "text": "watch  for",
@@ -3574,7 +3580,7 @@
       "text_norm": "to     test"
     },
     {
-      "text": "burn_duratior          Hot-fire                      0  (not                                     use    rors",
+      "text": "on          Hot-fire                       0  (not                                     use    statuses",
       "bbox": [
         766.0,
         1494.0,
@@ -3582,10 +3588,10 @@
         1590.0
       ],
       "cy": 1544.4166666666667,
-      "text_norm": "burn_duratior          Hot-fire                      0  (not                                     use    rors"
+      "text_norm": "on          Hot-fire                       0  (not                                     use    statuses"
     },
     {
-      "text": "burn_duration                     42-48                      s          6       NOT_RUN _  textual",
+      "text": "burn_duration                     42-48                      s          6       NOT_RUN statuses  textual",
       "bbox": [
         468.0,
         1575.0,
@@ -3593,10 +3599,10 @@
         1642.0
       ],
       "cy": 1604.7857142857142,
-      "text_norm": "burn_duration                     42-48                      s          6       NOT_RUN _  textual"
+      "text_norm": "burn_duration                     42-48                      s          6       NOT_RUN statuses  textual"
     },
     {
-      "text": "~               duration                      testable)                          ~",
+      "text": "~               duration                      testable)                          NOT_RUN",
       "bbox": [
         586.0,
         1621.0,
@@ -3604,7 +3610,7 @@
         1688.0
       ],
       "cy": 1644.5,
-      "text_norm": "~               duration                      testable)                          ~"
+      "text_norm": "~               duration                      testable)                          NOT_RUN"
     },
     {
       "text": "statuses",
@@ -3629,7 +3635,7 @@
       "text_norm": "triggers  out-"
     },
     {
-      "text": "Injector                                         gg",
+      "text": "Injector                                         numeric",
       "bbox": [
         1050.0,
         1824.0,
@@ -3637,7 +3643,7 @@
         1923.0
       ],
       "cy": 1868.25,
-      "text_norm": "Injector                                         gg"
+      "text_norm": "Injector                                         numeric"
     },
     {
       "text": "of-range",
@@ -3673,7 +3679,7 @@
       "text_norm": "numeric"
     },
     {
-      "text": "resistance                                         .",
+      "text": "resistance                                         numeric",
       "bbox": [
         1047.0,
         2055.0,
@@ -3681,7 +3687,7 @@
         2116.0
       ],
       "cy": 2097.0,
-      "text_norm": "resistance                                         ."
+      "text_norm": "resistance                                         numeric"
     },
     {
       "text": "failure",
@@ -3750,7 +3756,7 @@
       "text_norm": "ensures"
     },
     {
-      "text": "Helium  leak                  Not                                      missing",
+      "text": "Helium  leak                   Not                                      missing",
       "bbox": [
         1050.0,
         2666.0,
@@ -3758,7 +3764,7 @@
         2733.0
       ],
       "cy": 2696.25,
-      "text_norm": "Helium  leak                  Not                                      missing"
+      "text_norm": "Helium  leak                   Not                                      missing"
     },
     {
       "text": "leak_check                       =1.0e-5                    atm-cc/s   10      MISSING",

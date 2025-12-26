@@ -3,7 +3,7 @@
   "page": 4,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(2/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -55,8 +55,8 @@
               773.0
             ],
             "cells_text": [
-              "A Test tance Test Test Report",
-              "ATR Hyperion SV3_SN42.pdf",
+              "A CCeptance tance Test ies Report",
+              "AIR Hyperion. SV3_SN42.pdf",
               "124",
               "Contains Sections 3 & 4 tables"
             ],
@@ -64,14 +64,14 @@
               [
                 "A",
                 "Report",
-                "Test",
+                "CCeptance",
                 "tance",
                 "Test",
-                "Test"
+                "ies"
               ],
               [
-                "ATR",
-                "Hyperion",
+                "AIR",
+                "Hyperion.",
                 "SV3_SN42.pdf"
               ],
               [
@@ -130,7 +130,7 @@
               19,
               20
             ],
-            "row_text_cells": "A Test tance Test Test Report | ATR Hyperion SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "row_text_cells": "A CCeptance tance Test ies Report | AIR Hyperion. SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
             "cells_kind": [
               "paragraph",
               "paragraph",
@@ -226,19 +226,21 @@
               1251.5
             ],
             "cells_text": [
-              "Vib Test Photos",
-              "VIB_IMG_SN42.zip",
+              "Vib a Test Photos",
+              "a VIB_IMG_SN42.zip",
               "24 images",
               "Use to test non-PDF assets"
             ],
             "cells_tokens": [
               [
                 "Vib",
+                "a",
                 "Test",
                 "Photos"
               ],
               [
-                "VIB_IMG_SN42.zip"
+                "VIB_IMG_SN42.zip",
+                "a"
               ],
               [
                 "24",
@@ -255,11 +257,13 @@
             "cells_token_ids": [
               [
                 37,
+                34,
                 38,
                 39
               ],
               [
-                40
+                40,
+                35
               ],
               [
                 36,
@@ -288,10 +292,10 @@
               45,
               46
             ],
-            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "row_text_cells": "Vib a Test Photos | a VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
             "cells_kind": [
               "string",
-              "string",
+              "paragraph",
               "string",
               "paragraph"
             ]
@@ -544,8 +548,8 @@
               773.0
             ],
             "cells_text": [
-              "A Test tance Test Test Report",
-              "ATR Hyperion SV3_SN42.pdf",
+              "A CCeptance tance Test ies Report",
+              "AIR Hyperion. SV3_SN42.pdf",
               "124",
               "Contains Sections 3 & 4 tables"
             ],
@@ -553,14 +557,14 @@
               [
                 "A",
                 "Report",
-                "Test",
+                "CCeptance",
                 "tance",
                 "Test",
-                "Test"
+                "ies"
               ],
               [
-                "ATR",
-                "Hyperion",
+                "AIR",
+                "Hyperion.",
                 "SV3_SN42.pdf"
               ],
               [
@@ -619,7 +623,7 @@
               19,
               20
             ],
-            "row_text_cells": "A Test tance Test Test Report | ATR Hyperion SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "row_text_cells": "A CCeptance tance Test ies Report | AIR Hyperion. SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
             "cells_kind": [
               "paragraph",
               "paragraph",
@@ -715,19 +719,21 @@
               1251.5
             ],
             "cells_text": [
-              "Vib Test Photos",
-              "VIB_IMG_SN42.zip",
+              "Vib a Test Photos",
+              "a VIB_IMG_SN42.zip",
               "24 images",
               "Use to test non-PDF assets"
             ],
             "cells_tokens": [
               [
                 "Vib",
+                "a",
                 "Test",
                 "Photos"
               ],
               [
-                "VIB_IMG_SN42.zip"
+                "VIB_IMG_SN42.zip",
+                "a"
               ],
               [
                 "24",
@@ -744,11 +750,13 @@
             "cells_token_ids": [
               [
                 37,
+                34,
                 38,
                 39
               ],
               [
-                40
+                40,
+                35
               ],
               [
                 36,
@@ -777,10 +785,10 @@
               45,
               46
             ],
-            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "row_text_cells": "Vib a Test Photos | a VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
             "cells_kind": [
               "string",
-              "string",
+              "paragraph",
               "string",
               "paragraph"
             ]

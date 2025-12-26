@@ -3,7 +3,7 @@
   "page": 1,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(7/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -324,10 +324,7 @@
       "block": 1.0,
       "par": 1.0,
       "line": 1.0,
-      "word": 1.0,
-      "rehocr_text": "r",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "auto:psm7"
+      "word": 1.0
     },
     {
       "x0": 600.0,
@@ -364,15 +361,12 @@
       "y1": 551.0,
       "cx": 1055.5,
       "cy": 528.0,
-      "text": "ltem",
-      "conf": 0.76431908,
+      "text": "Item",
+      "conf": 0.53281616,
       "block": 1.0,
       "par": 1.0,
       "line": 1.0,
-      "word": 4.0,
-      "rehocr_text": "ltem",
-      "rehocr_conf": 0.76431908,
-      "rehocr_tag": "auto:psm7"
+      "word": 4.0
     },
     {
       "x0": 1134.0,
@@ -484,10 +478,7 @@
       "block": 1.0,
       "par": 1.0,
       "line": 3.0,
-      "word": 1.0,
-      "rehocr_text": "#",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 1.0
     },
     {
       "x0": 741.0,
@@ -627,10 +618,7 @@
       "block": 1.0,
       "par": 1.0,
       "line": 5.0,
-      "word": 1.0,
-      "rehocr_text": "T",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 1.0
     },
     {
       "x0": 734.0,
@@ -700,10 +688,7 @@
       "block": 1.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 1.0,
-      "rehocr_text": "*",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 1.0
     },
     {
       "x0": 734.0,
@@ -782,15 +767,12 @@
       "y1": 1134.0,
       "cx": 683.5,
       "cy": 1125.5,
-      "text": "*",
-      "conf": 0.54435268,
+      "text": "\u00ab",
+      "conf": 0.42748268,
       "block": 1.0,
       "par": 1.0,
       "line": 7.0,
-      "word": 1.0,
-      "rehocr_text": "*",
-      "rehocr_conf": 0.54435268,
-      "rehocr_tag": "raw:psm7"
+      "word": 1.0
     },
     {
       "x0": 734.0,
@@ -817,11 +799,14 @@
       "cx": 918.0,
       "cy": 1124.5,
       "text": "Anomaly",
-      "conf": 0.0,
+      "conf": 0.96265137,
       "block": 1.0,
       "par": 1.0,
       "line": 7.0,
-      "word": 3.0
+      "word": 3.0,
+      "rehocr_text": "Anomaly",
+      "rehocr_conf": 0.96265137,
+      "rehocr_tag": "auto:psm7"
     },
     {
       "x0": 1059.0,
@@ -2273,11 +2258,14 @@
       "cx": 557.0,
       "cy": 4502.5,
       "text": "a",
-      "conf": 0.0,
+      "conf": 0.5746386,
       "block": 18.0,
       "par": 1.0,
       "line": 5.0,
-      "word": 1.0
+      "word": 1.0,
+      "rehocr_text": "a",
+      "rehocr_conf": 0.5746386,
+      "rehocr_tag": "scaled:psm7"
     },
     {
       "x0": 1078.0,
@@ -2300,12 +2288,15 @@
       "y1": 4506.0,
       "cx": 3289.5,
       "cy": 4502.5,
-      "text": ":",
-      "conf": 0.0,
+      "text": "case",
+      "conf": 0.9674855800000001,
       "block": 18.0,
       "par": 1.0,
       "line": 5.0,
-      "word": 3.0
+      "word": 3.0,
+      "rehocr_text": "case",
+      "rehocr_conf": 0.9674855800000001,
+      "rehocr_tag": "raw:psm6"
     },
     {
       "x0": 498.0,
@@ -2329,11 +2320,14 @@
       "cx": 1498.0,
       "cy": 4525.5,
       "text": "=",
-      "conf": 0.0,
+      "conf": 0.96668091,
       "block": 18.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "=",
+      "rehocr_conf": 0.96668091,
+      "rehocr_tag": "auto:psm8"
     },
     {
       "x0": 1534.0,
@@ -2347,7 +2341,10 @@
       "block": 18.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 3.0
+      "word": 3.0,
+      "rehocr_text": "0.85",
+      "rehocr_conf": 0.0,
+      "rehocr_tag": "raw:psm7"
     },
     {
       "x0": 1927.0,
@@ -2370,12 +2367,15 @@
       "y1": 4562.0,
       "cx": 2294.5,
       "cy": 4528.5,
-      "text": "$s",
-      "conf": 0.57297825,
+      "text": "s",
+      "conf": 0.55088921,
       "block": 18.0,
       "par": 1.0,
       "line": 6.0,
-      "word": 5.0
+      "word": 5.0,
+      "rehocr_text": "s",
+      "rehocr_conf": 0.55088921,
+      "rehocr_tag": "raw:psm7"
     },
     {
       "x0": 2583.0,
@@ -2478,7 +2478,7 @@
   ],
   "lines": [
     {
-      "text": "e   Synthetic  End  ltem  Data  Package  (Debug  Reference)",
+      "text": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)",
       "bbox": [
         538.0,
         505.0,
@@ -2538,7 +2538,7 @@
       "cy": 1020.1666666666666
     },
     {
-      "text": "*  5  Anomaly  &  Waiver  Log",
+      "text": "\u00ab  5  Anomaly  &  Waiver  Log",
       "bbox": [
         675.0,
         1095.0,
@@ -2758,7 +2758,7 @@
       "cy": 4433.5
     },
     {
-      "text": "a                between                                         :",
+      "text": "a                between                                         case",
       "bbox": [
         498.0,
         4446.0,
@@ -2768,7 +2768,7 @@
       "cy": 4494.333333333333
     },
     {
-      "text": "ignition_delay                     =  0.85          0.62         $s          5       PASS        nominal",
+      "text": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal",
       "bbox": [
         498.0,
         4495.0,
@@ -2800,7 +2800,7 @@
   ],
   "lines_norm": [
     {
-      "text": "e   Synthetic  End  ltem  Data  Package  (Debug  Reference)",
+      "text": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)",
       "bbox": [
         538.0,
         505.0,
@@ -2808,7 +2808,7 @@
         564.0
       ],
       "cy": 531.8125,
-      "text_norm": "e   Synthetic  End  ltem  Data  Package  (Debug  Reference)"
+      "text_norm": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)"
     },
     {
       "text": "\u00ab   Document  Profile",
@@ -2866,7 +2866,7 @@
       "text_norm": "\u00ab  4.  Calibration  &  Trim  Table"
     },
     {
-      "text": "*  5  Anomaly  &  Waiver  Log",
+      "text": "\u00ab  5  Anomaly  &  Waiver  Log",
       "bbox": [
         675.0,
         1095.0,
@@ -2874,7 +2874,7 @@
         1154.0
       ],
       "cy": 1121.1666666666667,
-      "text_norm": "*  5  Anomaly  &  Waiver  Log"
+      "text_norm": "\u00ab  5  Anomaly  &  Waiver  Log"
     },
     {
       "text": "e  6.  Attachment  Index  (Synthetic)",
@@ -3108,7 +3108,7 @@
       "text_norm": "sample"
     },
     {
-      "text": "a                between                                         :",
+      "text": "a                between                                         case",
       "bbox": [
         498.0,
         4446.0,
@@ -3116,10 +3116,10 @@
         4510.0
       ],
       "cy": 4494.333333333333,
-      "text_norm": "a                between                                         :"
+      "text_norm": "a                between                                         case"
     },
     {
-      "text": "ignition_delay                     =  0.85          0.62         $s          5       PASS        nominal",
+      "text": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal",
       "bbox": [
         498.0,
         4495.0,
@@ -3127,7 +3127,7 @@
         4562.0
       ],
       "cy": 4524.0625,
-      "text_norm": "ignition_delay                     =  0.85          0.62         $s          5       PASS        nominal"
+      "text_norm": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal"
     },
     {
       "text": "arm  and                                         case",

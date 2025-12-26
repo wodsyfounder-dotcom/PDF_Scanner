@@ -3,7 +3,7 @@
   "page": 1,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(7/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -17,7 +17,7 @@
         2055.0,
         564.0
       ],
-      "text": "e Synthetic End ltem Data Package (Debug Reference)"
+      "text": "e Synthetic End Item Data Package (Debug Reference)"
     },
     {
       "type": "text",
@@ -77,7 +77,7 @@
         1419.0,
         1154.0
       ],
-      "text": "* 5 Anomaly & Waiver Log"
+      "text": "\u00ab 5 Anomaly & Waiver Log"
     },
     {
       "type": "text",
@@ -553,11 +553,11 @@
         ],
         "header_cells": [
           "Term",
-          "Description P",
-          "Requirement q",
+          "Description",
+          "Requirement",
           "Measured Value",
           "Units",
-          "Page g",
+          "Page",
           "Data Quality",
           "Notes"
         ],
@@ -569,18 +569,17 @@
               4710.0
             ],
             "cells_text": [
-              "a ignition_delay",
+              "ignition_delay",
               "Time between arm and ignition",
-              "= 0.85",
+              "<= 0.85",
               "0.62",
-              "$s",
+              "s",
               "5",
               "PASS",
               "sample nominal case"
             ],
             "cells_tokens": [
               [
-                "a",
                 "ignition_delay"
               ],
               [
@@ -591,14 +590,14 @@
                 "and"
               ],
               [
-                "=",
+                "<=",
                 "0.85"
               ],
               [
                 "0.62"
               ],
               [
-                "$s"
+                "s"
               ],
               [
                 "5"
@@ -609,12 +608,12 @@
               [
                 "sample",
                 "case",
-                "nominal"
+                "nominal",
+                "case"
               ]
             ],
             "cells_token_ids": [
               [
-                138,
                 141
               ],
               [
@@ -643,7 +642,8 @@
               [
                 137,
                 151,
-                148
+                148,
+                140
               ]
             ],
             "row_token_ids": [
@@ -665,7 +665,7 @@
               151,
               152
             ],
-            "row_text_cells": "a ignition_delay | Time between arm and ignition | = 0.85 | 0.62 | $s | 5 | PASS | sample nominal case",
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | s | 5 | PASS | sample nominal case",
             "cells_kind": [
               "string",
               "paragraph",
@@ -737,187 +737,6 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        538.0,
-        505.0,
-        2055.0,
-        564.0
-      ],
-      "text": "e Synthetic End ltem Data Package (Debug Reference)",
-      "line_count": 1,
-      "word_count": 8,
-      "token_ids": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        603.0,
-        1203.0,
-        649.0
-      ],
-      "text": "\u00ab Document Profile",
-      "line_count": 1,
-      "word_count": 2,
-      "token_ids": [
-        8,
-        9,
-        10
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        701.0,
-        1698.0,
-        760.0
-      ],
-      "text": "e 1. Functional Acceptance Snapshot",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        11,
-        12,
-        13,
-        14,
-        15
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        796.0,
-        1429.0,
-        842.0
-      ],
-      "text": "\u00ab 2. Performance KPI Table",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        16,
-        17,
-        18,
-        19,
-        20
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        895.0,
-        1691.0,
-        941.0
-      ],
-      "text": "e 3. Environmental Endurance Matrix",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        21,
-        22,
-        23,
-        24,
-        25
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        996.0,
-        1452.0,
-        1042.0
-      ],
-      "text": "\u00ab 4. Calibration & Trim Table",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        26,
-        27,
-        28,
-        29,
-        30,
-        31
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        1095.0,
-        1419.0,
-        1154.0
-      ],
-      "text": "* 5 Anomaly & Waiver Log",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        32,
-        33,
-        34,
-        35,
-        36,
-        37
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        1193.0,
-        1587.0,
-        1252.0
-      ],
-      "text": "e 6. Attachment Index (Synthetic)",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        38,
-        39,
-        40,
-        41,
-        42
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        810.0,
-        1288.0,
-        1203.0,
-        1347.0
-      ],
-      "text": "e Usage Hints",
-      "line_count": 1,
-      "word_count": 3,
-      "token_ids": [
-        43,
-        44,
-        45
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
         462.0,
         1475.0,
         2852.0,
@@ -974,187 +793,6 @@
     }
   ],
   "flow": [
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        538.0,
-        505.0,
-        2055.0,
-        564.0
-      ],
-      "text": "e Synthetic End ltem Data Package (Debug Reference)",
-      "line_count": 1,
-      "word_count": 8,
-      "token_ids": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        603.0,
-        1203.0,
-        649.0
-      ],
-      "text": "\u00ab Document Profile",
-      "line_count": 1,
-      "word_count": 2,
-      "token_ids": [
-        8,
-        9,
-        10
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        701.0,
-        1698.0,
-        760.0
-      ],
-      "text": "e 1. Functional Acceptance Snapshot",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        11,
-        12,
-        13,
-        14,
-        15
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        796.0,
-        1429.0,
-        842.0
-      ],
-      "text": "\u00ab 2. Performance KPI Table",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        16,
-        17,
-        18,
-        19,
-        20
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        895.0,
-        1691.0,
-        941.0
-      ],
-      "text": "e 3. Environmental Endurance Matrix",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        21,
-        22,
-        23,
-        24,
-        25
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        996.0,
-        1452.0,
-        1042.0
-      ],
-      "text": "\u00ab 4. Calibration & Trim Table",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        26,
-        27,
-        28,
-        29,
-        30,
-        31
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        1095.0,
-        1419.0,
-        1154.0
-      ],
-      "text": "* 5 Anomaly & Waiver Log",
-      "line_count": 1,
-      "word_count": 4,
-      "token_ids": [
-        32,
-        33,
-        34,
-        35,
-        36,
-        37
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        675.0,
-        1193.0,
-        1587.0,
-        1252.0
-      ],
-      "text": "e 6. Attachment Index (Synthetic)",
-      "line_count": 1,
-      "word_count": 5,
-      "token_ids": [
-        38,
-        39,
-        40,
-        41,
-        42
-      ]
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        810.0,
-        1288.0,
-        1203.0,
-        1347.0
-      ],
-      "text": "e Usage Hints",
-      "line_count": 1,
-      "word_count": 3,
-      "token_ids": [
-        43,
-        44,
-        45
-      ]
-    },
     {
       "type": "text",
       "kind": "string",
@@ -1615,11 +1253,11 @@
         ],
         "header_cells": [
           "Term",
-          "Description P",
-          "Requirement q",
+          "Description",
+          "Requirement",
           "Measured Value",
           "Units",
-          "Page g",
+          "Page",
           "Data Quality",
           "Notes"
         ],
@@ -1631,18 +1269,17 @@
               4710.0
             ],
             "cells_text": [
-              "a ignition_delay",
+              "ignition_delay",
               "Time between arm and ignition",
-              "= 0.85",
+              "<= 0.85",
               "0.62",
-              "$s",
+              "s",
               "5",
               "PASS",
               "sample nominal case"
             ],
             "cells_tokens": [
               [
-                "a",
                 "ignition_delay"
               ],
               [
@@ -1653,14 +1290,14 @@
                 "and"
               ],
               [
-                "=",
+                "<=",
                 "0.85"
               ],
               [
                 "0.62"
               ],
               [
-                "$s"
+                "s"
               ],
               [
                 "5"
@@ -1671,12 +1308,12 @@
               [
                 "sample",
                 "case",
-                "nominal"
+                "nominal",
+                "case"
               ]
             ],
             "cells_token_ids": [
               [
-                138,
                 141
               ],
               [
@@ -1705,7 +1342,8 @@
               [
                 137,
                 151,
-                148
+                148,
+                140
               ]
             ],
             "row_token_ids": [
@@ -1727,7 +1365,7 @@
               151,
               152
             ],
-            "row_text_cells": "a ignition_delay | Time between arm and ignition | = 0.85 | 0.62 | $s | 5 | PASS | sample nominal case",
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | s | 5 | PASS | sample nominal case",
             "cells_kind": [
               "string",
               "paragraph",

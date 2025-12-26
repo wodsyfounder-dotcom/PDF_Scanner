@@ -3,7 +3,7 @@
   "page": 3,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -245,8 +245,8 @@
             ],
             "cells_text": [
               "Thermal Ramp Cycling",
-              "359485",
-              "6 6cycles",
+              "-35++85",
+              "6 cycles",
               "YES",
               "-",
               "A-126"
@@ -258,11 +258,11 @@
                 "Ramp"
               ],
               [
-                "359485"
+                "-35++85"
               ],
               [
                 "6",
-                "6cycles"
+                "cycles"
               ],
               [
                 "YES"
@@ -308,10 +308,10 @@
               36,
               37
             ],
-            "row_text_cells": "Thermal Ramp Cycling | 359485 | 6 6cycles | YES | - | A-126",
+            "row_text_cells": "Thermal Ramp Cycling | -35++85 | 6 cycles | YES | - | A-126",
             "cells_kind": [
               "string",
-              "number",
+              "string",
               "string",
               "string",
               "string",
@@ -1102,8 +1102,8 @@
               "DR-2025-014",
               "Major",
               "chamber_pressure",
-              "Persistent +8% over spec during burn",
-              "Added relief orifice, #2 retest pending",
+              "Persistent n +8% over spec during burn",
+              "Added relief orifice, a #2 retest pending",
               "OPEN"
             ],
             "cells_tokens": [
@@ -1121,6 +1121,7 @@
               [
                 "spec",
                 "Persistent",
+                "n",
                 "during",
                 "+8%",
                 "burn",
@@ -1132,7 +1133,8 @@
                 "retest",
                 "pending",
                 "relief",
-                "orifice,"
+                "orifice,",
+                "a"
               ],
               [
                 "OPEN"
@@ -1153,6 +1155,7 @@
               [
                 157,
                 146,
+                143,
                 158,
                 147,
                 159,
@@ -1164,7 +1167,8 @@
                 161,
                 162,
                 150,
-                151
+                151,
+                145
               ],
               [
                 155
@@ -1193,7 +1197,7 @@
               161,
               162
             ],
-            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn | Added relief orifice, #2 retest pending | OPEN",
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent n +8% over spec during burn | Added relief orifice, a #2 retest pending | OPEN",
             "cells_kind": [
               "string",
               "string",
@@ -1211,9 +1215,9 @@
             ],
             "cells_text": [
               "NCR-25-008",
-              "Minor",
+              "n Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading",
+              "Harness swapped due to6.1Qreading n",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -1223,7 +1227,8 @@
                 "NCR-"
               ],
               [
-                "Minor"
+                "Minor",
+                "n"
               ],
               [
                 "resistance"
@@ -1232,7 +1237,8 @@
                 "due",
                 "Harness",
                 "to6.1Qreading",
-                "swapped"
+                "swapped",
+                "n"
               ],
               [
                 "Q",
@@ -1250,7 +1256,8 @@
                 163
               ],
               [
-                170
+                170,
+                164
               ],
               [
                 171
@@ -1259,7 +1266,8 @@
                 175,
                 165,
                 176,
-                166
+                166,
+                172
               ],
               [
                 177,
@@ -1288,7 +1296,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | n Minor | resistance | Harness swapped due to6.1Qreading n | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -1695,8 +1703,8 @@
             ],
             "cells_text": [
               "Thermal Ramp Cycling",
-              "359485",
-              "6 6cycles",
+              "-35++85",
+              "6 cycles",
               "YES",
               "-",
               "A-126"
@@ -1708,11 +1716,11 @@
                 "Ramp"
               ],
               [
-                "359485"
+                "-35++85"
               ],
               [
                 "6",
-                "6cycles"
+                "cycles"
               ],
               [
                 "YES"
@@ -1758,10 +1766,10 @@
               36,
               37
             ],
-            "row_text_cells": "Thermal Ramp Cycling | 359485 | 6 6cycles | YES | - | A-126",
+            "row_text_cells": "Thermal Ramp Cycling | -35++85 | 6 cycles | YES | - | A-126",
             "cells_kind": [
               "string",
-              "number",
+              "string",
               "string",
               "string",
               "string",
@@ -2555,8 +2563,8 @@
               "DR-2025-014",
               "Major",
               "chamber_pressure",
-              "Persistent +8% over spec during burn",
-              "Added relief orifice, #2 retest pending",
+              "Persistent n +8% over spec during burn",
+              "Added relief orifice, a #2 retest pending",
               "OPEN"
             ],
             "cells_tokens": [
@@ -2574,6 +2582,7 @@
               [
                 "spec",
                 "Persistent",
+                "n",
                 "during",
                 "+8%",
                 "burn",
@@ -2585,7 +2594,8 @@
                 "retest",
                 "pending",
                 "relief",
-                "orifice,"
+                "orifice,",
+                "a"
               ],
               [
                 "OPEN"
@@ -2606,6 +2616,7 @@
               [
                 157,
                 146,
+                143,
                 158,
                 147,
                 159,
@@ -2617,7 +2628,8 @@
                 161,
                 162,
                 150,
-                151
+                151,
+                145
               ],
               [
                 155
@@ -2646,7 +2658,7 @@
               161,
               162
             ],
-            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn | Added relief orifice, #2 retest pending | OPEN",
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent n +8% over spec during burn | Added relief orifice, a #2 retest pending | OPEN",
             "cells_kind": [
               "string",
               "string",
@@ -2664,9 +2676,9 @@
             ],
             "cells_text": [
               "NCR-25-008",
-              "Minor",
+              "n Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading",
+              "Harness swapped due to6.1Qreading n",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -2676,7 +2688,8 @@
                 "NCR-"
               ],
               [
-                "Minor"
+                "Minor",
+                "n"
               ],
               [
                 "resistance"
@@ -2685,7 +2698,8 @@
                 "due",
                 "Harness",
                 "to6.1Qreading",
-                "swapped"
+                "swapped",
+                "n"
               ],
               [
                 "Q",
@@ -2703,7 +2717,8 @@
                 163
               ],
               [
-                170
+                170,
+                164
               ],
               [
                 171
@@ -2712,7 +2727,8 @@
                 175,
                 165,
                 176,
-                166
+                166,
+                172
               ],
               [
                 177,
@@ -2741,7 +2757,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | n Minor | resistance | Harness swapped due to6.1Qreading n | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",

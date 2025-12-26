@@ -3,7 +3,7 @@
   "page": 4,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(2/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -267,14 +267,14 @@
       "y1": 640.0,
       "cx": 655.0,
       "cy": 616.5,
-      "text": "Test",
-      "conf": 0.9672260300000001,
+      "text": "CCeptance",
+      "conf": 0.85265289,
       "block": 6.0,
       "par": 1.0,
       "line": 2.0,
       "word": 1.0,
-      "rehocr_text": "Test",
-      "rehocr_conf": 0.9672260300000001,
+      "rehocr_text": "CCeptance",
+      "rehocr_conf": 0.85265289,
       "rehocr_tag": "auto:psm7"
     },
     {
@@ -284,15 +284,12 @@
       "y1": 627.0,
       "cx": 879.0,
       "cy": 610.0,
-      "text": "Test",
-      "conf": 0.9672260300000001,
+      "text": "ies",
+      "conf": 0.56862724,
       "block": 6.0,
       "par": 1.0,
       "line": 2.0,
-      "word": 2.0,
-      "rehocr_text": "Test",
-      "rehocr_conf": 0.9672260300000001,
-      "rehocr_tag": "auto:psm7"
+      "word": 2.0
     },
     {
       "x0": 1168.0,
@@ -301,15 +298,15 @@
       "y1": 673.0,
       "cx": 1228.0,
       "cy": 650.0,
-      "text": "ATR",
-      "conf": 0.0022953,
+      "text": "AIR",
+      "conf": 0.8762464099999999,
       "block": 6.0,
       "par": 1.0,
       "line": 2.0,
       "word": 3.0,
-      "rehocr_text": "ATR_Hyperion_SV3_",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_text": "AIR",
+      "rehocr_conf": 0.8762464099999999,
+      "rehocr_tag": "auto:psm7"
     },
     {
       "x0": 1315.0,
@@ -318,14 +315,14 @@
       "y1": 690.0,
       "cx": 1450.0,
       "cy": 639.5,
-      "text": "Hyperion",
-      "conf": 0.0022953,
+      "text": "Hyperion.",
+      "conf": 0.90308029,
       "block": 6.0,
       "par": 1.0,
       "line": 2.0,
       "word": 4.0,
-      "rehocr_text": "ATR_Hyperion_SV3_",
-      "rehocr_conf": 0.0,
+      "rehocr_text": "Hyperion.",
+      "rehocr_conf": 0.90308029,
       "rehocr_tag": "raw:psm7"
     },
     {
@@ -340,10 +337,7 @@
       "block": 6.0,
       "par": 1.0,
       "line": 2.0,
-      "word": 5.0,
-      "rehocr_text": "42.124",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "word": 5.0
     },
     {
       "x0": 2095.0,
@@ -608,11 +602,14 @@
       "cx": 1892.0,
       "cy": 896.0,
       "text": "revC.pdf",
-      "conf": 0.54345467,
+      "conf": 0.8260169999999999,
       "block": 6.0,
       "par": 1.0,
       "line": 5.0,
-      "word": 5.0
+      "word": 5.0,
+      "rehocr_text": "revC.pdf",
+      "rehocr_conf": 0.8260169999999999,
+      "rehocr_tag": "raw:psm7"
     },
     {
       "x0": 2092.0,
@@ -649,12 +646,15 @@
       "y1": 1109.0,
       "cx": 520.0,
       "cy": 1105.5,
-      "text": ",",
-      "conf": 0.0,
+      "text": "a",
+      "conf": 0.67948547,
       "block": 6.0,
       "par": 1.0,
       "line": 7.0,
-      "word": 1.0
+      "word": 1.0,
+      "rehocr_text": "a",
+      "rehocr_conf": 0.67948547,
+      "rehocr_tag": "raw:psm8"
     },
     {
       "x0": 1667.0,
@@ -663,12 +663,15 @@
       "y1": 1109.0,
       "cx": 1670.0,
       "cy": 1105.5,
-      "text": ",",
-      "conf": 0.0,
+      "text": "a",
+      "conf": 0.6791662599999999,
       "block": 6.0,
       "par": 1.0,
       "line": 7.0,
-      "word": 2.0
+      "word": 2.0,
+      "rehocr_text": "a",
+      "rehocr_conf": 0.6791662599999999,
+      "rehocr_tag": "raw:psm8"
     },
     {
       "x0": 2092.0,
@@ -1533,7 +1536,7 @@
       "cy": 604.0
     },
     {
-      "text": "Test   Test         ATR  Hyperion  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables",
+      "text": "CCeptance   ies         AIR  Hyperion.  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables",
       "bbox": [
         514.0,
         589.0,
@@ -1583,7 +1586,7 @@
       "cy": 939.0
     },
     {
-      "text": ",                                      ,               24",
+      "text": "a                                       a               24",
       "bbox": [
         517.0,
         1052.0,
@@ -1687,7 +1690,7 @@
       "text_norm": "A     tance     Test"
     },
     {
-      "text": "Test   Test         ATR  Hyperion  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables",
+      "text": "CCeptance   ies         AIR  Hyperion.  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables",
       "bbox": [
         514.0,
         589.0,
@@ -1695,7 +1698,7 @@
         690.0
       ],
       "cy": 642.125,
-      "text_norm": "Test   Test         ATR  Hyperion  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables"
+      "text_norm": "CCeptance   ies         AIR  Hyperion.  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables"
     },
     {
       "text": "Report",
@@ -1742,7 +1745,7 @@
       "text_norm": "footer"
     },
     {
-      "text": ",                                      ,               24",
+      "text": "a                                       a               24",
       "bbox": [
         517.0,
         1052.0,
@@ -1750,7 +1753,7 @@
         1109.0
       ],
       "cy": 1095.5,
-      "text_norm": ",                                      ,               24"
+      "text_norm": "a                                       a               24"
     },
     {
       "text": "Vib  Test  Photos          VIB_IMG_SN42.zip                         Use  to  test  non-PDF  assets",

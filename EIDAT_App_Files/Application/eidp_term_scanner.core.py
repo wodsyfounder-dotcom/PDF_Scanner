@@ -1908,6 +1908,213 @@ def _tess_ocr_crop_tsv(img, lang: str, psm: int, allowlist: Optional[str], *, nu
         return None, 0.0
 
 
+_PAGE_IMAGE_CACHE: Dict[Tuple[str, int, int], object] = {}
+
+
+def _get_page_image_for_glyph(pdf_path: Path, page: int, dpi: int):
+    """Render a PDF page to a PIL image for tiny glyph-inspection crops (memoized)."""
+    if not _HAVE_PYMUPDF:
+        return None
+    try:
+        from PIL import Image as _Image  # type: ignore
+    except Exception:
+        return None
+    try:
+        import io as _io
+    except Exception:
+        return None
+    try:
+        key = (_pdf_cache_key(pdf_path), int(page), int(dpi))
+    except Exception:
+        key = ("", int(page), int(dpi))
+    try:
+        cached = _PAGE_IMAGE_CACHE.get(key)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+    try:
+        doc = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+        pg = doc.load_page(int(page) - 1)
+        pix = pg.get_pixmap(dpi=max(200, min(2000, int(dpi))))
+        img = _Image.open(_io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    except Exception:
+        try:
+            doc.close()
+        except Exception:
+            pass
+        return None
+    try:
+        doc.close()
+    except Exception:
+        pass
+    try:
+        if len(_PAGE_IMAGE_CACHE) > 8:
+            _PAGE_IMAGE_CACHE.pop(next(iter(_PAGE_IMAGE_CACHE.keys())), None)
+        _PAGE_IMAGE_CACHE[key] = img
+    except Exception:
+        pass
+    return img
+
+
+def _infer_requirement_relop_from_glyph(pdf_path: Path, page: int, dpi: int, op_tok: Dict[str, object], num_tok: Dict[str, object]) -> Optional[str]:
+    """Infer <, >, =, <=, >= by inspecting the rendered operator glyph near a numeric token."""
+    try:
+        from PIL import Image as _Image  # type: ignore
+        from PIL import ImageOps as _ImageOps  # type: ignore
+    except Exception:
+        return None
+    img = _get_page_image_for_glyph(pdf_path, page, dpi)
+    if img is None:
+        return None
+    try:
+        op_x0, op_y0, op_x1, op_y1 = (float(op_tok.get("x0", 0.0)), float(op_tok.get("y0", 0.0)), float(op_tok.get("x1", 0.0)), float(op_tok.get("y1", 0.0)))
+        n_x0, n_y0, n_x1, n_y1 = (float(num_tok.get("x0", 0.0)), float(num_tok.get("y0", 0.0)), float(num_tok.get("x1", 0.0)), float(num_tok.get("y1", 0.0)))
+    except Exception:
+        return None
+    if op_x1 <= op_x0 or op_y1 <= op_y0:
+        return None
+    try:
+        pad_x = max(12.0, 1.4 * (op_x1 - op_x0))
+        pad_y = max(12.0, 0.9 * (op_y1 - op_y0))
+        x0 = max(0.0, op_x0 - pad_x)
+        x1 = min(float(img.size[0]), op_x1 + pad_x)
+        if n_x0 > op_x1 + 2.0:
+            x1 = min(x1, max(x0 + 6.0, n_x0 - 2.0))
+        y0 = max(0.0, min(op_y0, n_y0) - pad_y)
+        y1 = min(float(img.size[1]), max(op_y1, n_y1) + pad_y)
+    except Exception:
+        return None
+    try:
+        crop = img.crop((int(x0), int(y0), int(x1), int(y1)))
+    except Exception:
+        return None
+    if crop.size[0] <= 2 or crop.size[1] <= 2:
+        return None
+    try:
+        crop2 = crop.resize((int(crop.size[0] * 4), int(crop.size[1] * 4)))
+    except Exception:
+        crop2 = crop
+    try:
+        g = _ImageOps.autocontrast(crop2.convert("L"))
+        thr = g.point(lambda p: 255 if p > 160 else 0, mode="1").convert("L")
+    except Exception:
+        return None
+
+    # Count horizontal bar bands (2+ => '=', 1 => '≤/≥').
+    bands = 0
+    bar_band: Optional[Tuple[int, int]] = None
+    strong_rows: Optional[List[bool]] = None
+    try:
+        w, h = thr.size
+        data = thr.tobytes()
+        frac = []
+        for yy in range(h):
+            row = data[yy * w : (yy + 1) * w]
+            frac.append(float(row.count(0)) / max(1.0, float(w)))
+        strong = [f > 0.22 for f in frac]
+        strong_rows = strong
+        i = 0
+        while i < h:
+            if not strong[i]:
+                i += 1
+                continue
+            j = i
+            while j < h and strong[j]:
+                j += 1
+            if (j - i) >= 2:
+                bands += 1
+                if bar_band is None or (j - i) > (bar_band[1] - bar_band[0]):
+                    bar_band = (i, j)
+            i = j
+    except Exception:
+        bands = 0
+        bar_band = None
+        strong_rows = None
+
+    def _infer_dir(mask_bars: bool) -> Optional[str]:
+        img2 = thr
+        if mask_bars and strong_rows is not None:
+            try:
+                w2, h2 = thr.size
+                data2 = bytearray(thr.tobytes())
+                for yy in range(h2):
+                    if strong_rows[yy]:
+                        start = yy * w2
+                        data2[start : start + w2] = b"\xff" * w2
+                img2 = _Image.frombytes("L", (w2, h2), bytes(data2))
+            except Exception:
+                img2 = thr
+        try:
+            for psm_try in (10, 8):
+                txt2, _c2 = _tess_ocr_crop_tsv(img2, lang="eng", psm=int(psm_try), allowlist="<>", numeric_mode=False)
+                m = re.search(r"[<>]", (txt2 or ""))
+                if m:
+                    return m.group(0)
+        except Exception:
+            pass
+        return None
+
+    if bands >= 2:
+        # '≤' / '≥' contain two horizontal bars like '=', so also look for the
+        # direction stroke after masking bar rows.
+        d = _infer_dir(mask_bars=True)
+        if d in ("<", ">"):
+            return f"{d}="
+        return "="
+    if bands == 1:
+        d = _infer_dir(mask_bars=True)
+        if d in ("<", ">"):
+            return f"{d}="
+    if bands == 0:
+        d = _infer_dir(mask_bars=False)
+        if d in ("<", ">"):
+            return d
+    return None
+
+
+def _normalize_requirement_leading_operator_from_tokens(
+    pdf_path: Path,
+    page: int,
+    dpi: int,
+    cell_text: str,
+    tokens_art: Optional[List[Dict[str, object]]],
+    token_ids: Optional[List[int]],
+) -> str:
+    """If a requirement cell begins with a relop, normalize it using glyph inspection."""
+    s = str(cell_text or "").strip()
+    if not s:
+        return s
+    m0 = re.match(r"^(<=|>=|<|>|=)\s*", s)
+    if not m0:
+        return s
+    if tokens_art is None or not token_ids:
+        return s
+    op_tok = None
+    num_tok = None
+    for tid in token_ids:
+        if not (isinstance(tid, int) and 0 <= tid < len(tokens_art)):
+            continue
+        t = tokens_art[tid]
+        if not isinstance(t, dict):
+            continue
+        tt = str(t.get("text") or "").strip()
+        if op_tok is None and tt in ("=", "<", ">"):
+            op_tok = t
+        if num_tok is None and re.search(r"\d", tt):
+            num_tok = t
+        if op_tok is not None and num_tok is not None:
+            break
+    if op_tok is None or num_tok is None:
+        return s
+    op = _infer_requirement_relop_from_glyph(pdf_path, page, dpi, op_tok, num_tok)
+    if not op or op == m0.group(1):
+        return s
+    try:
+        return (re.sub(r"^(<=|>=|<|>|=)\s*", f"{op} ", s)).strip()
+    except Exception:
+        return s
+
 def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lang: str, base_label: str, tables: Optional[List[Dict[str, object]]] = None) -> Tuple[List[Dict[str, float]], str]:
     """Re-OCR low-confidence tokens with region-aware Tesseract settings."""
     if not tokens or not img_path.exists():
@@ -1971,6 +2178,9 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         t = str(s).strip()
         if not t:
             return None
+        if kind == "op":
+            m = re.search(r"[<=>]", t)
+            return m.group(0) if m else None
         if kind == "numeric":
             # Extract a clean numeric/range fragment from noisy cell OCR.
             m = re.search(r"[-+]?\d+(?:\.\d+)?(?:\s*(?:\u00b1|\\+|-)\s*\d+(?:\.\d+)?)?", t)
@@ -1980,23 +2190,41 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             m = re.search(r"\b\d+\b", t)
             if m:
                 return m.group(0)
+        if kind == "unit":
+            # Prefer known unit tokens when the crop contains extra junk (e.g. "$s", "Ss").
+            try:
+                u = extract_units(t)
+            except Exception:
+                u = None
+            if u:
+                return str(u).strip()
         return t
 
     def _valid(kind: str, s: str) -> bool:
         s = (s or "").strip()
         if not s:
             return False
+        if kind == "op":
+            return s in ("<", ">", "=")
         if kind == "page":
             return s.isdigit()
         if kind == "numeric":
             return bool(re.search(r"\d", s))
         if kind == "unit":
+            # Currency symbols should never appear in units; treat as invalid so re-OCR can repair
+            # common misreads like "$s" -> "s".
+            if any(ch in s for ch in ("$", "€", "£", "¥", "¢")):
+                return False
             try:
                 u = extract_units(s) or s
                 return bool(normalize_unit_token(u))
             except Exception:
                 return bool(re.search(r"[A-Za-zΩµμ]", s))
         if kind in ("term", "quality", "label"):
+            # "$s" is a common unit-column artifact; treat currency+letters (no digits) as invalid
+            # so retries that remove the currency symbol can be accepted.
+            if any(ch in s for ch in ("$", "€", "£", "¥", "¢")) and re.search(r"[A-Za-z]", s) and not re.search(r"\d", s):
+                return False
             return bool(re.search(r"[A-Za-z0-9]", s))
         return True
 
@@ -2123,7 +2351,24 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
                     except Exception:
                         pass
 
-    for tok in tokens:
+    def _retry_priority(tok: Dict[str, float]) -> Tuple[int, float]:
+        """Lower sorts earlier; prioritize suspicious tokens before exhausting retry budget."""
+        try:
+            conf = float(tok.get("conf", 0.0))
+        except Exception:
+            conf = 0.0
+        try:
+            txt = str(tok.get("text") or "")
+        except Exception:
+            txt = ""
+        pri = 0
+        if any(ch in txt for ch in ("$", "€", "£", "¥", "¢")):
+            pri -= 10
+        if txt.strip() in ("=", "<", ">"):
+            pri -= 6
+        return pri, conf
+
+    for tok in sorted(tokens, key=_retry_priority):
         if attempted >= max_retry:
             break
         try:
@@ -2138,6 +2383,9 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             txt = ""
         ctx = _table_context_for_token(tok, tables)
         kind = (str(ctx.get("kind")) if isinstance(ctx, dict) else "") or _classify_token_kind_for_retry(txt)
+        # Operators inside numeric columns should be retried as operators, not as numeric cell OCR.
+        if kind == "numeric" and txt and not re.search(r"\d", txt):
+            kind = "op" if txt.strip() in ("=", "<", ">") else "label"
         if kind == "other" and conf > 0.7:
             continue
         try:
@@ -2148,13 +2396,14 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         except Exception:
             continue
         # Prefer full cell crops when we know the table cell bounds; otherwise crop just the token bbox.
-        if isinstance(ctx, dict) and isinstance(ctx.get("cell_bbox_px"), tuple):
+        # Avoid cell-wide crops for short/operator/term tokens; they tend to re-OCR the whole cell and create duplicates.
+        if isinstance(ctx, dict) and isinstance(ctx.get("cell_bbox_px"), tuple) and kind in ("numeric", "unit", "page", "quality", "desc", "notes"):
             try:
                 cx0, cy0, cx1, cy1 = ctx.get("cell_bbox_px")  # type: ignore[misc]
                 x0, y0, x1, y1 = float(cx0), float(cy0), float(cx1), float(cy1)
             except Exception:
                 pass
-        pad = 4.0 if kind in ("numeric", "unit", "page", "term", "quality") else 2.0
+        pad = 4.0 if kind in ("numeric", "unit", "page", "term", "quality", "op") else 2.0
         x0p = max(0, int(_math.floor(x0 - pad)))
         y0p = max(0, int(_math.floor(y0 - pad)))
         x1p = min(w, int(_math.ceil(x1 + pad)))
@@ -2165,6 +2414,8 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
 
         # Intentional settings per region type.
         psm_base = 7
+        if kind == "op":
+            psm_base = 10
         if kind in ("desc", "notes"):
             psm_base = 6
         if kind in ("numeric", "page"):
@@ -2172,6 +2423,8 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         elif kind == "unit":
             # Keep allowlist ASCII-only; unicode symbols (Ω/µ/±) are normalized downstream.
             allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/%ohmu.-"
+        elif kind == "op":
+            allow = "<=>"
         elif kind in ("label", "term", "quality"):
             allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_#-/:."
         else:
@@ -2186,6 +2439,8 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         psms = [psm_base]
         if psm_base == 7:
             psms.append(8)  # single word can help for short cells
+        if psm_base == 10:
+            psms.append(8)
         variants = _prep_variants(crop, kind)
         for tag, img_var in variants:
             for psm_try in psms:
@@ -4467,6 +4722,189 @@ def _assemble_page_debug_json(
             except Exception:
                 continue
 
+    # Cleanup common OCR artifacts in tables (header spillover / 1-char suffixes / duplicate tokens).
+    def _dedupe_adjacent(seq: List[str]) -> List[str]:
+        out: List[str] = []
+        prev = None
+        for x in seq:
+            s = str(x or "").strip()
+            if not s:
+                continue
+            if prev is not None and s == prev:
+                continue
+            out.append(s)
+            prev = s
+        return out
+
+    def _clean_header_cell_text(s: str) -> str:
+        t = re.sub(r"\s+", " ", str(s or "").strip())
+        if not t:
+            return t
+        # Remove spurious single-letter suffixes created by header reconstruction.
+        t = re.sub(r"\b(Description|Requirement|Page)\s+[PqgΩµμ]\b$", r"\1", t, flags=re.IGNORECASE)
+        # Clean stray punctuation between words (e.g. "Data ; Quality").
+        t = re.sub(r"\bData\s*;\s*Quality\b", "Data Quality", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
+    def _cleanup_table(tb: Dict[str, object]) -> None:
+        # Header cells
+        try:
+            hc = tb.get("header_cells")
+            if isinstance(hc, list) and hc:
+                tb["header_cells"] = [_clean_header_cell_text(str(x or "")) for x in hc]
+        except Exception:
+            pass
+        # Identify free-text columns where adjacent-word de-dupe is safe/helpful.
+        try:
+            header_cells = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+        except Exception:
+            header_cells = []
+        desc_idx = None
+        notes_idx = None
+        try:
+            for i, h in enumerate(header_cells):
+                hn = _normalize_anchor_token(str(h or ""))
+                if desc_idx is None and hn == _normalize_anchor_token("Description"):
+                    desc_idx = i
+                if notes_idx is None and hn == _normalize_anchor_token("Notes"):
+                    notes_idx = i
+        except Exception:
+            desc_idx = None
+            notes_idx = None
+
+        def _dedupe_adjacent_words_text(s: str) -> str:
+            t = re.sub(r"\s+", " ", str(s or "").strip())
+            if not t:
+                return t
+            parts = [p for p in t.split(" ") if p]
+            if len(parts) < 2:
+                return t
+            out: List[str] = []
+            prev = None
+            for p in parts:
+                key = p.lower()
+                if prev is not None and key == prev:
+                    continue
+                out.append(p)
+                prev = key
+            return " ".join(out).strip()
+
+        # Rows
+        rows = tb.get("rows")
+        if not isinstance(rows, list):
+            return
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            ct = r.get("cells_text")
+            cts = r.get("cells_tokens")
+            cids = r.get("cells_token_ids")
+            if not isinstance(ct, list):
+                continue
+            if isinstance(cts, list):
+                # De-dupe repeated tokens (token list is X-ordered and may lose multiline order),
+                # but keep the existing cells_text assembled from bbox-aware token grouping.
+                for i, cell_tokens in enumerate(cts):
+                    if not isinstance(cell_tokens, list):
+                        continue
+                    ded = _dedupe_adjacent([str(x or "") for x in cell_tokens])
+                    # Term column: drop leading single-letter junk (e.g. "a ignition_delay").
+                    if i == 0 and len(ded) == 2 and len(ded[0]) == 1 and "_" in ded[1]:
+                        ded = [ded[1]]
+                        try:
+                            if isinstance(cids, list) and i < len(cids) and isinstance(cids[i], list) and len(cids[i]) == 2:
+                                cids[i] = [cids[i][1]]
+                        except Exception:
+                            pass
+                        try:
+                            if i < len(ct):
+                                ct[i] = ded[0]
+                        except Exception:
+                            pass
+                    cts[i] = ded
+                r["cells_tokens"] = cts
+                # Light cleanup on known free-text columns.
+                try:
+                    if desc_idx is not None and desc_idx < len(ct):
+                        ct[desc_idx] = _dedupe_adjacent_words_text(str(ct[desc_idx] or ""))
+                    if notes_idx is not None and notes_idx < len(ct):
+                        ct[notes_idx] = _dedupe_adjacent_words_text(str(ct[notes_idx] or ""))
+                except Exception:
+                    pass
+                r["cells_text"] = ct
+                try:
+                    r["row_text_cells"] = " | ".join(str(x or "").strip() for x in ct)
+                except Exception:
+                    pass
+            else:
+                # Best-effort text cleanup when tokens aren't available.
+                try:
+                    r["cells_text"] = [_clean_header_cell_text(str(x or "")) for x in ct]
+                except Exception:
+                    pass
+
+    for tb in assembled_tables:
+        if isinstance(tb, dict):
+            _cleanup_table(tb)
+
+    # Normalize requirement operator glyphs inside table cells (e.g. '=' -> '<=' or '>=')
+    # using a tiny crop from the rendered PDF. This keeps the debug artifacts and flow search
+    # surface consistent with extraction-time normalization.
+    try:
+        enable_req_glyph_norm = (os.environ.get("OCR_NORMALIZE_REQUIREMENT_GLYPH") or "").strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
+    except Exception:
+        enable_req_glyph_norm = True
+
+    if enable_req_glyph_norm:
+        for tb in assembled_tables:
+            if not isinstance(tb, dict):
+                continue
+            headers = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+            if not headers:
+                continue
+            req_idx = None
+            for i, hdr in enumerate(headers):
+                if _normalize_anchor_token(str(hdr or "")) == _normalize_anchor_token("Requirement"):
+                    req_idx = i
+                    break
+            if req_idx is None:
+                continue
+            rows = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                ct = r.get("cells_text")
+                if not (isinstance(ct, list) and req_idx < len(ct)):
+                    continue
+                cell = str(ct[req_idx] or "").strip()
+                if not cell.startswith("="):
+                    continue
+                token_ids = None
+                try:
+                    ids = r.get("cells_token_ids")
+                    if isinstance(ids, list) and req_idx < len(ids) and isinstance(ids[req_idx], list):
+                        token_ids = [int(v) for v in ids[req_idx] if isinstance(v, (int, float))]
+                except Exception:
+                    token_ids = None
+                new_cell = _normalize_requirement_leading_operator_from_tokens(pdf_path, page, dpi, cell, tokens, token_ids)
+                if new_cell and new_cell != cell:
+                    ct[req_idx] = new_cell
+                    r["cells_text"] = ct
+                    try:
+                        cts = r.get("cells_tokens")
+                        if isinstance(cts, list) and req_idx < len(cts) and isinstance(cts[req_idx], list) and cts[req_idx]:
+                            # Keep tokens roughly aligned with the updated leading operator.
+                            if str(cts[req_idx][0] or "").strip() in ("=", "<", ">"):
+                                cts[req_idx][0] = str(new_cell.split()[0]).strip()
+                            r["cells_tokens"] = cts
+                    except Exception:
+                        pass
+                    try:
+                        r["row_text_cells"] = " | ".join(str(x or "").strip() for x in ct)
+                    except Exception:
+                        pass
+
     elements: List[Dict[str, object]] = []
     for t in assembled_tables:
         elements.append({"type": "table", "bbox_px": t.get("bbox_px"), "table": t})
@@ -4611,6 +5049,107 @@ def _assemble_page_debug_json(
                         continue
             merged_flow.append(el)
         flow = merged_flow
+    except Exception:
+        pass
+
+    # Drop redundant TOC-like bullet blocks at the top of the page.
+    def _strip_toc_like(items: List[Dict[str, object]]) -> List[Dict[str, object]]:
+        try:
+            text_items = [it for it in items if isinstance(it, dict) and str(it.get("type") or "") == "text" and str(it.get("text") or "").strip()]
+        except Exception:
+            return items
+        if len(text_items) < 6:
+            return items
+
+        def _bbox(it: Dict[str, object]) -> Optional[Tuple[float, float, float, float]]:
+            bb = it.get("bbox_px")
+            if isinstance(bb, (tuple, list)) and len(bb) == 4:
+                try:
+                    return (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                except Exception:
+                    return None
+            return None
+
+        def _h(it: Dict[str, object]) -> float:
+            bb = _bbox(it)
+            if not bb:
+                return 0.0
+            return max(0.0, bb[3] - bb[1])
+
+        def _strip_prefix(s: str) -> str:
+            t = str(s or "").strip()
+            if not t:
+                return t
+            # Common bullet glyph misreads in OCR exports.
+            t2 = re.sub(r"^(?:[•·*«›]|Ž|ž)\s+", "", t)
+            t2 = re.sub(r"^[eE]\s+(?=[A-Z0-9])", "", t2)
+            return t2.strip()
+
+        def _norm(s: str) -> str:
+            t = _strip_prefix(s)
+            t = re.sub(r"[^A-Za-z0-9]+", " ", t).strip().lower()
+            t = re.sub(r"\s+", " ", t)
+            return t
+
+        # Identify the first "large" title-like line.
+        try:
+            hs = sorted([_h(it) for it in text_items if _h(it) > 0.0])
+            med_h = hs[len(hs) // 2] if hs else 12.0
+        except Exception:
+            med_h = 12.0
+        big_thresh = max(60.0, float(med_h) * 2.2)
+        title_bb = None
+        for it in sorted(text_items, key=lambda x: (_bbox(x) or (0.0, 0.0, 0.0, 0.0))[1]):
+            bb = _bbox(it)
+            if not bb:
+                continue
+            if _h(it) >= big_thresh:
+                title_bb = bb
+                break
+        if not title_bb:
+            return items
+        title_y0 = float(title_bb[1])
+
+        # Candidate TOC entries are bullet-like and occur before the main title.
+        toc = []
+        for it in text_items:
+            bb = _bbox(it)
+            if not bb:
+                continue
+            if float(bb[3]) > title_y0 + 2.0:
+                continue
+            txt = str(it.get("text") or "")
+            if _strip_prefix(txt) == txt.strip():
+                continue
+            toc.append(it)
+        if len(toc) < 4:
+            return items
+
+        later_norms = {_norm(str(it.get("text") or "")) for it in text_items if (_bbox(it) or (0.0, 0.0, 0.0, 0.0))[1] >= title_y0 - 2.0}
+        matches = 0
+        for it in toc:
+            n = _norm(str(it.get("text") or ""))
+            if n and n in later_norms:
+                matches += 1
+        if matches < 2:
+            return items
+
+        drop_keys = {(str(it.get("text") or "").strip(), _bbox(it)) for it in toc}
+        out: List[Dict[str, object]] = []
+        for it in items:
+            if not isinstance(it, dict) or str(it.get("type") or "") != "text":
+                out.append(it)
+                continue
+            bb = _bbox(it)
+            key = (str(it.get("text") or "").strip(), bb)
+            if key in drop_keys:
+                continue
+            out.append(it)
+        return out
+
+    try:
+        flow = _strip_toc_like(flow)
+        elements = _strip_toc_like(elements)
     except Exception:
         pass
 
@@ -11309,28 +11848,44 @@ def _scan_pdf_for_term_smart_flow(
 
                         if value_idx is None:
                             continue
-                        cell_text = str(cells[value_idx] or "").strip()
-                        if not cell_text:
-                            continue
-                        if fmt_pat and not fmt_pat.search(cell_text):
-                            continue
-                        units_value = None
-                        val = _extract_from_line(label_text, cell_text, smart_kind)
-                        if not val:
-                            continue
-                        cand_units = units_value
-
                         token_ids = None
                         cells_token_ids = row.get("cells_token_ids") if isinstance(row.get("cells_token_ids"), list) else None
                         if isinstance(cells_token_ids, list) and value_idx < len(cells_token_ids) and isinstance(cells_token_ids[value_idx], list):
                             token_ids = [int(v) for v in cells_token_ids[value_idx] if isinstance(v, (int, float))]
                         token_conf = _mean_token_conf(tokens_art, token_ids) if (tokens_art and token_ids) else None
 
+                        cell_text = str(cells[value_idx] or "").strip()
+                        if not cell_text:
+                            continue
+                        # Requirement-style glyph refinement (e.g. '=' -> '<=' when the PDF glyph is '≤').
+                        try:
+                            cell_text = _normalize_requirement_leading_operator_from_tokens(pdf_path, p, int(dpi), cell_text, tokens_art, token_ids)
+                        except Exception:
+                            pass
+                        # Detect the smart kind from the selected value cell (join_right may include other
+                        # numeric/time-like cells and misclassify the type).
+                        try:
+                            smart_kind_val = _detect_smart_type(spec.smart_snap_type, cell_text)
+                        except Exception:
+                            smart_kind_val = smart_kind
+                        if fmt_pat and not fmt_pat.search(cell_text):
+                            continue
+                        units_value = None
+                        val = _extract_from_line(label_text, cell_text, smart_kind_val)
+                        if not val:
+                            continue
+                        try:
+                            if isinstance(val, str) and re.match(r"^(<=|>=|<|>|=)\\s*", val.strip()):
+                                val = _normalize_requirement_leading_operator_from_tokens(pdf_path, p, int(dpi), val, tokens_art, token_ids)
+                        except Exception:
+                            pass
+                        cand_units = units_value
+
                         order_key = (p, float(row_y0 or 0.0), order_idx + ridx + 1)
                         if best_info is None or label_score > best_score or (label_score == best_score and (best_order is None or order_key < best_order)):
                             best_score = label_score
                             best_order = order_key
-                            best_info = (p, label_text, cell_text, val, smart_kind, token_ids, smart_pos_used, label_text)
+                            best_info = (p, label_text, cell_text, val, smart_kind_val, token_ids, smart_pos_used, label_text)
                             best_dpi = dpi
                             best_token_conf = token_conf
                             best_units_value = cand_units
@@ -11405,6 +11960,229 @@ def _scan_pdf_for_term_xy_flow(
     window_chars: int,
     case_sensitive: bool,
 ) -> Optional[MatchResult]:
+    def _page_image_cached(pdf_path: Path, page: int, dpi: int):
+        """Render PDF page to a PIL image (memoized) for small semantic-fix crops."""
+        try:
+            from PIL import Image as _Image  # type: ignore
+        except Exception:
+            return None
+        try:
+            import io as _io
+        except Exception:
+            return None
+        try:
+            key = (_pdf_cache_key(pdf_path), int(page), int(dpi))
+        except Exception:
+            key = None
+        try:
+            cache = globals().setdefault("_PAGE_IMAGE_CACHE", {})
+        except Exception:
+            cache = {}
+        if key is not None and key in cache:
+            return cache.get(key)
+        if not _HAVE_PYMUPDF:
+            return None
+        try:
+            doc_local = fitz.open(str(pdf_path))  # type: ignore[name-defined]
+            pg = doc_local.load_page(int(page) - 1)
+            pix = pg.get_pixmap(dpi=max(200, min(2000, int(dpi))))
+            img = _Image.open(_io.BytesIO(pix.tobytes("png"))).convert("RGB")
+        except Exception:
+            try:
+                doc_local.close()  # type: ignore[has-type]
+            except Exception:
+                pass
+            return None
+        try:
+            doc_local.close()
+        except Exception:
+            pass
+        if key is not None:
+            try:
+                # Small bounded cache
+                if len(cache) > 8:
+                    cache.pop(next(iter(cache.keys())), None)
+                cache[key] = img
+            except Exception:
+                pass
+        return img
+
+    def _infer_requirement_operator(pdf_path: Path, page: int, dpi: int, op_tok: Dict[str, object], num_tok: Dict[str, object]) -> Optional[str]:
+        """Infer whether a requirement operator is <, >, =, <=, or >= from the rendered glyph."""
+        try:
+            from PIL import ImageOps as _ImageOps  # type: ignore
+        except Exception:
+            return None
+        img = _page_image_cached(pdf_path, page, dpi)
+        if img is None:
+            return None
+        try:
+            op_x0, op_y0, op_x1, op_y1 = (float(op_tok.get("x0", 0.0)), float(op_tok.get("y0", 0.0)), float(op_tok.get("x1", 0.0)), float(op_tok.get("y1", 0.0)))
+            n_x0, n_y0, n_x1, n_y1 = (float(num_tok.get("x0", 0.0)), float(num_tok.get("y0", 0.0)), float(num_tok.get("x1", 0.0)), float(num_tok.get("y1", 0.0)))
+        except Exception:
+            return None
+        if op_x1 <= op_x0 or op_y1 <= op_y0:
+            return None
+        try:
+            pad_x = max(12.0, 1.4 * (op_x1 - op_x0))
+            pad_y = max(12.0, 0.9 * (op_y1 - op_y0))
+            x0 = max(0.0, op_x0 - pad_x)
+            x1 = min(float(img.size[0]), op_x1 + pad_x)
+            # Avoid pulling in the number glyph, which can confuse the bar detector.
+            if n_x0 > op_x1 + 2.0:
+                x1 = min(x1, max(x0 + 6.0, n_x0 - 2.0))
+            y0 = max(0.0, min(op_y0, n_y0) - pad_y)
+            y1 = min(float(img.size[1]), max(op_y1, n_y1) + pad_y)
+        except Exception:
+            return None
+        try:
+            crop = img.crop((int(x0), int(y0), int(x1), int(y1)))
+        except Exception:
+            return None
+        if crop.size[0] <= 2 or crop.size[1] <= 2:
+            return None
+
+        # Preprocess: scale up and binarize.
+        try:
+            crop2 = crop.resize((int(crop.size[0] * 4), int(crop.size[1] * 4)))
+        except Exception:
+            crop2 = crop
+        try:
+            g = _ImageOps.autocontrast(crop2.convert("L"))
+            thr = g.point(lambda p: 255 if p > 160 else 0, mode="1").convert("L")
+        except Exception:
+            return None
+
+        # Count horizontal "bar" bands in the thresholded crop.
+        bar_band: Optional[Tuple[int, int]] = None
+        try:
+            w, h = thr.size
+            data = thr.tobytes()
+            frac = []
+            for yy in range(h):
+                row = data[yy * w : (yy + 1) * w]
+                frac.append(float(row.count(0)) / max(1.0, float(w)))
+            # The operator crop often contains lots of whitespace, so the '=' bar may only cover
+            # ~20–30% of the crop width; use a lower threshold than typical line detection.
+            strong = [f > 0.22 for f in frac]
+            bands = 0
+            i = 0
+            while i < h:
+                if not strong[i]:
+                    i += 1
+                    continue
+                j = i
+                while j < h and strong[j]:
+                    j += 1
+                if (j - i) >= 2:
+                    bands += 1
+                    # Choose the widest strong band as the '=' bar band.
+                    if bar_band is None or (j - i) > (bar_band[1] - bar_band[0]):
+                        bar_band = (i, j)
+                i = j
+        except Exception:
+            bands = 0
+            bar_band = None
+
+        def _infer_dir_from_glyph(exclude_bar: bool) -> Optional[str]:
+            # Prefer OCR-based direction (on a small, binarized crop) for robustness.
+            try:
+                img2 = thr
+                if exclude_bar and bar_band is not None:
+                    try:
+                        w2, h2 = thr.size
+                        y_max = max(0, int(bar_band[0]) - 2)
+                        if y_max > 2:
+                            img2 = thr.crop((0, 0, w2, y_max))
+                    except Exception:
+                        img2 = thr
+                for psm_try in (10, 8):
+                    txt2, _c2 = _tess_ocr_crop_tsv(img2, lang="eng", psm=int(psm_try), allowlist="<>", numeric_mode=False)
+                    m = re.search(r"[<>]", (txt2 or ""))
+                    if m:
+                        return m.group(0)
+            except Exception:
+                pass
+
+            # Fallback: compare left/right ink.
+            try:
+                w2, h2 = thr.size
+                data2 = thr.tobytes()
+                half = max(1, w2 // 2)
+                y_max = h2
+                if exclude_bar and bar_band is not None:
+                    y_max = max(0, int(bar_band[0]) - 2)
+                if y_max <= 2:
+                    return None
+                left = 0
+                right = 0
+                for yy in range(0, y_max):
+                    row = data2[yy * w2 : (yy + 1) * w2]
+                    left += row[:half].count(0)
+                    right += row[half:].count(0)
+                if left == 0 and right == 0:
+                    return None
+                return "<" if left >= right else ">"
+            except Exception:
+                return None
+
+        # Interpret bars:
+        # - 2+ bands => '='
+        # - 1 band   => '≤' or '≥' (normalize to '<=' / '>=')
+        # - 0 bands  => '<' or '>' (rare, but prefer over '=')
+        if bands >= 2:
+            return "="
+        if bands == 1:
+            dir_ch = _infer_dir_from_glyph(exclude_bar=True)
+            if dir_ch in ("<", ">"):
+                return f"{dir_ch}="
+        if bands == 0:
+            dir_ch = _infer_dir_from_glyph(exclude_bar=False)
+            if dir_ch in ("<", ">"):
+                return dir_ch
+        return None
+
+    def _maybe_normalize_requirement_cell(pdf_path: Path, page: int, dpi: int, header_text: str, cell_text: str, tokens_art: Optional[List[Dict[str, object]]], token_ids: List[int]) -> str:
+        """Normalize requirement operators (= -> <=/>=) when the rendered glyph indicates it."""
+        try:
+            if _normalize_anchor_token(header_text) != _normalize_anchor_token("Requirement"):
+                return cell_text
+        except Exception:
+            return cell_text
+        s = (cell_text or "").strip()
+        if not s.startswith("="):
+            return cell_text
+        if tokens_art is None or not token_ids:
+            return cell_text
+        toks = []
+        for tid in token_ids:
+            if isinstance(tid, int) and 0 <= tid < len(tokens_art) and isinstance(tokens_art[tid], dict):
+                toks.append(tokens_art[tid])
+        if not toks:
+            return cell_text
+        op_tok = None
+        num_tok = None
+        for t in toks:
+            tt = str(t.get("text") or "").strip()
+            if op_tok is None and tt in ("=", "<", ">"):
+                op_tok = t
+            if num_tok is None and re.search(r"\d", tt):
+                num_tok = t
+            if op_tok is not None and num_tok is not None:
+                break
+        if op_tok is None or num_tok is None:
+            return cell_text
+        op = _infer_requirement_operator(pdf_path, page, dpi, op_tok, num_tok)
+        if not op or op == "=":
+            return cell_text
+        try:
+            rest = re.sub(r"^\s*=\s*", "", s).strip()
+            if not rest:
+                return cell_text
+            return f"{op} {rest}".strip()
+        except Exception:
+            return cell_text
+
     row_name = (spec.line or spec.term or "").strip()
     col_raw = (spec.column or "").strip()
     col_alts = [s.strip() for s in re.split(r"[|/]", col_raw) if s.strip()] or [col_raw]
@@ -11580,6 +12358,12 @@ def _scan_pdf_for_term_xy_flow(
             header_text = str(best_tb.get("header_cells")[col_idx] or "") if isinstance(best_tb.get("header_cells"), list) and col_idx < len(best_tb.get("header_cells")) else (col_raw or "")
 
             if ret_type == "string":
+                try:
+                    value_out = _maybe_normalize_requirement_cell(pdf_path, p, int(dpi), header_text, value_out, tokens_art, token_ids)
+                    if value_out != cell_text:
+                        context_snippet = "row='{}' col='{}' value='{}'".format(row_label, header_text, value_out)
+                except Exception:
+                    pass
                 if doc:
                     try:
                         doc.close()

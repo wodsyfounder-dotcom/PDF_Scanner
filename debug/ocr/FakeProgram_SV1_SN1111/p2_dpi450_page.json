@@ -3,7 +3,7 @@
   "page": 2,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -62,7 +62,7 @@
           "Measured Value",
           "Units",
           "Page",
-          "Data ; Quality",
+          "Data Quality",
           "Notes"
         ],
         "rows": [
@@ -73,18 +73,18 @@
               1010.5
             ],
             "cells_text": [
-              "isp",
+              "=P",
               "Steady-state specific",
               "43 \u00b1 3",
               "39.4",
-              "sec",
+              "see",
               "5",
               "Low",
               "flagged low but inside tolerance"
             ],
             "cells_tokens": [
               [
-                "isp"
+                "=P"
               ],
               [
                 "Steady-",
@@ -99,7 +99,7 @@
                 "39.4"
               ],
               [
-                "sec"
+                "see"
               ],
               [
                 "5"
@@ -165,7 +165,7 @@
               23,
               25
             ],
-            "row_text_cells": "isp | Steady-state specific | 43 \u00b1 3 | 39.4 | sec | 5 | Low | flagged low but inside tolerance",
+            "row_text_cells": "=P | Steady-state specific | 43 \u00b1 3 | 39.4 | see | 5 | Low | flagged low but inside tolerance",
             "cells_kind": [
               "string",
               "string",
@@ -185,7 +185,7 @@
             ],
             "cells_text": [
               "chamber_pressure",
-              "Mean ssure",
+              "Mean P,,",
               "185 + 10",
               "201",
               "psia",
@@ -199,7 +199,7 @@
               ],
               [
                 "Mean",
-                "ssure"
+                "P,,"
               ],
               [
                 "185",
@@ -279,7 +279,7 @@
               42,
               43
             ],
-            "row_text_cells": "chamber_pressure | Mean ssure | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
+            "row_text_cells": "chamber_pressure | Mean P,, | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
               "string",
               "string",
@@ -298,20 +298,20 @@
               1768.5
             ],
             "cells_text": [
-              "burn_duratior burn_duration ~",
+              "on burn_duration ~",
               "Hot-fire duration",
               "42-48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN ~",
-              "use to rors test _ textual statuses"
+              "NOT_RUN NOT_RUN",
+              "use to statuses test statuses textual statuses"
             ],
             "cells_tokens": [
               [
                 "burn_duration",
                 "~",
-                "burn_duratior"
+                "on"
               ],
               [
                 "duration",
@@ -332,16 +332,15 @@
                 "6"
               ],
               [
-                "NOT_RUN",
-                "~"
+                "NOT_RUN"
               ],
               [
-                "_",
+                "statuses",
                 "use",
                 "textual",
                 "statuses",
                 "to",
-                "rors",
+                "statuses",
                 "test"
               ]
             ],
@@ -405,7 +404,7 @@
               62,
               63
             ],
-            "row_text_cells": "burn_duratior burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN ~ | use to rors test _ textual statuses",
+            "row_text_cells": "on burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN NOT_RUN | use to statuses test statuses textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -431,7 +430,7 @@
               "Q",
               "8",
               "FAIL",
-              "triggers gg out-of-range numeric failure"
+              "triggers numeric out-of-range numeric failure numeric"
             ],
             "cells_tokens": [
               [
@@ -462,7 +461,6 @@
                 "triggers",
                 "of-range",
                 "numeric",
-                "gg",
                 "out-"
               ]
             ],
@@ -496,6 +494,7 @@
                 68,
                 76,
                 67,
+                78,
                 65
               ]
             ],
@@ -517,7 +516,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers gg out-of-range numeric failure",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers numeric out-of-range numeric failure numeric",
             "cells_kind": [
               "string",
               "string",
@@ -1376,7 +1375,7 @@
           "Measured Value",
           "Units",
           "Page",
-          "Data ; Quality",
+          "Data Quality",
           "Notes"
         ],
         "rows": [
@@ -1387,18 +1386,18 @@
               1010.5
             ],
             "cells_text": [
-              "isp",
+              "=P",
               "Steady-state specific",
               "43 \u00b1 3",
               "39.4",
-              "sec",
+              "see",
               "5",
               "Low",
               "flagged low but inside tolerance"
             ],
             "cells_tokens": [
               [
-                "isp"
+                "=P"
               ],
               [
                 "Steady-",
@@ -1413,7 +1412,7 @@
                 "39.4"
               ],
               [
-                "sec"
+                "see"
               ],
               [
                 "5"
@@ -1479,7 +1478,7 @@
               23,
               25
             ],
-            "row_text_cells": "isp | Steady-state specific | 43 \u00b1 3 | 39.4 | sec | 5 | Low | flagged low but inside tolerance",
+            "row_text_cells": "=P | Steady-state specific | 43 \u00b1 3 | 39.4 | see | 5 | Low | flagged low but inside tolerance",
             "cells_kind": [
               "string",
               "string",
@@ -1499,7 +1498,7 @@
             ],
             "cells_text": [
               "chamber_pressure",
-              "Mean ssure",
+              "Mean P,,",
               "185 + 10",
               "201",
               "psia",
@@ -1513,7 +1512,7 @@
               ],
               [
                 "Mean",
-                "ssure"
+                "P,,"
               ],
               [
                 "185",
@@ -1593,7 +1592,7 @@
               42,
               43
             ],
-            "row_text_cells": "chamber_pressure | Mean ssure | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
+            "row_text_cells": "chamber_pressure | Mean P,, | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
               "string",
               "string",
@@ -1612,20 +1611,20 @@
               1768.5
             ],
             "cells_text": [
-              "burn_duratior burn_duration ~",
+              "on burn_duration ~",
               "Hot-fire duration",
               "42-48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN ~",
-              "use to rors test _ textual statuses"
+              "NOT_RUN NOT_RUN",
+              "use to statuses test statuses textual statuses"
             ],
             "cells_tokens": [
               [
                 "burn_duration",
                 "~",
-                "burn_duratior"
+                "on"
               ],
               [
                 "duration",
@@ -1646,16 +1645,15 @@
                 "6"
               ],
               [
-                "NOT_RUN",
-                "~"
+                "NOT_RUN"
               ],
               [
-                "_",
+                "statuses",
                 "use",
                 "textual",
                 "statuses",
                 "to",
-                "rors",
+                "statuses",
                 "test"
               ]
             ],
@@ -1719,7 +1717,7 @@
               62,
               63
             ],
-            "row_text_cells": "burn_duratior burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN ~ | use to rors test _ textual statuses",
+            "row_text_cells": "on burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN NOT_RUN | use to statuses test statuses textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -1745,7 +1743,7 @@
               "Q",
               "8",
               "FAIL",
-              "triggers gg out-of-range numeric failure"
+              "triggers numeric out-of-range numeric failure numeric"
             ],
             "cells_tokens": [
               [
@@ -1776,7 +1774,6 @@
                 "triggers",
                 "of-range",
                 "numeric",
-                "gg",
                 "out-"
               ]
             ],
@@ -1810,6 +1807,7 @@
                 68,
                 76,
                 67,
+                78,
                 65
               ]
             ],
@@ -1831,7 +1829,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers gg out-of-range numeric failure",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers numeric out-of-range numeric failure numeric",
             "cells_kind": [
               "string",
               "string",
