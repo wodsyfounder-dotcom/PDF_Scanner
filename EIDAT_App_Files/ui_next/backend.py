@@ -360,6 +360,18 @@ def extract_tables_by_keywords(pdf: Path, keywords: str, pages: str | None = Non
     return run_script("scripts/extract_tables_by_keywords.py", *args)
 
 
+def pre_ocr_merge_pdfs(paths: list[Path], out_root: Optional[Path] = None, dpi: Optional[int] = None) -> subprocess.Popen:
+    """Pre-OCR selected PDFs and write merged text artifacts (no extraction)."""
+    args: list[str] = []
+    for p in paths:
+        args += ["--pdf", str(Path(p))]
+    if out_root:
+        args += ["--out", str(Path(out_root))]
+    if dpi is not None:
+        args += ["--dpi", str(int(dpi))]
+    return run_script("scripts/pre_ocr_merge.py", *args)
+
+
 def open_path(p: Path) -> None:
     if sys.platform.startswith("win"):
         os.startfile(str(p))  # type: ignore[attr-defined]

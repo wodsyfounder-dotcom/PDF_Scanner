@@ -1,0 +1,4822 @@
+{
+  "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\EIDPs\\FakeProgram_SV1_SN1111.pdf",
+  "page": 1,
+  "dpi": 450,
+  "source": "merged",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(10/48)",
+  "lang": "eng+equ",
+  "psm": 4,
+  "img_w": 3825,
+  "img_h": 4950,
+  "elements": [
+    {
+      "type": "text",
+      "bbox_px": [
+        600.0,
+        505.0,
+        2055.0,
+        564.0
+      ],
+      "text": "Synthetic End ltem Data Package (Debug Reference)"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        675.0,
+        603.0,
+        1203.0,
+        649.0
+      ],
+      "text": "\u00ab Document Profile"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        741.0,
+        701.0,
+        1698.0,
+        760.0
+      ],
+      "text": "1. Functional Acceptance Snapshot"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        675.0,
+        796.0,
+        1429.0,
+        842.0
+      ],
+      "text": "\u00ab 2. Performance KPI Table"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        734.0,
+        895.0,
+        1691.0,
+        941.0
+      ],
+      "text": "3. Environmental Endurance Matrix"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        675.0,
+        996.0,
+        1452.0,
+        1042.0
+      ],
+      "text": "\u00ab 4. Calibration & Trim Table"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        675.0,
+        1095.0,
+        1419.0,
+        1154.0
+      ],
+      "text": "\u00ab 5 Anomaly & Waiver Log"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        734.0,
+        1193.0,
+        1587.0,
+        1252.0
+      ],
+      "text": "6. Attachment Index (Synthetic)"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        875.0,
+        1288.0,
+        1203.0,
+        1347.0
+      ],
+      "text": "Usage Hints"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        462.0,
+        1475.0,
+        2852.0,
+        1589.0
+      ],
+      "text": "synthetic End Item Data Package (Debug"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        469.0,
+        1622.0,
+        1092.0,
+        1737.0
+      ],
+      "text": "Reference)"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        459.0,
+        1891.0,
+        3180.0,
+        1950.0
+      ],
+      "text": "This document intentionally blends nominal, off-nominal, and incomplete data so the scanner can be"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        459.0,
+        1986.0,
+        3281.0,
+        2045.0
+      ],
+      "text": "exercised against a broad set of scenarios (duplicate terms, missing units, multi-value tables, etc.). Only"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        462.0,
+        2084.0,
+        1167.0,
+        2143.0
+      ],
+      "text": "synthetic values are used."
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        469.0,
+        2291.0,
+        1475.0,
+        2379.0
+      ],
+      "text": "Document Profile"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        498.0,
+        2595.0,
+        1249.0,
+        2641.0
+      ],
+      "text": "Field Value"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        459.0,
+        2689.0,
+        2344.0,
+        3682.0
+      ],
+      "table": {
+        "bbox_px": [
+          459.0,
+          2689.0,
+          2344.0,
+          3682.0
+        ],
+        "col_bounds_px": [
+          459.0,
+          862.0,
+          2344.0
+        ],
+        "header_cells": [
+          "Field",
+          "Value"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              2689.0,
+              2824.5
+            ],
+            "cells_text": [
+              "Program",
+              "Hyperion Dragonfly Propulsion Demo"
+            ],
+            "cells_tokens": [
+              [
+                "Program"
+              ],
+              [
+                "Hyperion",
+                "Dragonfly",
+                "Propulsion",
+                "Demo"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                90
+              ],
+              [
+                91,
+                92,
+                93,
+                94
+              ]
+            ],
+            "row_token_ids": [
+              90,
+              91,
+              92,
+              93,
+              94
+            ],
+            "row_text_cells": "Program | Hyperion Dragonfly Propulsion Demo",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              2824.5,
+              2962.5
+            ],
+            "cells_text": [
+              "Vehicle",
+              "SV3 (Block 2)"
+            ],
+            "cells_tokens": [
+              [
+                "Vehicle"
+              ],
+              [
+                "SV3",
+                "(Block",
+                "2)"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                95
+              ],
+              [
+                96,
+                97,
+                98
+              ]
+            ],
+            "row_token_ids": [
+              95,
+              96,
+              97,
+              98
+            ],
+            "row_text_cells": "Vehicle | SV3 (Block 2)",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              2962.5,
+              3100.0
+            ],
+            "cells_text": [
+              "Serial / Comp",
+              "SN42-AX"
+            ],
+            "cells_tokens": [
+              [
+                "Serial / Comp",
+                "/",
+                "Component"
+              ],
+              [
+                "SN42-AX"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                99,
+                100,
+                101
+              ],
+              [
+                102
+              ]
+            ],
+            "row_token_ids": [
+              99,
+              100,
+              101,
+              102
+            ],
+            "row_text_cells": "Serial / Comp | SN42-AX",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              3100.0,
+              3234.5
+            ],
+            "cells_text": [
+              "Build Revision",
+              "Rev E (04)"
+            ],
+            "cells_tokens": [
+              [
+                "Build",
+                "Revision"
+              ],
+              [
+                "Rev",
+                "E",
+                "(04)"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                103,
+                104
+              ],
+              [
+                105,
+                106,
+                107
+              ]
+            ],
+            "row_token_ids": [
+              103,
+              104,
+              105,
+              106,
+              107
+            ],
+            "row_text_cells": "Build Revision | Rev E (04)",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              3234.5,
+              3368.5
+            ],
+            "cells_text": [
+              "Date Compiled",
+              "2025-01-17"
+            ],
+            "cells_tokens": [
+              [
+                "Date",
+                "Compiled"
+              ],
+              [
+                "2025-01-17"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                108,
+                109
+              ],
+              [
+                110
+              ]
+            ],
+            "row_token_ids": [
+              108,
+              109,
+              110
+            ],
+            "row_text_cells": "Date Compiled | 2025-01-17",
+            "cells_kind": [
+              "string",
+              "date"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 5,
+            "row_band_px": [
+              3368.5,
+              3506.5
+            ],
+            "cells_text": [
+              "Compiler",
+              "QA Test Harness"
+            ],
+            "cells_tokens": [
+              [
+                "Compiler"
+              ],
+              [
+                "QA",
+                "Test",
+                "Harness"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                111
+              ],
+              [
+                112,
+                113,
+                114
+              ]
+            ],
+            "row_token_ids": [
+              111,
+              112,
+              113,
+              114
+            ],
+            "row_text_cells": "Compiler | QA Test Harness",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 6,
+            "row_band_px": [
+              3506.5,
+              3682.0
+            ],
+            "cells_text": [
+              "Source Bundle",
+              "/Data Packages/Hyperion_SV3_SN42_RevE"
+            ],
+            "cells_tokens": [
+              [
+                "Source",
+                "Bundle"
+              ],
+              [
+                "/Data",
+                "Packages/Hyperion_SV3_SN42_RevE"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                115,
+                116
+              ],
+              [
+                117,
+                118
+              ]
+            ],
+            "row_token_ids": [
+              115,
+              116,
+              117,
+              118
+            ],
+            "row_text_cells": "Source Bundle | /Data Packages/Hyperion_SV3_SN42_RevE",
+            "cells_kind": [
+              "string",
+              "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        469.0,
+        3814.0,
+        2531.0,
+        3929.0
+      ],
+      "text": "1. Functional Acceptance Snapshot"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        495.0,
+        4115.0,
+        3331.0,
+        4229.0
+      ],
+      "text": "Term Description P Requirement q Measured Units Page g Data Notes"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        1924.0,
+        4209.0,
+        3006.0,
+        4278.0
+      ],
+      "text": "Value Quality"
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        459.0,
+        4312.5,
+        3471.0,
+        4741.5
+      ],
+      "table": {
+        "bbox_px": [
+          459.0,
+          4312.5,
+          3471.0,
+          4741.5
+        ],
+        "col_bounds_px": [
+          459.0,
+          857.0,
+          1447.5,
+          1891.5,
+          2246.5,
+          2509.0,
+          2763.0,
+          3086.5,
+          3471.0
+        ],
+        "header_cells": [
+          "Term",
+          "Description",
+          "Requirement",
+          "Measured Value",
+          "Units",
+          "Page",
+          "Data Quality",
+          "Notes"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              4351.0,
+              4710.0
+            ],
+            "cells_text": [
+              "ignition_delay",
+              "Time between arm and ignition",
+              "<= 0.85",
+              "0.62",
+              "S",
+              "5",
+              "PASS",
+              "sample nominal case"
+            ],
+            "cells_tokens": [
+              [
+                "ignition_delay"
+              ],
+              [
+                "Time",
+                "arm",
+                "between",
+                "ignition",
+                "and"
+              ],
+              [
+                "<=",
+                "0.85"
+              ],
+              [
+                "0.62"
+              ],
+              [
+                "S"
+              ],
+              [
+                "5"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "sample",
+                "case",
+                "nominal"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                138,
+                141
+              ],
+              [
+                136,
+                149,
+                139,
+                152,
+                150
+              ],
+              [
+                142,
+                143
+              ],
+              [
+                144
+              ],
+              [
+                145
+              ],
+              [
+                146
+              ],
+              [
+                147
+              ],
+              [
+                137,
+                151,
+                148
+              ]
+            ],
+            "row_token_ids": [
+              136,
+              137,
+              138,
+              139,
+              140,
+              141,
+              142,
+              143,
+              144,
+              145,
+              146,
+              147,
+              148,
+              149,
+              150,
+              151,
+              152
+            ],
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal case",
+            "cells_kind": [
+              "string",
+              "paragraph",
+              "string",
+              "number",
+              "string",
+              "number",
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 0.85",
+                "op": "<=",
+                "value": 0.85,
+                "value_decimal": "0.85",
+                "exclusive": false,
+                "max": 0.85
+              },
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    }
+  ],
+  "paragraphs": [
+    {
+      "type": "text",
+      "kind": "paragraph",
+      "bbox_px": [
+        600.0,
+        505.0,
+        2055.0,
+        564.0
+      ],
+      "text": "Synthetic End ltem Data Package (Debug Reference)",
+      "line_count": 1,
+      "word_count": 7,
+      "token_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "paragraph",
+      "bbox_px": [
+        459.0,
+        1891.0,
+        3281.0,
+        2143.0
+      ],
+      "text": "This document intentionally blends nominal, off-nominal, and incomplete data so the scanner can be exercised against a broad set of scenarios (duplicate terms, missing units, multi-value tables, etc.). Only synthetic values are used.",
+      "line_count": 3,
+      "word_count": 33,
+      "token_ids": [
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85
+      ]
+    }
+  ],
+  "strings": [
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        603.0,
+        1203.0,
+        649.0
+      ],
+      "text": "\u00ab Document Profile",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        741.0,
+        701.0,
+        1698.0,
+        760.0
+      ],
+      "text": "1. Functional Acceptance Snapshot",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        796.0,
+        1429.0,
+        842.0
+      ],
+      "text": "\u00ab 2. Performance KPI Table",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        734.0,
+        895.0,
+        1691.0,
+        941.0
+      ],
+      "text": "3. Environmental Endurance Matrix",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        996.0,
+        1452.0,
+        1042.0
+      ],
+      "text": "\u00ab 4. Calibration & Trim Table",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        1095.0,
+        1419.0,
+        1154.0
+      ],
+      "text": "\u00ab 5 Anomaly & Waiver Log",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        734.0,
+        1193.0,
+        1587.0,
+        1252.0
+      ],
+      "text": "6. Attachment Index (Synthetic)",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        39,
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        875.0,
+        1288.0,
+        1203.0,
+        1347.0
+      ],
+      "text": "Usage Hints",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        44,
+        45
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        462.0,
+        1475.0,
+        2852.0,
+        1737.0
+      ],
+      "text": "synthetic End Item Data Package (Debug Reference)",
+      "line_count": 2,
+      "word_count": 7,
+      "token_ids": [
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        469.0,
+        2291.0,
+        1475.0,
+        2379.0
+      ],
+      "text": "Document Profile",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        86,
+        87
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        469.0,
+        3814.0,
+        2531.0,
+        3929.0
+      ],
+      "text": "1. Functional Acceptance Snapshot",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        119,
+        120,
+        121,
+        122
+      ]
+    }
+  ],
+  "flow": [
+    {
+      "type": "text",
+      "kind": "paragraph",
+      "bbox_px": [
+        600.0,
+        505.0,
+        2055.0,
+        564.0
+      ],
+      "text": "Synthetic End ltem Data Package (Debug Reference)",
+      "line_count": 1,
+      "word_count": 7,
+      "token_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        603.0,
+        1203.0,
+        649.0
+      ],
+      "text": "\u00ab Document Profile",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        741.0,
+        701.0,
+        1698.0,
+        760.0
+      ],
+      "text": "1. Functional Acceptance Snapshot",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        796.0,
+        1429.0,
+        842.0
+      ],
+      "text": "\u00ab 2. Performance KPI Table",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        734.0,
+        895.0,
+        1691.0,
+        941.0
+      ],
+      "text": "3. Environmental Endurance Matrix",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        996.0,
+        1452.0,
+        1042.0
+      ],
+      "text": "\u00ab 4. Calibration & Trim Table",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        675.0,
+        1095.0,
+        1419.0,
+        1154.0
+      ],
+      "text": "\u00ab 5 Anomaly & Waiver Log",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        734.0,
+        1193.0,
+        1587.0,
+        1252.0
+      ],
+      "text": "6. Attachment Index (Synthetic)",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        39,
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        875.0,
+        1288.0,
+        1203.0,
+        1347.0
+      ],
+      "text": "Usage Hints",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        44,
+        45
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        462.0,
+        1475.0,
+        2852.0,
+        1737.0
+      ],
+      "text": "synthetic End Item Data Package (Debug Reference)",
+      "line_count": 2,
+      "word_count": 7,
+      "token_ids": [
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "paragraph",
+      "bbox_px": [
+        459.0,
+        1891.0,
+        3281.0,
+        2143.0
+      ],
+      "text": "This document intentionally blends nominal, off-nominal, and incomplete data so the scanner can be exercised against a broad set of scenarios (duplicate terms, missing units, multi-value tables, etc.). Only synthetic values are used.",
+      "line_count": 3,
+      "word_count": 33,
+      "token_ids": [
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85
+      ]
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        469.0,
+        2291.0,
+        1475.0,
+        2379.0
+      ],
+      "text": "Document Profile",
+      "line_count": 1,
+      "word_count": 2,
+      "token_ids": [
+        86,
+        87
+      ]
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        459.0,
+        2689.0,
+        2344.0,
+        3682.0
+      ],
+      "table": {
+        "bbox_px": [
+          459.0,
+          2689.0,
+          2344.0,
+          3682.0
+        ],
+        "col_bounds_px": [
+          459.0,
+          862.0,
+          2344.0
+        ],
+        "header_cells": [
+          "Field",
+          "Value"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              2689.0,
+              2824.5
+            ],
+            "cells_text": [
+              "Program",
+              "Hyperion Dragonfly Propulsion Demo"
+            ],
+            "cells_tokens": [
+              [
+                "Program"
+              ],
+              [
+                "Hyperion",
+                "Dragonfly",
+                "Propulsion",
+                "Demo"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                90
+              ],
+              [
+                91,
+                92,
+                93,
+                94
+              ]
+            ],
+            "row_token_ids": [
+              90,
+              91,
+              92,
+              93,
+              94
+            ],
+            "row_text_cells": "Program | Hyperion Dragonfly Propulsion Demo",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 1,
+            "row_band_px": [
+              2824.5,
+              2962.5
+            ],
+            "cells_text": [
+              "Vehicle",
+              "SV3 (Block 2)"
+            ],
+            "cells_tokens": [
+              [
+                "Vehicle"
+              ],
+              [
+                "SV3",
+                "(Block",
+                "2)"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                95
+              ],
+              [
+                96,
+                97,
+                98
+              ]
+            ],
+            "row_token_ids": [
+              95,
+              96,
+              97,
+              98
+            ],
+            "row_text_cells": "Vehicle | SV3 (Block 2)",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 2,
+            "row_band_px": [
+              2962.5,
+              3100.0
+            ],
+            "cells_text": [
+              "Serial / Comp",
+              "SN42-AX"
+            ],
+            "cells_tokens": [
+              [
+                "Serial / Comp",
+                "/",
+                "Component"
+              ],
+              [
+                "SN42-AX"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                99,
+                100,
+                101
+              ],
+              [
+                102
+              ]
+            ],
+            "row_token_ids": [
+              99,
+              100,
+              101,
+              102
+            ],
+            "row_text_cells": "Serial / Comp | SN42-AX",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 3,
+            "row_band_px": [
+              3100.0,
+              3234.5
+            ],
+            "cells_text": [
+              "Build Revision",
+              "Rev E (04)"
+            ],
+            "cells_tokens": [
+              [
+                "Build",
+                "Revision"
+              ],
+              [
+                "Rev",
+                "E",
+                "(04)"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                103,
+                104
+              ],
+              [
+                105,
+                106,
+                107
+              ]
+            ],
+            "row_token_ids": [
+              103,
+              104,
+              105,
+              106,
+              107
+            ],
+            "row_text_cells": "Build Revision | Rev E (04)",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 4,
+            "row_band_px": [
+              3234.5,
+              3368.5
+            ],
+            "cells_text": [
+              "Date Compiled",
+              "2025-01-17"
+            ],
+            "cells_tokens": [
+              [
+                "Date",
+                "Compiled"
+              ],
+              [
+                "2025-01-17"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                108,
+                109
+              ],
+              [
+                110
+              ]
+            ],
+            "row_token_ids": [
+              108,
+              109,
+              110
+            ],
+            "row_text_cells": "Date Compiled | 2025-01-17",
+            "cells_kind": [
+              "string",
+              "date"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 5,
+            "row_band_px": [
+              3368.5,
+              3506.5
+            ],
+            "cells_text": [
+              "Compiler",
+              "QA Test Harness"
+            ],
+            "cells_tokens": [
+              [
+                "Compiler"
+              ],
+              [
+                "QA",
+                "Test",
+                "Harness"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                111
+              ],
+              [
+                112,
+                113,
+                114
+              ]
+            ],
+            "row_token_ids": [
+              111,
+              112,
+              113,
+              114
+            ],
+            "row_text_cells": "Compiler | QA Test Harness",
+            "cells_kind": [
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          },
+          {
+            "band_index": 6,
+            "row_band_px": [
+              3506.5,
+              3682.0
+            ],
+            "cells_text": [
+              "Source Bundle",
+              "/Data Packages/Hyperion_SV3_SN42_RevE"
+            ],
+            "cells_tokens": [
+              [
+                "Source",
+                "Bundle"
+              ],
+              [
+                "/Data",
+                "Packages/Hyperion_SV3_SN42_RevE"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                115,
+                116
+              ],
+              [
+                117,
+                118
+              ]
+            ],
+            "row_token_ids": [
+              115,
+              116,
+              117,
+              118
+            ],
+            "row_text_cells": "Source Bundle | /Data Packages/Hyperion_SV3_SN42_RevE",
+            "cells_kind": [
+              "string",
+              "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    },
+    {
+      "type": "text",
+      "kind": "string",
+      "bbox_px": [
+        469.0,
+        3814.0,
+        2531.0,
+        3929.0
+      ],
+      "text": "1. Functional Acceptance Snapshot",
+      "line_count": 1,
+      "word_count": 4,
+      "token_ids": [
+        119,
+        120,
+        121,
+        122
+      ]
+    },
+    {
+      "type": "table",
+      "bbox_px": [
+        459.0,
+        4312.5,
+        3471.0,
+        4741.5
+      ],
+      "table": {
+        "bbox_px": [
+          459.0,
+          4312.5,
+          3471.0,
+          4741.5
+        ],
+        "col_bounds_px": [
+          459.0,
+          857.0,
+          1447.5,
+          1891.5,
+          2246.5,
+          2509.0,
+          2763.0,
+          3086.5,
+          3471.0
+        ],
+        "header_cells": [
+          "Term",
+          "Description",
+          "Requirement",
+          "Measured Value",
+          "Units",
+          "Page",
+          "Data Quality",
+          "Notes"
+        ],
+        "rows": [
+          {
+            "band_index": 0,
+            "row_band_px": [
+              4351.0,
+              4710.0
+            ],
+            "cells_text": [
+              "ignition_delay",
+              "Time between arm and ignition",
+              "<= 0.85",
+              "0.62",
+              "S",
+              "5",
+              "PASS",
+              "sample nominal case"
+            ],
+            "cells_tokens": [
+              [
+                "ignition_delay"
+              ],
+              [
+                "Time",
+                "arm",
+                "between",
+                "ignition",
+                "and"
+              ],
+              [
+                "<=",
+                "0.85"
+              ],
+              [
+                "0.62"
+              ],
+              [
+                "S"
+              ],
+              [
+                "5"
+              ],
+              [
+                "PASS"
+              ],
+              [
+                "sample",
+                "case",
+                "nominal"
+              ]
+            ],
+            "cells_token_ids": [
+              [
+                138,
+                141
+              ],
+              [
+                136,
+                149,
+                139,
+                152,
+                150
+              ],
+              [
+                142,
+                143
+              ],
+              [
+                144
+              ],
+              [
+                145
+              ],
+              [
+                146
+              ],
+              [
+                147
+              ],
+              [
+                137,
+                151,
+                148
+              ]
+            ],
+            "row_token_ids": [
+              136,
+              137,
+              138,
+              139,
+              140,
+              141,
+              142,
+              143,
+              144,
+              145,
+              146,
+              147,
+              148,
+              149,
+              150,
+              151,
+              152
+            ],
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal case",
+            "cells_kind": [
+              "string",
+              "paragraph",
+              "string",
+              "number",
+              "string",
+              "number",
+              "string",
+              "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 0.85",
+                "op": "<=",
+                "value": 0.85,
+                "value_decimal": "0.85",
+                "exclusive": false,
+                "max": 0.85
+              },
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          }
+        ],
+        "spill_blocks": []
+      }
+    }
+  ],
+  "artifacts": {
+    "tokens": [
+      {
+        "x0": 538.0,
+        "y0": 524.0,
+        "x1": 554.0,
+        "y1": 541.0,
+        "cx": 546.0,
+        "cy": 532.5,
+        "text": "",
+        "conf": 0.80290024,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "rehocr_text": "r",
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 0
+      },
+      {
+        "x0": 600.0,
+        "y0": 505.0,
+        "x1": 849.0,
+        "y1": 564.0,
+        "cx": 724.5,
+        "cy": 534.5,
+        "text": "Synthetic",
+        "conf": 0.96597641,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 1
+      },
+      {
+        "x0": 872.0,
+        "y0": 505.0,
+        "x1": 974.0,
+        "y1": 551.0,
+        "cx": 923.0,
+        "cy": 528.0,
+        "text": "End",
+        "conf": 0.9619104799999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 2
+      },
+      {
+        "x0": 1000.0,
+        "y0": 505.0,
+        "x1": 1111.0,
+        "y1": 551.0,
+        "cx": 1055.5,
+        "cy": 528.0,
+        "text": "ltem",
+        "conf": 0.76431908,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "rehocr_text": "ltem",
+        "rehocr_conf": 0.76431908,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 3
+      },
+      {
+        "x0": 1134.0,
+        "y0": 505.0,
+        "x1": 1259.0,
+        "y1": 551.0,
+        "cx": 1196.5,
+        "cy": 528.0,
+        "text": "Data",
+        "conf": 0.96329559,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 5.0,
+        "_tid": 4
+      },
+      {
+        "x0": 1282.0,
+        "y0": 505.0,
+        "x1": 1514.0,
+        "y1": 564.0,
+        "cx": 1398.0,
+        "cy": 534.5,
+        "text": "Package",
+        "conf": 0.96807289,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 6.0,
+        "_tid": 5
+      },
+      {
+        "x0": 1537.0,
+        "y0": 505.0,
+        "x1": 1731.0,
+        "y1": 564.0,
+        "cx": 1634.0,
+        "cy": 534.5,
+        "text": "(Debug",
+        "conf": 0.96468536,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 7.0,
+        "_tid": 6
+      },
+      {
+        "x0": 1757.0,
+        "y0": 505.0,
+        "x1": 2055.0,
+        "y1": 564.0,
+        "cx": 1906.0,
+        "cy": 534.5,
+        "text": "Reference)",
+        "conf": 0.9610743700000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 8.0,
+        "_tid": 7
+      },
+      {
+        "x0": 675.0,
+        "y0": 626.0,
+        "x1": 692.0,
+        "y1": 642.0,
+        "cx": 683.5,
+        "cy": 634.0,
+        "text": "\u00ab",
+        "conf": 0.84241959,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 1.0,
+        "_tid": 8
+      },
+      {
+        "x0": 738.0,
+        "y0": 603.0,
+        "x1": 1013.0,
+        "y1": 649.0,
+        "cx": 875.5,
+        "cy": 626.0,
+        "text": "Document",
+        "conf": 0.96072968,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 2.0,
+        "_tid": 9
+      },
+      {
+        "x0": 1036.0,
+        "y0": 603.0,
+        "x1": 1203.0,
+        "y1": 649.0,
+        "cx": 1119.5,
+        "cy": 626.0,
+        "text": "Profile",
+        "conf": 0.96517281,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 3.0,
+        "_tid": 10
+      },
+      {
+        "x0": 675.0,
+        "y0": 724.0,
+        "x1": 692.0,
+        "y1": 741.0,
+        "cx": 683.5,
+        "cy": 732.5,
+        "text": "",
+        "conf": 0.7664054899999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 1.0,
+        "rehocr_text": "-",
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 11
+      },
+      {
+        "x0": 741.0,
+        "y0": 701.0,
+        "x1": 780.0,
+        "y1": 747.0,
+        "cx": 760.5,
+        "cy": 724.0,
+        "text": "1.",
+        "conf": 0.9556089799999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 2.0,
+        "_tid": 12
+      },
+      {
+        "x0": 806.0,
+        "y0": 701.0,
+        "x1": 1082.0,
+        "y1": 747.0,
+        "cx": 944.0,
+        "cy": 724.0,
+        "text": "Functional",
+        "conf": 0.96414299,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 3.0,
+        "_tid": 13
+      },
+      {
+        "x0": 1098.0,
+        "y0": 701.0,
+        "x1": 1419.0,
+        "y1": 760.0,
+        "cx": 1258.5,
+        "cy": 730.5,
+        "text": "Acceptance",
+        "conf": 0.96375519,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 4.0,
+        "_tid": 14
+      },
+      {
+        "x0": 1442.0,
+        "y0": 701.0,
+        "x1": 1698.0,
+        "y1": 760.0,
+        "cx": 1570.0,
+        "cy": 730.5,
+        "text": "Snapshot",
+        "conf": 0.95533066,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 5.0,
+        "_tid": 15
+      },
+      {
+        "x0": 675.0,
+        "y0": 819.0,
+        "x1": 692.0,
+        "y1": 836.0,
+        "cx": 683.5,
+        "cy": 827.5,
+        "text": "\u00ab",
+        "conf": 0.8195367400000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 1.0,
+        "_tid": 16
+      },
+      {
+        "x0": 734.0,
+        "y0": 796.0,
+        "x1": 780.0,
+        "y1": 842.0,
+        "cx": 757.0,
+        "cy": 819.0,
+        "text": "2.",
+        "conf": 0.9510124999999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 2.0,
+        "_tid": 17
+      },
+      {
+        "x0": 806.0,
+        "y0": 796.0,
+        "x1": 1151.0,
+        "y1": 842.0,
+        "cx": 978.5,
+        "cy": 819.0,
+        "text": "Performance",
+        "conf": 0.9621417200000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 3.0,
+        "_tid": 18
+      },
+      {
+        "x0": 1177.0,
+        "y0": 796.0,
+        "x1": 1265.0,
+        "y1": 842.0,
+        "cx": 1221.0,
+        "cy": 819.0,
+        "text": "KPI",
+        "conf": 0.9550688900000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 4.0,
+        "_tid": 19
+      },
+      {
+        "x0": 1288.0,
+        "y0": 796.0,
+        "x1": 1429.0,
+        "y1": 842.0,
+        "cx": 1358.5,
+        "cy": 819.0,
+        "text": "Table",
+        "conf": 0.9573974599999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 5.0,
+        "_tid": 20
+      },
+      {
+        "x0": 675.0,
+        "y0": 918.0,
+        "x1": 692.0,
+        "y1": 934.0,
+        "cx": 683.5,
+        "cy": 926.0,
+        "text": "",
+        "conf": 0.72380615,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 1.0,
+        "rehocr_text": "r",
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 21
+      },
+      {
+        "x0": 734.0,
+        "y0": 895.0,
+        "x1": 780.0,
+        "y1": 941.0,
+        "cx": 757.0,
+        "cy": 918.0,
+        "text": "3.",
+        "conf": 0.9579277,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 2.0,
+        "_tid": 22
+      },
+      {
+        "x0": 806.0,
+        "y0": 895.0,
+        "x1": 1190.0,
+        "y1": 941.0,
+        "cx": 998.0,
+        "cy": 918.0,
+        "text": "Environmental",
+        "conf": 0.9631037100000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 3.0,
+        "_tid": 23
+      },
+      {
+        "x0": 1216.0,
+        "y0": 895.0,
+        "x1": 1508.0,
+        "y1": 941.0,
+        "cx": 1362.0,
+        "cy": 918.0,
+        "text": "Endurance",
+        "conf": 0.9648259,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 4.0,
+        "_tid": 24
+      },
+      {
+        "x0": 1531.0,
+        "y0": 895.0,
+        "x1": 1691.0,
+        "y1": 941.0,
+        "cx": 1611.0,
+        "cy": 918.0,
+        "text": "Matrix",
+        "conf": 0.9598092699999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 5.0,
+        "_tid": 25
+      },
+      {
+        "x0": 675.0,
+        "y0": 1016.0,
+        "x1": 692.0,
+        "y1": 1036.0,
+        "cx": 683.5,
+        "cy": 1026.0,
+        "text": "\u00ab",
+        "conf": 0.39871849,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 1.0,
+        "_tid": 26
+      },
+      {
+        "x0": 734.0,
+        "y0": 996.0,
+        "x1": 780.0,
+        "y1": 1042.0,
+        "cx": 757.0,
+        "cy": 1019.0,
+        "text": "4.",
+        "conf": 0.91586395,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 2.0,
+        "_tid": 27
+      },
+      {
+        "x0": 806.0,
+        "y0": 996.0,
+        "x1": 1092.0,
+        "y1": 1042.0,
+        "cx": 949.0,
+        "cy": 1019.0,
+        "text": "Calibration",
+        "conf": 0.93238495,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 3.0,
+        "_tid": 28
+      },
+      {
+        "x0": 1115.0,
+        "y0": 996.0,
+        "x1": 1151.0,
+        "y1": 1042.0,
+        "cx": 1133.0,
+        "cy": 1019.0,
+        "text": "&",
+        "conf": 0.93238495,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 4.0,
+        "_tid": 29
+      },
+      {
+        "x0": 1170.0,
+        "y0": 996.0,
+        "x1": 1288.0,
+        "y1": 1042.0,
+        "cx": 1229.0,
+        "cy": 1019.0,
+        "text": "Trim",
+        "conf": 0.9673667899999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 5.0,
+        "_tid": 30
+      },
+      {
+        "x0": 1308.0,
+        "y0": 996.0,
+        "x1": 1452.0,
+        "y1": 1042.0,
+        "cx": 1380.0,
+        "cy": 1019.0,
+        "text": "Table",
+        "conf": 0.96784546,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 6.0,
+        "_tid": 31
+      },
+      {
+        "x0": 675.0,
+        "y0": 1117.0,
+        "x1": 692.0,
+        "y1": 1134.0,
+        "cx": 683.5,
+        "cy": 1125.5,
+        "text": "\u00ab",
+        "conf": 0.42748268,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 1.0,
+        "_tid": 32
+      },
+      {
+        "x0": 734.0,
+        "y0": 1095.0,
+        "x1": 780.0,
+        "y1": 1140.0,
+        "cx": 757.0,
+        "cy": 1117.5,
+        "text": "5",
+        "conf": 0.83533798,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 2.0,
+        "rehocr_text": "5",
+        "rehocr_conf": 0.83533798,
+        "rehocr_tag": "thr160:psm7",
+        "_tid": 33
+      },
+      {
+        "x0": 800.0,
+        "y0": 1095.0,
+        "x1": 1036.0,
+        "y1": 1154.0,
+        "cx": 918.0,
+        "cy": 1124.5,
+        "text": "Anomaly",
+        "conf": 0.96316681,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 3.0,
+        "rehocr_text": "Anomaly",
+        "rehocr_conf": 0.96316681,
+        "rehocr_tag": "scaled:psm7",
+        "_tid": 34
+      },
+      {
+        "x0": 1059.0,
+        "y0": 1095.0,
+        "x1": 1095.0,
+        "y1": 1140.0,
+        "cx": 1077.0,
+        "cy": 1117.5,
+        "text": "&",
+        "conf": 0.92144302,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 4.0,
+        "_tid": 35
+      },
+      {
+        "x0": 1115.0,
+        "y0": 1095.0,
+        "x1": 1301.0,
+        "y1": 1140.0,
+        "cx": 1208.0,
+        "cy": 1117.5,
+        "text": "Waiver",
+        "conf": 0.9617473599999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 5.0,
+        "_tid": 36
+      },
+      {
+        "x0": 1324.0,
+        "y0": 1095.0,
+        "x1": 1419.0,
+        "y1": 1154.0,
+        "cx": 1371.5,
+        "cy": 1124.5,
+        "text": "Log",
+        "conf": 0.9633323699999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 6.0,
+        "_tid": 37
+      },
+      {
+        "x0": 675.0,
+        "y0": 1216.0,
+        "x1": 692.0,
+        "y1": 1232.0,
+        "cx": 683.5,
+        "cy": 1224.0,
+        "text": "",
+        "conf": 0.76820526,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 8.0,
+        "word": 1.0,
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 38
+      },
+      {
+        "x0": 734.0,
+        "y0": 1193.0,
+        "x1": 780.0,
+        "y1": 1239.0,
+        "cx": 757.0,
+        "cy": 1216.0,
+        "text": "6.",
+        "conf": 0.95425735,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 8.0,
+        "word": 2.0,
+        "_tid": 39
+      },
+      {
+        "x0": 800.0,
+        "y0": 1193.0,
+        "x1": 1108.0,
+        "y1": 1239.0,
+        "cx": 954.0,
+        "cy": 1216.0,
+        "text": "Attachment",
+        "conf": 0.9629621899999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 8.0,
+        "word": 3.0,
+        "_tid": 40
+      },
+      {
+        "x0": 1131.0,
+        "y0": 1193.0,
+        "x1": 1275.0,
+        "y1": 1239.0,
+        "cx": 1203.0,
+        "cy": 1216.0,
+        "text": "Index",
+        "conf": 0.95255287,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 8.0,
+        "word": 4.0,
+        "_tid": 41
+      },
+      {
+        "x0": 1298.0,
+        "y0": 1193.0,
+        "x1": 1587.0,
+        "y1": 1252.0,
+        "cx": 1442.5,
+        "cy": 1222.5,
+        "text": "(Synthetic)",
+        "conf": 0.95282776,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 8.0,
+        "word": 5.0,
+        "_tid": 42
+      },
+      {
+        "x0": 810.0,
+        "y0": 1311.0,
+        "x1": 829.0,
+        "y1": 1327.0,
+        "cx": 819.5,
+        "cy": 1319.0,
+        "text": "",
+        "conf": 0.54023125,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 9.0,
+        "word": 1.0,
+        "rehocr_text": "#",
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 43
+      },
+      {
+        "x0": 875.0,
+        "y0": 1288.0,
+        "x1": 1046.0,
+        "y1": 1347.0,
+        "cx": 960.5,
+        "cy": 1317.5,
+        "text": "Usage",
+        "conf": 0.96570236,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 9.0,
+        "word": 2.0,
+        "_tid": 44
+      },
+      {
+        "x0": 1069.0,
+        "y0": 1288.0,
+        "x1": 1203.0,
+        "y1": 1334.0,
+        "cx": 1136.0,
+        "cy": 1311.0,
+        "text": "Hints",
+        "conf": 0.95835594,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 9.0,
+        "word": 3.0,
+        "_tid": 45
+      },
+      {
+        "x0": 462.0,
+        "y0": 1475.0,
+        "x1": 1010.0,
+        "y1": 1589.0,
+        "cx": 736.0,
+        "cy": 1532.0,
+        "text": "synthetic",
+        "conf": 0.9302828200000001,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "rehocr_text": "synthetic",
+        "rehocr_conf": 0.9302828200000001,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 46
+      },
+      {
+        "x0": 1056.0,
+        "y0": 1475.0,
+        "x1": 1272.0,
+        "y1": 1563.0,
+        "cx": 1164.0,
+        "cy": 1519.0,
+        "text": "End",
+        "conf": 0.9577853399999999,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 47
+      },
+      {
+        "x0": 1321.0,
+        "y0": 1475.0,
+        "x1": 1560.0,
+        "y1": 1563.0,
+        "cx": 1440.5,
+        "cy": 1519.0,
+        "text": "Item",
+        "conf": 0.63671146,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "rehocr_text": "litem",
+        "rehocr_conf": 0.14906876,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 48
+      },
+      {
+        "x0": 1610.0,
+        "y0": 1475.0,
+        "x1": 1865.0,
+        "y1": 1563.0,
+        "cx": 1737.5,
+        "cy": 1519.0,
+        "text": "Data",
+        "conf": 0.96520927,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 49
+      },
+      {
+        "x0": 1911.0,
+        "y0": 1475.0,
+        "x1": 2396.0,
+        "y1": 1589.0,
+        "cx": 2153.5,
+        "cy": 1532.0,
+        "text": "Package",
+        "conf": 0.9681006600000001,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 5.0,
+        "_tid": 50
+      },
+      {
+        "x0": 2442.0,
+        "y0": 1475.0,
+        "x1": 2852.0,
+        "y1": 1589.0,
+        "cx": 2647.0,
+        "cy": 1532.0,
+        "text": "(Debug",
+        "conf": 0.96563194,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 6.0,
+        "_tid": 51
+      },
+      {
+        "x0": 469.0,
+        "y0": 1622.0,
+        "x1": 1092.0,
+        "y1": 1737.0,
+        "cx": 780.5,
+        "cy": 1679.5,
+        "text": "Reference)",
+        "conf": 0.96460602,
+        "block": 2.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 1.0,
+        "_tid": 52
+      },
+      {
+        "x0": 459.0,
+        "y0": 1891.0,
+        "x1": 574.0,
+        "y1": 1937.0,
+        "cx": 516.5,
+        "cy": 1914.0,
+        "text": "This",
+        "conf": 0.96242012,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 53
+      },
+      {
+        "x0": 593.0,
+        "y0": 1891.0,
+        "x1": 862.0,
+        "y1": 1937.0,
+        "cx": 727.5,
+        "cy": 1914.0,
+        "text": "document",
+        "conf": 0.96242012,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 54
+      },
+      {
+        "x0": 882.0,
+        "y0": 1891.0,
+        "x1": 1203.0,
+        "y1": 1950.0,
+        "cx": 1042.5,
+        "cy": 1920.5,
+        "text": "intentionally",
+        "conf": 0.95377426,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 55
+      },
+      {
+        "x0": 1226.0,
+        "y0": 1891.0,
+        "x1": 1403.0,
+        "y1": 1937.0,
+        "cx": 1314.5,
+        "cy": 1914.0,
+        "text": "blends",
+        "conf": 0.96463058,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 56
+      },
+      {
+        "x0": 1423.0,
+        "y0": 1891.0,
+        "x1": 1649.0,
+        "y1": 1947.0,
+        "cx": 1536.0,
+        "cy": 1919.0,
+        "text": "nominal,",
+        "conf": 0.9330038500000001,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 5.0,
+        "_tid": 57
+      },
+      {
+        "x0": 1672.0,
+        "y0": 1891.0,
+        "x1": 1983.0,
+        "y1": 1947.0,
+        "cx": 1827.5,
+        "cy": 1919.0,
+        "text": "off-nominal,",
+        "conf": 0.92302071,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 6.0,
+        "_tid": 58
+      },
+      {
+        "x0": 2009.0,
+        "y0": 1891.0,
+        "x1": 2108.0,
+        "y1": 1937.0,
+        "cx": 2058.5,
+        "cy": 1914.0,
+        "text": "and",
+        "conf": 0.95886635,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 7.0,
+        "_tid": 59
+      },
+      {
+        "x0": 2131.0,
+        "y0": 1891.0,
+        "x1": 2422.0,
+        "y1": 1950.0,
+        "cx": 2276.5,
+        "cy": 1920.5,
+        "text": "incomplete",
+        "conf": 0.96598923,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 8.0,
+        "_tid": 60
+      },
+      {
+        "x0": 2442.0,
+        "y0": 1891.0,
+        "x1": 2560.0,
+        "y1": 1937.0,
+        "cx": 2501.0,
+        "cy": 1914.0,
+        "text": "data",
+        "conf": 0.96813828,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 9.0,
+        "_tid": 61
+      },
+      {
+        "x0": 2580.0,
+        "y0": 1904.0,
+        "x1": 2642.0,
+        "y1": 1937.0,
+        "cx": 2611.0,
+        "cy": 1920.5,
+        "text": "so",
+        "conf": 0.9559108000000001,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 10.0,
+        "_tid": 62
+      },
+      {
+        "x0": 2659.0,
+        "y0": 1891.0,
+        "x1": 2744.0,
+        "y1": 1937.0,
+        "cx": 2701.5,
+        "cy": 1914.0,
+        "text": "the",
+        "conf": 0.96622185,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 11.0,
+        "_tid": 63
+      },
+      {
+        "x0": 2763.0,
+        "y0": 1904.0,
+        "x1": 2983.0,
+        "y1": 1937.0,
+        "cx": 2873.0,
+        "cy": 1920.5,
+        "text": "scanner",
+        "conf": 0.96333183,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 12.0,
+        "_tid": 64
+      },
+      {
+        "x0": 2999.0,
+        "y0": 1904.0,
+        "x1": 3095.0,
+        "y1": 1937.0,
+        "cx": 3047.0,
+        "cy": 1920.5,
+        "text": "can",
+        "conf": 0.9694766199999999,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 13.0,
+        "_tid": 65
+      },
+      {
+        "x0": 3117.0,
+        "y0": 1891.0,
+        "x1": 3180.0,
+        "y1": 1937.0,
+        "cx": 3148.5,
+        "cy": 1914.0,
+        "text": "be",
+        "conf": 0.96691536,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 14.0,
+        "_tid": 66
+      },
+      {
+        "x0": 459.0,
+        "y0": 1986.0,
+        "x1": 721.0,
+        "y1": 2032.0,
+        "cx": 590.0,
+        "cy": 2009.0,
+        "text": "exercised",
+        "conf": 0.9664489,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 1.0,
+        "_tid": 67
+      },
+      {
+        "x0": 741.0,
+        "y0": 1986.0,
+        "x1": 938.0,
+        "y1": 2045.0,
+        "cx": 839.5,
+        "cy": 2015.5,
+        "text": "against",
+        "conf": 0.96647011,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 2.0,
+        "_tid": 68
+      },
+      {
+        "x0": 957.0,
+        "y0": 1999.0,
+        "x1": 987.0,
+        "y1": 2032.0,
+        "cx": 972.0,
+        "cy": 2015.5,
+        "text": "a",
+        "conf": 0.95649704,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 3.0,
+        "_tid": 69
+      },
+      {
+        "x0": 1010.0,
+        "y0": 1986.0,
+        "x1": 1160.0,
+        "y1": 2032.0,
+        "cx": 1085.0,
+        "cy": 2009.0,
+        "text": "broad",
+        "conf": 0.95649704,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 4.0,
+        "_tid": 70
+      },
+      {
+        "x0": 1183.0,
+        "y0": 1989.0,
+        "x1": 1262.0,
+        "y1": 2032.0,
+        "cx": 1222.5,
+        "cy": 2010.5,
+        "text": "set",
+        "conf": 0.96735672,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 5.0,
+        "_tid": 71
+      },
+      {
+        "x0": 1282.0,
+        "y0": 1986.0,
+        "x1": 1334.0,
+        "y1": 2032.0,
+        "cx": 1308.0,
+        "cy": 2009.0,
+        "text": "of",
+        "conf": 0.9579544099999999,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 6.0,
+        "_tid": 72
+      },
+      {
+        "x0": 1351.0,
+        "y0": 1986.0,
+        "x1": 1610.0,
+        "y1": 2032.0,
+        "cx": 1480.5,
+        "cy": 2009.0,
+        "text": "scenarios",
+        "conf": 0.95890465,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 7.0,
+        "_tid": 73
+      },
+      {
+        "x0": 1632.0,
+        "y0": 1986.0,
+        "x1": 1895.0,
+        "y1": 2045.0,
+        "cx": 1763.5,
+        "cy": 2015.5,
+        "text": "(duplicate",
+        "conf": 0.96443909,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 8.0,
+        "_tid": 74
+      },
+      {
+        "x0": 1911.0,
+        "y0": 1989.0,
+        "x1": 2078.0,
+        "y1": 2042.0,
+        "cx": 1994.5,
+        "cy": 2015.5,
+        "text": "terms,",
+        "conf": 0.96539635,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 9.0,
+        "_tid": 75
+      },
+      {
+        "x0": 2105.0,
+        "y0": 1986.0,
+        "x1": 2304.0,
+        "y1": 2045.0,
+        "cx": 2204.5,
+        "cy": 2015.5,
+        "text": "missing",
+        "conf": 0.96379509,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 10.0,
+        "_tid": 76
+      },
+      {
+        "x0": 2327.0,
+        "y0": 1986.0,
+        "x1": 2468.0,
+        "y1": 2042.0,
+        "cx": 2397.5,
+        "cy": 2014.0,
+        "text": "units,",
+        "conf": 0.96379509,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 11.0,
+        "_tid": 77
+      },
+      {
+        "x0": 2491.0,
+        "y0": 1986.0,
+        "x1": 2786.0,
+        "y1": 2032.0,
+        "cx": 2638.5,
+        "cy": 2009.0,
+        "text": "multi-value",
+        "conf": 0.9570195800000001,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 12.0,
+        "_tid": 78
+      },
+      {
+        "x0": 2803.0,
+        "y0": 1986.0,
+        "x1": 2980.0,
+        "y1": 2042.0,
+        "cx": 2891.5,
+        "cy": 2014.0,
+        "text": "tables,",
+        "conf": 0.9329724899999999,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 13.0,
+        "_tid": 79
+      },
+      {
+        "x0": 3003.0,
+        "y0": 1986.0,
+        "x1": 3134.0,
+        "y1": 2045.0,
+        "cx": 3068.5,
+        "cy": 2015.5,
+        "text": "etc.).",
+        "conf": 0.9121313499999999,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 14.0,
+        "_tid": 80
+      },
+      {
+        "x0": 3157.0,
+        "y0": 1986.0,
+        "x1": 3281.0,
+        "y1": 2045.0,
+        "cx": 3219.0,
+        "cy": 2015.5,
+        "text": "Only",
+        "conf": 0.96727478,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 15.0,
+        "_tid": 81
+      },
+      {
+        "x0": 462.0,
+        "y0": 2084.0,
+        "x1": 701.0,
+        "y1": 2143.0,
+        "cx": 581.5,
+        "cy": 2113.5,
+        "text": "synthetic",
+        "conf": 0.96352684,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 1.0,
+        "_tid": 82
+      },
+      {
+        "x0": 721.0,
+        "y0": 2084.0,
+        "x1": 895.0,
+        "y1": 2130.0,
+        "cx": 808.0,
+        "cy": 2107.0,
+        "text": "values",
+        "conf": 0.95507164,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 2.0,
+        "_tid": 83
+      },
+      {
+        "x0": 915.0,
+        "y0": 2097.0,
+        "x1": 1000.0,
+        "y1": 2130.0,
+        "cx": 957.5,
+        "cy": 2113.5,
+        "text": "are",
+        "conf": 0.95993591,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 3.0,
+        "_tid": 84
+      },
+      {
+        "x0": 1023.0,
+        "y0": 2084.0,
+        "x1": 1167.0,
+        "y1": 2130.0,
+        "cx": 1095.0,
+        "cy": 2107.0,
+        "text": "used.",
+        "conf": 0.96452179,
+        "block": 3.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 4.0,
+        "_tid": 85
+      },
+      {
+        "x0": 469.0,
+        "y0": 2291.0,
+        "x1": 1059.0,
+        "y1": 2379.0,
+        "cx": 764.0,
+        "cy": 2335.0,
+        "text": "Document",
+        "conf": 0.9607358600000001,
+        "block": 4.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 86
+      },
+      {
+        "x0": 1105.0,
+        "y0": 2291.0,
+        "x1": 1475.0,
+        "y1": 2379.0,
+        "cx": 1290.0,
+        "cy": 2335.0,
+        "text": "Profile",
+        "conf": 0.9632220499999999,
+        "block": 4.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 87
+      },
+      {
+        "x0": 498.0,
+        "y0": 2595.0,
+        "x1": 636.0,
+        "y1": 2641.0,
+        "cx": 567.0,
+        "cy": 2618.0,
+        "text": "Field",
+        "conf": 0.96224655,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 88
+      },
+      {
+        "x0": 1088.0,
+        "y0": 2595.0,
+        "x1": 1249.0,
+        "y1": 2641.0,
+        "cx": 1168.5,
+        "cy": 2618.0,
+        "text": "Value",
+        "conf": 0.96553787,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 89
+      },
+      {
+        "x0": 498.0,
+        "y0": 2726.0,
+        "x1": 728.0,
+        "y1": 2793.0,
+        "cx": 613.0,
+        "cy": 2759.5,
+        "text": "Program",
+        "conf": 0.9635038,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 1.0,
+        "_tid": 90
+      },
+      {
+        "x0": 1092.0,
+        "y0": 2730.0,
+        "x1": 1331.0,
+        "y1": 2789.0,
+        "cx": 1211.5,
+        "cy": 2759.5,
+        "text": "Hyperion",
+        "conf": 0.9622769200000001,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 2.0,
+        "_tid": 91
+      },
+      {
+        "x0": 1357.0,
+        "y0": 2730.0,
+        "x1": 1616.0,
+        "y1": 2789.0,
+        "cx": 1486.5,
+        "cy": 2759.5,
+        "text": "Dragonfly",
+        "conf": 0.95490562,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 3.0,
+        "_tid": 92
+      },
+      {
+        "x0": 1636.0,
+        "y0": 2730.0,
+        "x1": 1921.0,
+        "y1": 2789.0,
+        "cx": 1778.5,
+        "cy": 2759.5,
+        "text": "Propulsion",
+        "conf": 0.9645393400000001,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 4.0,
+        "_tid": 93
+      },
+      {
+        "x0": 1944.0,
+        "y0": 2730.0,
+        "x1": 2101.0,
+        "y1": 2776.0,
+        "cx": 2022.5,
+        "cy": 2753.0,
+        "text": "Demo",
+        "conf": 0.96333969,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 5.0,
+        "_tid": 94
+      },
+      {
+        "x0": 495.0,
+        "y0": 2862.0,
+        "x1": 692.0,
+        "y1": 2931.0,
+        "cx": 593.5,
+        "cy": 2896.5,
+        "text": "Vehicle",
+        "conf": 0.96185951,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 1.0,
+        "_tid": 95
+      },
+      {
+        "x0": 1092.0,
+        "y0": 2867.0,
+        "x1": 1203.0,
+        "y1": 2913.0,
+        "cx": 1147.5,
+        "cy": 2890.0,
+        "text": "SV3",
+        "conf": 0.8824155399999999,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 2.0,
+        "_tid": 96
+      },
+      {
+        "x0": 1226.0,
+        "y0": 2867.0,
+        "x1": 1393.0,
+        "y1": 2926.0,
+        "cx": 1309.5,
+        "cy": 2896.5,
+        "text": "(Block",
+        "conf": 0.95670929,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 3.0,
+        "_tid": 97
+      },
+      {
+        "x0": 1410.0,
+        "y0": 2867.0,
+        "x1": 1462.0,
+        "y1": 2926.0,
+        "cx": 1436.0,
+        "cy": 2896.5,
+        "text": "2)",
+        "conf": 0.96858391,
+        "block": 7.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 4.0,
+        "_tid": 98
+      },
+      {
+        "x0": 495.0,
+        "y0": 3002.0,
+        "x1": 646.0,
+        "y1": 3048.0,
+        "cx": 570.5,
+        "cy": 3025.0,
+        "text": "Serial / Comp",
+        "conf": 0.92256889,
+        "block": 9.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "rehocr_text": "Serial / Comp",
+        "rehocr_conf": 0.92256889,
+        "rehocr_tag": "raw:psm6",
+        "rehocr_cell_text": "Serial / Comp",
+        "rehocr_cell_conf": 0.92256889,
+        "rehocr_cell_tag": "raw:psm6",
+        "rehocr_scope": "cell",
+        "rehocr_cell_key": "459.0,2962.5,862.0,3100.0",
+        "_tid": 99
+      },
+      {
+        "x0": 669.0,
+        "y0": 3002.0,
+        "x1": 685.0,
+        "y1": 3048.0,
+        "cx": 677.0,
+        "cy": 3025.0,
+        "text": "/",
+        "conf": 0.60101269,
+        "block": 9.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 100
+      },
+      {
+        "x0": 705.0,
+        "y0": 3002.0,
+        "x1": 1019.0,
+        "y1": 3061.0,
+        "cx": 862.0,
+        "cy": 3031.5,
+        "text": "Component",
+        "conf": 0.81757454,
+        "block": 9.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 101
+      },
+      {
+        "x0": 1092.0,
+        "y0": 3002.0,
+        "x1": 1344.0,
+        "y1": 3048.0,
+        "cx": 1218.0,
+        "cy": 3025.0,
+        "text": "SN42-AX",
+        "conf": 0.81590332,
+        "block": 9.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "rehocr_text": "542",
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "thr160:psm7",
+        "_tid": 102
+      },
+      {
+        "x0": 498.0,
+        "y0": 3139.0,
+        "x1": 626.0,
+        "y1": 3185.0,
+        "cx": 562.0,
+        "cy": 3162.0,
+        "text": "Build",
+        "conf": 0.96828423,
+        "block": 14.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 103
+      },
+      {
+        "x0": 652.0,
+        "y0": 3139.0,
+        "x1": 882.0,
+        "y1": 3185.0,
+        "cx": 767.0,
+        "cy": 3162.0,
+        "text": "Revision",
+        "conf": 0.96538391,
+        "block": 14.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 104
+      },
+      {
+        "x0": 1092.0,
+        "y0": 3139.0,
+        "x1": 1196.0,
+        "y1": 3185.0,
+        "cx": 1144.0,
+        "cy": 3162.0,
+        "text": "Rev",
+        "conf": 0.93138588,
+        "block": 14.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 105
+      },
+      {
+        "x0": 1219.0,
+        "y0": 3139.0,
+        "x1": 1255.0,
+        "y1": 3185.0,
+        "cx": 1237.0,
+        "cy": 3162.0,
+        "text": "E",
+        "conf": 0.92900673,
+        "block": 14.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 106
+      },
+      {
+        "x0": 1275.0,
+        "y0": 3139.0,
+        "x1": 1380.0,
+        "y1": 3198.0,
+        "cx": 1327.5,
+        "cy": 3168.5,
+        "text": "(04)",
+        "conf": 0.9553245499999999,
+        "block": 14.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 5.0,
+        "_tid": 107
+      },
+      {
+        "x0": 498.0,
+        "y0": 3277.0,
+        "x1": 623.0,
+        "y1": 3323.0,
+        "cx": 560.5,
+        "cy": 3300.0,
+        "text": "Date",
+        "conf": 0.9623872400000001,
+        "block": 14.0,
+        "par": 2.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 108
+      },
+      {
+        "x0": 642.0,
+        "y0": 3277.0,
+        "x1": 898.0,
+        "y1": 3336.0,
+        "cx": 770.0,
+        "cy": 3306.5,
+        "text": "Compiled",
+        "conf": 0.9574865,
+        "block": 14.0,
+        "par": 2.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 109
+      },
+      {
+        "x0": 1088.0,
+        "y0": 3277.0,
+        "x1": 1403.0,
+        "y1": 3323.0,
+        "cx": 1245.5,
+        "cy": 3300.0,
+        "text": "2025-01-17",
+        "conf": 0.96347633,
+        "block": 14.0,
+        "par": 2.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 110
+      },
+      {
+        "x0": 491.0,
+        "y0": 3404.0,
+        "x1": 741.0,
+        "y1": 3471.0,
+        "cx": 616.0,
+        "cy": 3437.5,
+        "text": "Compiler",
+        "conf": 0.95491364,
+        "block": 14.0,
+        "par": 3.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 111
+      },
+      {
+        "x0": 1092.0,
+        "y0": 3408.0,
+        "x1": 1177.0,
+        "y1": 3454.0,
+        "cx": 1134.5,
+        "cy": 3431.0,
+        "text": "QA",
+        "conf": 0.94505806,
+        "block": 14.0,
+        "par": 3.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 112
+      },
+      {
+        "x0": 1190.0,
+        "y0": 3408.0,
+        "x1": 1301.0,
+        "y1": 3454.0,
+        "cx": 1245.5,
+        "cy": 3431.0,
+        "text": "Test",
+        "conf": 0.96617294,
+        "block": 14.0,
+        "par": 3.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 113
+      },
+      {
+        "x0": 1324.0,
+        "y0": 3408.0,
+        "x1": 1547.0,
+        "y1": 3454.0,
+        "cx": 1435.5,
+        "cy": 3431.0,
+        "text": "Harness",
+        "conf": 0.9657466100000001,
+        "block": 14.0,
+        "par": 3.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 114
+      },
+      {
+        "x0": 495.0,
+        "y0": 3546.0,
+        "x1": 688.0,
+        "y1": 3591.0,
+        "cx": 591.5,
+        "cy": 3568.5,
+        "text": "Source",
+        "conf": 0.96218735,
+        "block": 14.0,
+        "par": 4.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 115
+      },
+      {
+        "x0": 711.0,
+        "y0": 3546.0,
+        "x1": 895.0,
+        "y1": 3591.0,
+        "cx": 803.0,
+        "cy": 3568.5,
+        "text": "Bundle",
+        "conf": 0.9603697200000001,
+        "block": 14.0,
+        "par": 4.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 116
+      },
+      {
+        "x0": 1088.0,
+        "y0": 3546.0,
+        "x1": 1233.0,
+        "y1": 3591.0,
+        "cx": 1160.5,
+        "cy": 3568.5,
+        "text": "/Data",
+        "conf": 0.9232740800000001,
+        "block": 14.0,
+        "par": 4.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 117
+      },
+      {
+        "x0": 1255.0,
+        "y0": 3546.0,
+        "x1": 2308.0,
+        "y1": 3605.0,
+        "cx": 1781.5,
+        "cy": 3575.5,
+        "text": "Packages/Hyperion_SV3_SN42_RevE",
+        "conf": 0.90455399,
+        "block": 14.0,
+        "par": 4.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 118
+      },
+      {
+        "x0": 469.0,
+        "y0": 3814.0,
+        "x1": 554.0,
+        "y1": 3903.0,
+        "cx": 511.5,
+        "cy": 3858.5,
+        "text": "1.",
+        "conf": 0.94395889,
+        "block": 16.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 119
+      },
+      {
+        "x0": 606.0,
+        "y0": 3814.0,
+        "x1": 1210.0,
+        "y1": 3903.0,
+        "cx": 908.0,
+        "cy": 3858.5,
+        "text": "Functional",
+        "conf": 0.94395889,
+        "block": 16.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 120
+      },
+      {
+        "x0": 1249.0,
+        "y0": 3814.0,
+        "x1": 1934.0,
+        "y1": 3929.0,
+        "cx": 1591.5,
+        "cy": 3871.5,
+        "text": "Acceptance",
+        "conf": 0.9635028099999999,
+        "block": 16.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 121
+      },
+      {
+        "x0": 1977.0,
+        "y0": 3814.0,
+        "x1": 2531.0,
+        "y1": 3929.0,
+        "cx": 2254.0,
+        "cy": 3871.5,
+        "text": "Snapshot",
+        "conf": 0.95876472,
+        "block": 16.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 122
+      },
+      {
+        "x0": 495.0,
+        "y0": 4168.0,
+        "x1": 636.0,
+        "y1": 4214.0,
+        "cx": 565.5,
+        "cy": 4191.0,
+        "text": "Term",
+        "conf": 0.96370941,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 123
+      },
+      {
+        "x0": 1078.0,
+        "y0": 4168.0,
+        "x1": 1410.0,
+        "y1": 4214.0,
+        "cx": 1244.0,
+        "cy": 4191.0,
+        "text": "Description",
+        "conf": 0.92086472,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 2.0,
+        "_tid": 124
+      },
+      {
+        "x0": 1485.0,
+        "y0": 4168.0,
+        "x1": 1859.0,
+        "y1": 4214.0,
+        "cx": 1672.0,
+        "cy": 4191.0,
+        "text": "Requirement",
+        "conf": 0.9659728200000001,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 3.0,
+        "_tid": 125
+      },
+      {
+        "x0": 1927.0,
+        "y0": 4119.0,
+        "x1": 2208.0,
+        "y1": 4165.0,
+        "cx": 2067.5,
+        "cy": 4142.0,
+        "text": "Measured",
+        "conf": 0.9681663500000001,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 4.0,
+        "_tid": 126
+      },
+      {
+        "x0": 2285.0,
+        "y0": 4168.0,
+        "x1": 2432.0,
+        "y1": 4214.0,
+        "cx": 2358.5,
+        "cy": 4191.0,
+        "text": "Units",
+        "conf": 0.96408524,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 5.0,
+        "_tid": 127
+      },
+      {
+        "x0": 2586.0,
+        "y0": 4168.0,
+        "x1": 2727.0,
+        "y1": 4214.0,
+        "cx": 2656.5,
+        "cy": 4191.0,
+        "text": "Page",
+        "conf": 0.9599534599999999,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 6.0,
+        "_tid": 128
+      },
+      {
+        "x0": 2799.0,
+        "y0": 4115.0,
+        "x1": 2927.0,
+        "y1": 4229.0,
+        "cx": 2863.0,
+        "cy": 4172.0,
+        "text": "Data",
+        "conf": 0.96789581,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 7.0,
+        "_tid": 129
+      },
+      {
+        "x0": 3167.0,
+        "y0": 4168.0,
+        "x1": 3331.0,
+        "y1": 4214.0,
+        "cx": 3249.0,
+        "cy": 4191.0,
+        "text": "Notes",
+        "conf": 0.9682304399999999,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 8.0,
+        "_tid": 130
+      },
+      {
+        "x0": 1265.0,
+        "y0": 4178.0,
+        "x1": 1296.0,
+        "y1": 4227.0,
+        "cx": 1280.5,
+        "cy": 4202.5,
+        "text": "P",
+        "conf": 0.86718887,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 1.0,
+        "_tid": 131
+      },
+      {
+        "x0": 1560.0,
+        "y0": 4178.0,
+        "x1": 1591.0,
+        "y1": 4227.0,
+        "cx": 1575.5,
+        "cy": 4202.5,
+        "text": "q",
+        "conf": 0.8765554,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 2.0,
+        "_tid": 132
+      },
+      {
+        "x0": 1924.0,
+        "y0": 4214.0,
+        "x1": 2085.0,
+        "y1": 4260.0,
+        "cx": 2004.5,
+        "cy": 4237.0,
+        "text": "Value",
+        "conf": 0.96440529,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 3.0,
+        "_tid": 133
+      },
+      {
+        "x0": 2659.0,
+        "y0": 4178.0,
+        "x1": 2690.0,
+        "y1": 4227.0,
+        "cx": 2674.5,
+        "cy": 4202.5,
+        "text": "g",
+        "conf": 0.90408958,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 4.0,
+        "rehocr_text": "g",
+        "rehocr_conf": 0.90408958,
+        "rehocr_tag": "auto:psm8",
+        "_tid": 134
+      },
+      {
+        "x0": 2799.0,
+        "y0": 4209.0,
+        "x1": 3006.0,
+        "y1": 4278.0,
+        "cx": 2902.5,
+        "cy": 4243.5,
+        "text": "Quality",
+        "conf": 0.9672338899999999,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 5.0,
+        "_tid": 135
+      },
+      {
+        "x0": 1075.0,
+        "y0": 4352.0,
+        "x1": 1206.0,
+        "y1": 4398.0,
+        "cx": 1140.5,
+        "cy": 4375.0,
+        "text": "Time",
+        "conf": 0.96013062,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 3.0,
+        "word": 1.0,
+        "_tid": 136
+      },
+      {
+        "x0": 3163.0,
+        "y0": 4404.0,
+        "x1": 3360.0,
+        "y1": 4463.0,
+        "cx": 3261.5,
+        "cy": 4433.5,
+        "text": "sample",
+        "conf": 0.96599823,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 4.0,
+        "word": 1.0,
+        "_tid": 137
+      },
+      {
+        "x0": 498.0,
+        "y0": 4499.0,
+        "x1": 616.0,
+        "y1": 4506.0,
+        "cx": 557.0,
+        "cy": 4502.5,
+        "text": "ignition_delay",
+        "conf": 0.91971329,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 1.0,
+        "rehocr_text": "ignition_delay",
+        "rehocr_conf": 0.91971329,
+        "rehocr_tag": "auto:psm7",
+        "rehocr_cell_text": "ignition_delay",
+        "rehocr_cell_conf": 0.91971329,
+        "rehocr_cell_tag": "auto:psm7",
+        "rehocr_scope": "cell",
+        "rehocr_cell_key": "459.0,4351.0,857.0,4710.0",
+        "_tid": 138
+      },
+      {
+        "x0": 1078.0,
+        "y0": 4446.0,
+        "x1": 1305.0,
+        "y1": 4510.0,
+        "cx": 1191.5,
+        "cy": 4478.0,
+        "text": "between",
+        "conf": 0.9636985,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 2.0,
+        "_tid": 139
+      },
+      {
+        "x0": 3285.0,
+        "y0": 4499.0,
+        "x1": 3294.0,
+        "y1": 4506.0,
+        "cx": 3289.5,
+        "cy": 4502.5,
+        "text": ":",
+        "conf": 0.0,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 3.0,
+        "_tid": 140
+      },
+      {
+        "x0": 498.0,
+        "y0": 4495.0,
+        "x1": 869.0,
+        "y1": 4562.0,
+        "cx": 683.5,
+        "cy": 4528.5,
+        "text": "ignition_delay",
+        "conf": 0.91626633,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 1.0,
+        "_tid": 141
+      },
+      {
+        "x0": 1482.0,
+        "y0": 4506.0,
+        "x1": 1514.0,
+        "y1": 4545.0,
+        "cx": 1498.0,
+        "cy": 4525.5,
+        "text": "=",
+        "conf": 0.96668091,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 2.0,
+        "rehocr_text": "=",
+        "rehocr_conf": 0.96668091,
+        "rehocr_tag": "auto:psm8",
+        "_tid": 142
+      },
+      {
+        "x0": 1534.0,
+        "y0": 4499.0,
+        "x1": 1649.0,
+        "y1": 4545.0,
+        "cx": 1591.5,
+        "cy": 4522.0,
+        "text": "0.85",
+        "conf": 0.9541337599999999,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 3.0,
+        "rehocr_text": "0.85",
+        "rehocr_conf": 0.9541337599999999,
+        "rehocr_tag": "thr160:psm7",
+        "_tid": 143
+      },
+      {
+        "x0": 1927.0,
+        "y0": 4499.0,
+        "x1": 2042.0,
+        "y1": 4545.0,
+        "cx": 1984.5,
+        "cy": 4522.0,
+        "text": "0.62",
+        "conf": 0.96366188,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 4.0,
+        "_tid": 144
+      },
+      {
+        "x0": 2278.0,
+        "y0": 4495.0,
+        "x1": 2311.0,
+        "y1": 4562.0,
+        "cx": 2294.5,
+        "cy": 4528.5,
+        "text": "S",
+        "conf": 0.52612518,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 5.0,
+        "rehocr_text": "S",
+        "rehocr_conf": 0.52612518,
+        "rehocr_tag": "scaled:psm7",
+        "rehocr_cell_text": "S",
+        "rehocr_cell_conf": 0.52612518,
+        "rehocr_cell_tag": "scaled:psm7",
+        "rehocr_scope": "cell",
+        "rehocr_cell_key": "2246.5,4351.0,2509.0,4710.0",
+        "_tid": 145
+      },
+      {
+        "x0": 2583.0,
+        "y0": 4499.0,
+        "x1": 2616.0,
+        "y1": 4545.0,
+        "cx": 2599.5,
+        "cy": 4522.0,
+        "text": "5",
+        "conf": 0.9698011,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 6.0,
+        "_tid": 146
+      },
+      {
+        "x0": 2803.0,
+        "y0": 4499.0,
+        "x1": 2954.0,
+        "y1": 4545.0,
+        "cx": 2878.5,
+        "cy": 4522.0,
+        "text": "PASS",
+        "conf": 0.96522133,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 7.0,
+        "_tid": 147
+      },
+      {
+        "x0": 3167.0,
+        "y0": 4499.0,
+        "x1": 3373.0,
+        "y1": 4545.0,
+        "cx": 3270.0,
+        "cy": 4522.0,
+        "text": "nominal",
+        "conf": 0.95890778,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 6.0,
+        "word": 8.0,
+        "_tid": 148
+      },
+      {
+        "x0": 1075.0,
+        "y0": 4565.0,
+        "x1": 1177.0,
+        "y1": 4597.0,
+        "cx": 1126.0,
+        "cy": 4581.0,
+        "text": "arm",
+        "conf": 0.96781998,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 1.0,
+        "_tid": 149
+      },
+      {
+        "x0": 1200.0,
+        "y0": 4552.0,
+        "x1": 1298.0,
+        "y1": 4597.0,
+        "cx": 1249.0,
+        "cy": 4574.5,
+        "text": "and",
+        "conf": 0.9635183,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 2.0,
+        "_tid": 150
+      },
+      {
+        "x0": 3163.0,
+        "y0": 4548.0,
+        "x1": 3291.0,
+        "y1": 4647.0,
+        "cx": 3227.0,
+        "cy": 4597.5,
+        "text": "case",
+        "conf": 0.95529495,
+        "block": 18.0,
+        "par": 1.0,
+        "line": 7.0,
+        "word": 3.0,
+        "_tid": 151
+      },
+      {
+        "x0": 1078.0,
+        "y0": 4650.0,
+        "x1": 1265.0,
+        "y1": 4709.0,
+        "cx": 1171.5,
+        "cy": 4679.5,
+        "text": "ignition",
+        "conf": 0.95057266,
+        "block": 19.0,
+        "par": 1.0,
+        "line": 1.0,
+        "word": 1.0,
+        "_tid": 152
+      }
+    ],
+    "tables": [
+      {
+        "bbox_px": [
+          459.0,
+          2689.0,
+          2344.0,
+          3682.0
+        ],
+        "y_lines_px": [
+          2689.0,
+          2824.5,
+          2962.5,
+          3100.0,
+          3234.5,
+          3368.5,
+          3506.5,
+          3682.0
+        ],
+        "row_bands_px": [
+          [
+            2689.0,
+            2824.5
+          ],
+          [
+            2824.5,
+            2962.5
+          ],
+          [
+            2962.5,
+            3100.0
+          ],
+          [
+            3100.0,
+            3234.5
+          ],
+          [
+            3234.5,
+            3368.5
+          ],
+          [
+            3368.5,
+            3506.5
+          ],
+          [
+            3506.5,
+            3682.0
+          ]
+        ],
+        "col_bounds_px": [
+          459.0,
+          862.0,
+          2344.0
+        ],
+        "header_virtual_tokens": [
+          {
+            "x0": 498.0,
+            "y0": 2595.0,
+            "x1": 636.0,
+            "y1": 2641.0,
+            "cx": 567.0,
+            "cy": 2618.0,
+            "text": "Field",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 1088.0,
+            "y0": 2595.0,
+            "x1": 1249.0,
+            "y1": 2641.0,
+            "cx": 1168.5,
+            "cy": 2618.0,
+            "text": "Value",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          }
+        ]
+      },
+      {
+        "bbox_px": [
+          459.0,
+          4312.5,
+          3471.0,
+          4741.5
+        ],
+        "y_lines_px": [
+          4312.5,
+          4741.5
+        ],
+        "row_bands_px": [
+          [
+            4351.0,
+            4710.0
+          ]
+        ],
+        "col_bounds_px": [
+          459.0,
+          857.0,
+          1447.5,
+          1891.5,
+          2246.5,
+          2509.0,
+          2763.0,
+          3086.5,
+          3471.0
+        ],
+        "header_virtual_tokens": [
+          {
+            "x0": 495.0,
+            "y0": 4168.0,
+            "x1": 636.0,
+            "y1": 4214.0,
+            "cx": 565.5,
+            "cy": 4191.0,
+            "text": "Term",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 1078.0,
+            "y0": 4168.0,
+            "x1": 1410.0,
+            "y1": 4227.0,
+            "cx": 1244.0,
+            "cy": 4197.5,
+            "text": "Description P",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 1485.0,
+            "y0": 4168.0,
+            "x1": 1859.0,
+            "y1": 4227.0,
+            "cx": 1672.0,
+            "cy": 4197.5,
+            "text": "Requirement q",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 1924.0,
+            "y0": 4119.0,
+            "x1": 2208.0,
+            "y1": 4260.0,
+            "cx": 2066.0,
+            "cy": 4189.5,
+            "text": "Measured Value",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 2285.0,
+            "y0": 4168.0,
+            "x1": 2432.0,
+            "y1": 4214.0,
+            "cx": 2358.5,
+            "cy": 4191.0,
+            "text": "Units",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 2586.0,
+            "y0": 4168.0,
+            "x1": 2727.0,
+            "y1": 4227.0,
+            "cx": 2656.5,
+            "cy": 4197.5,
+            "text": "Page g",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 2799.0,
+            "y0": 4115.0,
+            "x1": 3006.0,
+            "y1": 4278.0,
+            "cx": 2902.5,
+            "cy": 4196.5,
+            "text": "Data Quality",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          },
+          {
+            "x0": 3167.0,
+            "y0": 4168.0,
+            "x1": 3331.0,
+            "y1": 4214.0,
+            "cx": 3249.0,
+            "cy": 4191.0,
+            "text": "Notes",
+            "conf": 1.0,
+            "block": 0.0,
+            "par": 0.0,
+            "line": 0.0,
+            "word": 0.0,
+            "virtual": 1.0
+          }
+        ]
+      }
+    ],
+    "lines": [
+      {
+        "text": "Synthetic  End  ltem  Data  Package  (Debug  Reference)",
+        "bbox": [
+          538.0,
+          505.0,
+          2055.0,
+          564.0
+        ],
+        "cy": 531.8125
+      },
+      {
+        "text": "\u00ab   Document  Profile",
+        "bbox": [
+          675.0,
+          603.0,
+          1203.0,
+          649.0
+        ],
+        "cy": 628.6666666666666
+      },
+      {
+        "text": "1.  Functional  Acceptance  Snapshot",
+        "bbox": [
+          675.0,
+          701.0,
+          1698.0,
+          760.0
+        ],
+        "cy": 728.3
+      },
+      {
+        "text": "\u00ab  2.  Performance  KPI  Table",
+        "bbox": [
+          675.0,
+          796.0,
+          1429.0,
+          842.0
+        ],
+        "cy": 820.7
+      },
+      {
+        "text": "3.  Environmental  Endurance  Matrix",
+        "bbox": [
+          675.0,
+          895.0,
+          1691.0,
+          941.0
+        ],
+        "cy": 919.6
+      },
+      {
+        "text": "\u00ab  4.  Calibration  &  Trim  Table",
+        "bbox": [
+          675.0,
+          996.0,
+          1452.0,
+          1042.0
+        ],
+        "cy": 1020.1666666666666
+      },
+      {
+        "text": "\u00ab  5  Anomaly  &  Waiver  Log",
+        "bbox": [
+          675.0,
+          1095.0,
+          1419.0,
+          1154.0
+        ],
+        "cy": 1121.1666666666667
+      },
+      {
+        "text": "6.  Attachment  Index  (Synthetic)",
+        "bbox": [
+          675.0,
+          1193.0,
+          1587.0,
+          1252.0
+        ],
+        "cy": 1218.9
+      },
+      {
+        "text": "Usage  Hints",
+        "bbox": [
+          810.0,
+          1288.0,
+          1203.0,
+          1347.0
+        ],
+        "cy": 1315.8333333333333
+      },
+      {
+        "text": "synthetic   End   Item   Data   Package   (Debug",
+        "bbox": [
+          462.0,
+          1475.0,
+          2852.0,
+          1589.0
+        ],
+        "cy": 1525.5
+      },
+      {
+        "text": "Reference)",
+        "bbox": [
+          469.0,
+          1622.0,
+          1092.0,
+          1737.0
+        ],
+        "cy": 1679.5
+      },
+      {
+        "text": "This  document  intentionally  blends  nominal,  off-nominal,  and  incomplete  data  so  the  scanner  can  be",
+        "bbox": [
+          459.0,
+          1891.0,
+          3180.0,
+          1950.0
+        ],
+        "cy": 1917.0357142857142
+      },
+      {
+        "text": "exercised  against  a  broad  set  of  scenarios  (duplicate  terms,  missing  units,  multi-value  tables,  etc.).  Only",
+        "bbox": [
+          459.0,
+          1986.0,
+          3281.0,
+          2045.0
+        ],
+        "cy": 2012.8
+      },
+      {
+        "text": "synthetic  values  are  used.",
+        "bbox": [
+          462.0,
+          2084.0,
+          1167.0,
+          2143.0
+        ],
+        "cy": 2110.25
+      },
+      {
+        "text": "Document   Profile",
+        "bbox": [
+          469.0,
+          2291.0,
+          1475.0,
+          2379.0
+        ],
+        "cy": 2335.0
+      },
+      {
+        "text": "Field                Value",
+        "bbox": [
+          498.0,
+          2595.0,
+          1249.0,
+          2641.0
+        ],
+        "cy": 2618.0
+      },
+      {
+        "text": "Program             Hyperion  Dragonfly  Propulsion  Demo",
+        "bbox": [
+          498.0,
+          2726.0,
+          2101.0,
+          2793.0
+        ],
+        "cy": 2758.2
+      },
+      {
+        "text": "Vehicle              SV3  (Block  2)",
+        "bbox": [
+          495.0,
+          2862.0,
+          1462.0,
+          2931.0
+        ],
+        "cy": 2894.875
+      },
+      {
+        "text": "Serial / Comp  /  Component   SN42-AX",
+        "bbox": [
+          495.0,
+          3002.0,
+          1344.0,
+          3061.0
+        ],
+        "cy": 3026.625
+      },
+      {
+        "text": "Build  Revision        Rev  E  (04)",
+        "bbox": [
+          498.0,
+          3139.0,
+          1380.0,
+          3198.0
+        ],
+        "cy": 3163.3
+      },
+      {
+        "text": "Date  Compiled       2025-01-17",
+        "bbox": [
+          498.0,
+          3277.0,
+          1403.0,
+          3336.0
+        ],
+        "cy": 3302.1666666666665
+      },
+      {
+        "text": "Compiler             QA Test  Harness",
+        "bbox": [
+          491.0,
+          3404.0,
+          1547.0,
+          3471.0
+        ],
+        "cy": 3432.625
+      },
+      {
+        "text": "Source  Bundle       /Data  Packages/Hyperion_SV3_SN42_RevE",
+        "bbox": [
+          495.0,
+          3546.0,
+          2308.0,
+          3605.0
+        ],
+        "cy": 3570.25
+      },
+      {
+        "text": "1.   Functional  Acceptance  Snapshot",
+        "bbox": [
+          469.0,
+          3814.0,
+          2531.0,
+          3929.0
+        ],
+        "cy": 3865.0
+      },
+      {
+        "text": "Term                Description   Requirement   Measured    Units      Page   Data         Notes",
+        "bbox": [
+          495.0,
+          4115.0,
+          3331.0,
+          4229.0
+        ],
+        "cy": 4182.5
+      },
+      {
+        "text": "P          q            Value                    g     Quality",
+        "bbox": [
+          1265.0,
+          4178.0,
+          3006.0,
+          4278.0
+        ],
+        "cy": 4217.6
+      },
+      {
+        "text": "Time",
+        "bbox": [
+          1075.0,
+          4352.0,
+          1206.0,
+          4398.0
+        ],
+        "cy": 4375.0
+      },
+      {
+        "text": "sample",
+        "bbox": [
+          3163.0,
+          4404.0,
+          3360.0,
+          4463.0
+        ],
+        "cy": 4433.5
+      },
+      {
+        "text": "ignition_delay                between                                         :",
+        "bbox": [
+          498.0,
+          4446.0,
+          3294.0,
+          4510.0
+        ],
+        "cy": 4494.333333333333
+      },
+      {
+        "text": "ignition_delay                     =  0.85          0.62         S          5       PASS        nominal",
+        "bbox": [
+          498.0,
+          4495.0,
+          3373.0,
+          4562.0
+        ],
+        "cy": 4524.0625
+      },
+      {
+        "text": "arm  and                                         case",
+        "bbox": [
+          1075.0,
+          4548.0,
+          3291.0,
+          4647.0
+        ],
+        "cy": 4584.333333333333
+      },
+      {
+        "text": "ignition",
+        "bbox": [
+          1078.0,
+          4650.0,
+          1265.0,
+          4709.0
+        ],
+        "cy": 4679.5
+      }
+    ],
+    "grid": {
+      "h": [
+        [
+          0.12,
+          0.7428282828282828,
+          0.8818300653594772,
+          0.7448484848484849
+        ],
+        [
+          0.12,
+          0.9571717171717171,
+          0.9074509803921569,
+          0.9585858585858585
+        ],
+        [
+          0.12,
+          0.8705050505050506,
+          0.9074509803921569,
+          0.8719191919191919
+        ],
+        [
+          0.12,
+          0.5422222222222223,
+          0.6128104575163399,
+          0.5442424242424242
+        ],
+        [
+          0.12,
+          0.7076767676767677,
+          0.6128104575163399,
+          0.7090909090909091
+        ],
+        [
+          0.12,
+          0.6527272727272727,
+          0.6128104575163399,
+          0.6541414141414141
+        ],
+        [
+          0.12,
+          0.5977777777777777,
+          0.6128104575163399,
+          0.5991919191919192
+        ],
+        [
+          0.12,
+          0.5698989898989899,
+          0.6128104575163399,
+          0.5713131313131313
+        ],
+        [
+          0.12,
+          0.6797979797979798,
+          0.6128104575163399,
+          0.6812121212121212
+        ],
+        [
+          0.12,
+          0.6256565656565657,
+          0.6128104575163399,
+          0.6268686868686869
+        ]
+      ],
+      "v": []
+    },
+    "img_w": 3825,
+    "img_h": 4950,
+    "lang": "eng+equ",
+    "psm": 4,
+    "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(10/48)",
+    "source": "merged"
+  }
+}

@@ -7879,6 +7879,7 @@ _UNIT_ALIAS_MAP_CACHE: Optional[Dict[str, str]] = None
 _UNIT_REGEX_CACHE: Optional[re.Pattern] = None
 _MEASUREMENT_REGEX_CACHE: Optional[re.Pattern] = None
 _MEASUREMENT_PREFIX_REGEX_CACHE: Optional[re.Pattern] = None
+_MERGED_BUNDLE_CACHE: Dict[str, Dict[str, object]] = {}
 
 
 def _resolve_repo_root() -> Path:
@@ -7895,6 +7896,481 @@ def _resolve_repo_root() -> Path:
     except Exception:
         return Path.cwd()
 
+
+def _merged_root() -> Path:
+    """Return root directory for merged OCR artifacts."""
+    env_root = (os.environ.get("MERGED_OCR_ROOT") or "").strip()
+    if env_root:
+        try:
+            return Path(env_root).expanduser()
+        except Exception:
+            pass
+    return _resolve_repo_root() / "debug" / "ocr_merged"
+
+
+def _merged_output_dir_for_pdf(pdf_path: Path, serial_component: Optional[str]) -> Path:
+    """Build a deterministic output dir for merged OCR artifacts."""
+    try:
+        program, _, serial = derive_pdf_identity(pdf_path)
+    except Exception:
+        program, serial = "", None
+    serial_token = (serial_component or serial or pdf_path.stem or "unknown").strip()
+    folder = f"{program}_{serial_token}" if program else serial_token
+    return _merged_root() / folder
+
+
+def _detect_common_lines(pages_text: Dict[int, str], *, top_n: int = 3, bottom_n: int = 3) -> Tuple[List[str], List[str]]:
+    """Identify repeated header/footer lines across pages."""
+    header_counts: Dict[str, int] = {}
+    footer_counts: Dict[str, int] = {}
+    pages = list(sorted(pages_text.keys()))
+    if not pages:
+        return [], []
+    for p in pages:
+        lines = [ln.strip() for ln in (pages_text.get(p) or "").splitlines()]
+        tops = [ln for ln in lines if ln][:top_n]
+        bots = [ln for ln in reversed(lines) if ln][:bottom_n]
+        for ln in tops:
+            header_counts[ln] = header_counts.get(ln, 0) + 1
+        for ln in bots:
+            footer_counts[ln] = footer_counts.get(ln, 0) + 1
+    threshold = max(2, int(len(pages) * 0.6))
+    headers = [ln for ln, cnt in header_counts.items() if cnt >= threshold]
+    footers = [ln for ln, cnt in footer_counts.items() if cnt >= threshold]
+    return headers, footers
+
+
+def pre_ocr_and_merge_pdf(pdf_path: Path, *, serial_component: Optional[str] = None, dpi: Optional[int] = None, out_dir: Optional[Path] = None) -> Dict[str, object]:
+    """
+    Force-OCR every page, write per-page and combined text, and emit a manifest.
+    - Removes repeated headers/footers; stores them separately.
+    - Combined file keeps a page span map so matches can be mapped back to pages.
+    """
+    pdf_path = Path(pdf_path)
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    page_count = get_pdf_page_count(pdf_path)
+    pages = list(range(1, page_count + 1)) if page_count > 0 else [1]
+
+    # Respect optional DPI override during this call only.
+    orig_dpi_env = os.environ.get("OCR_DPI")
+    try:
+        if dpi is not None:
+            os.environ["OCR_DPI"] = str(int(dpi))
+        page_text_map, pipeline = extract_pages_text(pdf_path, pages, do_ocr_fallback=True, ocr_mode="ocr_only")
+    finally:
+        try:
+            if dpi is not None:
+                if orig_dpi_env is None:
+                    os.environ.pop("OCR_DPI", None)
+                else:
+                    os.environ["OCR_DPI"] = orig_dpi_env
+        except Exception:
+            pass
+
+    # Detect headers/footers for metadata only (do not strip from combined output).
+    headers, footers = _detect_common_lines(page_text_map)
+
+    target_dir = Path(out_dir) if out_dir else _merged_output_dir_for_pdf(pdf_path, serial_component)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Capture OCR settings for IR retrieval
+    try:
+        dpi_effective = int(os.environ.get("OCR_DPI", "700"))
+    except Exception:
+        dpi_effective = 700
+    try:
+        psm_effective = int((os.environ.get("TESS_PSM") or "6").strip())
+    except Exception:
+        psm_effective = 6
+    try:
+        lang_effective = _tess_lang_from_env()
+    except Exception:
+        lang_effective = "eng"
+
+    page_files: Dict[int, str] = {}
+    page_ir_files: Dict[int, str] = {}
+    page_page_json: Dict[int, str] = {}
+    page_texts: List[str] = []
+    page_spans: List[Dict[str, object]] = []
+
+    sorted_pages = sorted(page_text_map.keys())
+    for idx, p in enumerate(sorted_pages):
+        ir, _label = _get_tess_tsv_ir(pdf_path, int(p), dpi_effective)
+        if ir is None:
+            ir = {
+                "text": page_text_map.get(p, ""),
+                "page": int(p),
+                "dpi": dpi_effective,
+                "lang": lang_effective,
+                "psm": psm_effective,
+                "pipeline": pipeline,
+            }
+        try:
+            page_bundle = _assemble_page_debug_json(pdf_path, int(p), dpi_effective, ir, source="merged", include_artifacts=True)
+        except Exception:
+            page_bundle = {
+                "pdf_file": str(pdf_path),
+                "page": int(p),
+                "dpi": dpi_effective,
+                "source": "merged",
+                "text": page_text_map.get(p, ""),
+            }
+
+        # Page text view (matches *_page.txt style)
+        page_text = _page_bundle_as_text(page_bundle)
+        path_txt = target_dir / f"page_{p}.txt"
+        path_txt.write_text(page_text, encoding="utf-8")
+        page_files[p] = str(path_txt)
+        page_texts.append(page_text)
+
+        # Structured page bundle + raw IR
+        path_page_json = target_dir / f"page_{p}_page.json"
+        path_ir_json = target_dir / f"page_{p}_ir.json"
+        try:
+            path_page_json.write_text(json.dumps(page_bundle, indent=2), encoding="utf-8")
+            page_page_json[p] = str(path_page_json)
+        except Exception:
+            pass
+        try:
+            path_ir_json.write_text(json.dumps(ir, indent=2), encoding="utf-8")
+            page_ir_files[p] = str(path_ir_json)
+        except Exception:
+            pass
+
+    # Keep page bundles in-memory for merged rendering.
+    page_bundle_map: Dict[int, Dict[str, object]] = {}
+    for p in sorted_pages:
+        try:
+            page_bundle_map[p] = json.loads(Path(page_page_json[p]).read_text(encoding="utf-8"))
+        except Exception:
+            page_bundle_map[p] = None  # type: ignore
+
+    def _table_header_key(headers: List[str]) -> Tuple[str, ...]:
+        key: List[str] = []
+        for h in headers:
+            norm = _normalize_anchor_token(str(h or ""))
+            if norm:
+                norm = re.sub(r"\d+$", "", norm)  # ignore trailing digits like "page3"
+                key.append(norm)
+        return tuple(key)
+
+    def _render_table_text(headers: List[str], rows: List[List[str]], col_bounds: Optional[List[float]]) -> List[str]:
+        col_count = 0
+        col_count = max(col_count, len(headers or []))
+        for r in rows:
+            col_count = max(col_count, len(r or []))
+        if col_count <= 0:
+            return []
+        max_w = 44
+        min_w = 6
+        widths = [min_w] * col_count
+        for ci in range(col_count):
+            candidates: List[str] = []
+            if ci < len(headers or []):
+                candidates.append(str(headers[ci] or ""))
+            for r in rows:
+                if ci < len(r or []):
+                    candidates.append(str((r or [])[ci] or ""))
+            best = max((len(re.sub(r"\s+", " ", c.strip())) for c in candidates if c and str(c).strip()), default=min_w)
+            widths[ci] = int(max(min_w, min(max_w, best)))
+
+        def _wrap_cell(s: str, width: int) -> List[str]:
+            try:
+                s = _normalize_ocr_text_for_display(s or "")
+            except Exception:
+                s = s or ""
+            s = re.sub(r"\s+", " ", s.strip())
+            if not s:
+                return [""]
+            return textwrap.wrap(s, width=width, break_long_words=False, break_on_hyphens=False) or [""]
+
+        def _render_row(cells: List[str]) -> List[str]:
+            wrapped = [_wrap_cell(cells[i] if i < len(cells) else "", widths[i]) for i in range(col_count)]
+            h = max(len(w) for w in wrapped) if wrapped else 1
+            out = []
+            for li in range(h):
+                parts = []
+                for ci in range(col_count):
+                    seg = wrapped[ci][li] if li < len(wrapped[ci]) else ""
+                    parts.append(seg.ljust(widths[ci]))
+                out.append("| " + " | ".join(parts) + " |")
+            return out
+
+        def _sep(ch: str = "-") -> str:
+            return "+-" + "-+-".join((ch * w) for w in widths) + "-+"
+
+        lines: List[str] = []
+        lines.append(_sep("-"))
+        if headers:
+            header_strs = [str(x or "") for x in headers] + [""] * max(0, col_count - len(headers))
+            lines.extend(_render_row(header_strs))
+            lines.append(_sep("="))
+        for r in rows:
+            lines.extend(_render_row([str(x or "") for x in r]))
+            lines.append(_sep("-"))
+        if col_bounds:
+            try:
+                lines.append(f"(col_bounds_px: {[round(float(v), 1) for v in col_bounds]})")
+            except Exception:
+                pass
+        return lines
+
+    def _render_text_item(item: Dict[str, object]) -> List[str]:
+        out: List[str] = []
+        kind = str(item.get("kind") or "string").strip().lower()
+        txt = str(item.get("text") or "")
+        if not txt.strip():
+            return out
+        try:
+            bbox = item.get("bbox_px")
+            bbox_str = ""
+            if isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+                bbox_str = f" bbox_px=({_fmt_bbox(bbox)})"
+        except Exception:
+            bbox_str = ""
+        tag = "PARA" if kind == "paragraph" else kind.upper()
+        out.append(f"[{tag}{bbox_str}]")
+        out.append(txt.strip())
+        out.append("")
+        return out
+
+    combined_lines: List[str] = []
+    active_table: Optional[Dict[str, object]] = None
+    text_since_table = False
+
+    def _flush_active_table() -> None:
+        nonlocal combined_lines, active_table, text_since_table
+        if not active_table:
+            return
+        headers = active_table.get("headers") or []
+        rows = active_table.get("rows") or []
+        col_bounds = active_table.get("col_bounds")
+        table_lines = _render_table_text(headers, rows, col_bounds if isinstance(col_bounds, list) else None)
+        combined_lines.extend(table_lines)
+        combined_lines.append("")
+        active_table = None
+        text_since_table = False
+
+    for p in sorted_pages:
+        bundle = page_bundle_map.get(p) or {}
+        flow_items = bundle.get("flow") if isinstance(bundle, dict) else None
+        flow_list = list(flow_items) if isinstance(flow_items, list) else []
+        for item in flow_list:
+            if not isinstance(item, dict):
+                continue
+            typ = str(item.get("type") or "")
+            if typ == "table":
+                tb = item.get("table")
+                if not isinstance(tb, dict):
+                    continue
+                headers = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+                rows_raw = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+                rows: List[List[str]] = []
+                for r in rows_raw:
+                    if isinstance(r, dict) and isinstance(r.get("cells_text"), list):
+                        rows.append([str(x or "") for x in r.get("cells_text")])
+                key = _table_header_key(headers)
+                can_continue = False
+                if active_table and key == active_table.get("key"):
+                    try:
+                        last_p = int(active_table.get("last_page") or 0)
+                        if int(p) in (last_p, last_p + 1):
+                            can_continue = True
+                    except Exception:
+                        can_continue = not text_since_table
+                    if not text_since_table:
+                        can_continue = True
+                if can_continue and active_table:
+                    active_table["rows"].extend(rows)
+                    active_table["last_page"] = int(p)
+                else:
+                    _flush_active_table()
+                    active_table = {
+                        "key": key,
+                        "headers": headers,
+                        "rows": rows,
+                        "col_bounds": tb.get("col_bounds_px") if isinstance(tb.get("col_bounds_px"), list) else None,
+                        "last_page": int(p),
+                    }
+                text_since_table = False
+            else:
+                if active_table:
+                    txt_raw = str(item.get("text") or "").strip()
+                    wc = len(re.findall(r"[A-Za-z0-9]+", txt_raw))
+                    if wc <= 4 and len(txt_raw) <= 80:
+                        # Likely header/footer noise between table continuations; skip.
+                        continue
+                _flush_active_table()
+                combined_lines.extend(_render_text_item(item))
+                text_since_table = True
+    _flush_active_table()
+
+    combined_text = "\n".join(combined_lines).strip() + "\n"
+
+    # Build spans over the concatenated text for page mapping.
+    page_spans = []
+    current = 0
+    for p in sorted_pages:
+        # best-effort: map each page to its rendered block in combined_lines
+        block = page_bundle_map.get(p) or {}
+        txt_blk = ""
+        try:
+            # Approximate by rendering per-page tables/text again to measure length.
+            flow_items = block.get("flow") if isinstance(block, dict) else None
+            flow_list = list(flow_items) if isinstance(flow_items, list) else []
+            tmp_lines: List[str] = []
+            for it in flow_list:
+                if not isinstance(it, dict):
+                    continue
+                if str(it.get("type") or "") == "table":
+                    tb = it.get("table")
+                    if not isinstance(tb, dict):
+                        continue
+                    headers = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
+                    rows_raw = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+                    rows: List[List[str]] = []
+                    for r in rows_raw:
+                        if isinstance(r, dict) and isinstance(r.get("cells_text"), list):
+                            rows.append([str(x or "") for x in r.get("cells_text")])
+                    tmp_lines.extend(_render_table_text(headers, rows, tb.get("col_bounds_px") if isinstance(tb.get("col_bounds_px"), list) else None))
+                    tmp_lines.append("")
+                else:
+                    tmp_lines.extend(_render_text_item(it))
+            txt_blk = "\n".join(tmp_lines).strip() + "\n"
+        except Exception:
+            txt_blk = ""
+        start = current
+        end = start + len(txt_blk)
+        page_spans.append({"page": int(p), "start": start, "end": end})
+        current = end
+
+    headers_path = target_dir / "headers.txt"
+    footers_path = target_dir / "footers.txt"
+    headers_path.write_text("\n".join(headers) if headers else "", encoding="utf-8")
+    footers_path.write_text("\n".join(footers) if footers else "", encoding="utf-8")
+
+    combined_path = target_dir / "combined.txt"
+    combined_path.write_text(combined_text, encoding="utf-8")
+
+    combined_page_json_path = target_dir / "combined_page.json"
+    combined_ir_json_path = target_dir / "combined_ir.json"
+    try:
+        combined_page_json_path.write_text(json.dumps({
+            "source_pdf": str(pdf_path),
+            "page_count": page_count,
+            "dpi": dpi_effective,
+            "lang": lang_effective,
+            "psm": psm_effective,
+            "pipeline": pipeline,
+            "pages": [json.loads(Path(page_page_json[p]).read_text(encoding="utf-8")) if p in page_page_json else None for p in sorted_pages],
+        }, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        combined_ir_json_path.write_text(json.dumps({
+            "source_pdf": str(pdf_path),
+            "page_count": page_count,
+            "dpi": dpi_effective,
+            "lang": lang_effective,
+            "psm": psm_effective,
+            "pipeline": pipeline,
+            "pages": [json.loads(Path(page_ir_files[p]).read_text(encoding="utf-8")) if p in page_ir_files else None for p in sorted_pages],
+        }, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    manifest = {
+        "source_pdf": str(pdf_path),
+        "page_count": page_count,
+        "pipeline": pipeline,
+        "headers": headers,
+        "footers": footers,
+        "page_spans": page_spans,
+        "combined_path": str(combined_path),
+        "combined_page_json": str(combined_page_json_path),
+        "combined_ir_json": str(combined_ir_json_path),
+        "page_files": page_files,
+        "page_ir_files": page_ir_files,
+        "page_page_json": page_page_json,
+    }
+    manifest_path = target_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # Cache merged bundle for current process.
+    try:
+        _MERGED_BUNDLE_CACHE[_pdf_cache_key(pdf_path)] = {
+            "text": combined_text,
+            "manifest": manifest,
+            "dir": str(target_dir),
+        }
+    except Exception:
+        pass
+
+    return {
+        "combined": str(combined_path),
+        "combined_page_json": str(combined_page_json_path),
+        "combined_ir_json": str(combined_ir_json_path),
+        "manifest": str(manifest_path),
+        "headers": str(headers_path),
+        "footers": str(footers_path),
+        "page_files": page_files,
+        "page_ir_files": page_ir_files,
+        "page_page_json": page_page_json,
+        "pipeline": pipeline,
+        "dir": str(target_dir),
+    }
+
+
+def _load_merged_bundle(pdf_path: Path, serial_component: Optional[str]) -> Optional[Tuple[str, Dict[str, object]]]:
+    """Load merged OCR bundle if present."""
+    key = _pdf_cache_key(pdf_path)
+    if key in _MERGED_BUNDLE_CACHE:
+        bundle = _MERGED_BUNDLE_CACHE[key]
+        return bundle.get("text"), bundle.get("manifest")
+    target_dir = _merged_output_dir_for_pdf(pdf_path, serial_component)
+    manifest_path = target_dir / "manifest.json"
+    combined_path = target_dir / "combined.txt"
+    if not manifest_path.exists() or not combined_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        text = combined_path.read_text(encoding="utf-8")
+        _MERGED_BUNDLE_CACHE[key] = {"text": text, "manifest": manifest, "dir": str(target_dir)}
+        return text, manifest
+    except Exception:
+        return None
+
+
+def _page_for_snippet(snippet: str, full_text: str, manifest: Dict[str, object]) -> Optional[int]:
+    """Best-effort mapping from snippet offset to a page using manifest spans."""
+    if not snippet or not full_text:
+        return None
+    try:
+        idx = full_text.find(snippet)
+    except Exception:
+        idx = -1
+    if idx == -1:
+        try:
+            # Fallback: look for first token of snippet.
+            token = snippet.split()[0]
+            idx = full_text.find(token) if token else -1
+        except Exception:
+            idx = -1
+    if idx == -1:
+        return None
+    spans = manifest.get("page_spans") if isinstance(manifest, dict) else None
+    if not isinstance(spans, list):
+        return None
+    for span in spans:
+        try:
+            start = int(span.get("start"))
+            end = int(span.get("end"))
+            if start <= idx < end:
+                return int(span.get("page"))
+        except Exception:
+            continue
+    return None
 
 def reset_scanner_state(confirm: bool = False, include_debug: bool = False) -> Dict[str, object]:
     """Delete on-disk caches and run/master artifacts so the scanner starts "fresh".
@@ -7925,6 +8401,7 @@ def reset_scanner_state(confirm: bool = False, include_debug: bool = False) -> D
         _PAGE_OCR_IR_CACHE.clear()
         _PAGE_BUNDLE_CACHE.clear()
         _OCR_DEBUG_EXPORT_DONE.clear()
+        _MERGED_BUNDLE_CACHE.clear()
     except Exception:
         pass
     try:
@@ -15846,6 +16323,18 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     """
     # Build text for constrained pages (or the whole doc if no pages specified)
     # Prefer pre-extracted cache when available to avoid re-reading per term
+    use_merged = (os.environ.get("USE_MERGED_OCR", "").strip().lower() in ("1", "true", "yes", "merged", "all"))
+    merged_text: Optional[str] = None
+    merged_manifest: Optional[Dict[str, object]] = None
+    if use_merged:
+        try:
+            bundle = _load_merged_bundle(pdf_path, serial_number)
+            if bundle:
+                merged_text, merged_manifest = bundle
+        except Exception:
+            merged_text = None
+            merged_manifest = None
+
     key = _pdf_cache_key(pdf_path)
     if key in _PAGE_TEXT_CACHE:
         full_map, pipeline, _pc = _PAGE_TEXT_CACHE[key]
@@ -15861,6 +16350,39 @@ def scan_pdf_for_term(pdf_path: Path, serial_number: str, term: str, pages: Sequ
     chosen_ctx = None
     failure_reason: Optional[str] = None
     failure_reason = "No numeric value located near term"
+
+    # Try merged OCR text first (treating the document as a single stream).
+    if merged_text:
+        number, ctx, reason = find_closest_number_in_text(merged_text, term, window_chars=window_chars, case_sensitive=case_sensitive,
+                                                         units_hint=units_hint, range_filter=range_filter, accept_dates=True)
+        if number:
+            page_guess = _page_for_snippet(ctx or number, merged_text, merged_manifest or {})
+            chosen_page = page_guess if page_guess is not None else 1
+            chosen_number = number
+            chosen_ctx = ctx or ""
+            merged_pipeline = "merged_ocr"
+            try:
+                mp = (merged_manifest or {}).get("pipeline")
+                if mp:
+                    merged_pipeline = f"merged_ocr > {mp}"
+            except Exception:
+                pass
+            return MatchResult(
+                pdf_file=pdf_path.name,
+                serial_number=serial_number,
+                term=term,
+                page=chosen_page,
+                number=chosen_number,
+                units=extract_units(chosen_number),
+                context=chosen_ctx or "",
+                method=merged_pipeline,
+                found=True,
+                confidence=None,
+                row_label=None,
+                column_label=None,
+                text_source="merged_ocr"
+            )
+        failure_reason = reason or failure_reason
 
     # Search pages in ascending order; stop at the first page where a number is found
     for p in sorted(page_text_map.keys()):

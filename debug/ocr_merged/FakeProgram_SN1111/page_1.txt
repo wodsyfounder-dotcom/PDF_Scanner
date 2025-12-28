@@ -1,5 +1,5 @@
 PDF: C:\Users\zachs\Documents\DevProjects\EIDPs\FakeProgram_SV1_SN1111.pdf
-Page: 1  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
+Page: 1  DPI: 450  Source: merged  Lang: eng+equ  PSM: 4
 Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(10/48)
 Image: 3825x4950
 

@@ -4362,7 +4362,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 }
             """)
 
+            btn_pre_ocr = QtWidgets.QPushButton("Pre-OCR + Merge (Test)")
+            btn_pre_ocr.setStyleSheet("""
+                QPushButton {
+                    padding: 10px 16px;
+                    border-radius: 6px;
+                    background: #10b981;
+                    color: #ffffff;
+                    border: 1px solid #0ea271;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background: #0ea271;
+                }
+            """)
             btns.addStretch(1)
+            btns.addWidget(btn_pre_ocr)
             btns.addWidget(btn_run_all)
             btns.addWidget(btn_run)
             btns.addWidget(btn_close)
@@ -4427,6 +4443,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 if started:
                     dlg.accept()
 
+            def _pre_ocr_merge():
+                entries = _collect_checked_entries()
+                if not entries:
+                    QtWidgets.QMessageBox.information(dlg, "Nothing selected", "Choose at least one EIDP to pre-OCR.")
+                    return
+                paths = [p for p, _ in entries]
+                if not paths:
+                    QtWidgets.QMessageBox.information(dlg, "Nothing selected", "No valid PDF paths were found.")
+                    return
+                self._start_worker(
+                    lambda paths=paths: be.pre_ocr_merge_pdfs(paths),
+                    status_msg="Pre-OCR + merge (no extraction)...",
+                    show_run_progress=False,
+                    total_files=len(paths),
+                )
+
+            btn_pre_ocr.clicked.connect(_pre_ocr_merge)
             btn_run.clicked.connect(_run_selected)
             btn_run_all.clicked.connect(_run_all)
             btn_close.clicked.connect(dlg.reject)

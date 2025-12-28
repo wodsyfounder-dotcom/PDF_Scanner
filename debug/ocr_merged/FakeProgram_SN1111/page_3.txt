@@ -1,5 +1,5 @@
 PDF: C:\Users\zachs\Documents\DevProjects\EIDPs\FakeProgram_SV1_SN1111.pdf
-Page: 3  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
+Page: 3  DPI: 450  Source: merged  Lang: eng+equ  PSM: 4
 Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(11/48)
 Image: 3825x4950
 
@@ -47,7 +47,7 @@ col_bounds_px: [452.0, 764.5, 1078.5, 1424.0, 1895.0, 2337.6, 3252.0]
 5 Anomaly & Waiver Log
 
 [TABLE 2 bbox_px=(452.0,3650.5,3360.0,4486.0) rows=3 cols=6]
-col_bounds_px: [452.0, 714.8, 1059.0, 1454.5, 2254.5, 2899.6, 3360.0]
+col_bounds_px: [452.0, 698.7, 1059.0, 1454.5, 2277.2, 2899.7, 3360.0]
 +-------------+----------+------------------+-----------------------------------------+--------------------------------------+----------+
 | ID          | Severity | Term             | Description                             | Containment                          | Status   |
 +-===========-+-========-+-================-+-=======================================-+-====================================-+-========-+

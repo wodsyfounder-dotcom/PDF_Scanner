@@ -1,0 +1,55 @@
+{
+  "source_pdf": "C:\\Users\\zachs\\Documents\\DevProjects\\EIDPs\\FakeProgram_SV1_SN1111.pdf",
+  "page_count": 4,
+  "pipeline": "ocr_tess_tsv(lang=eng+equ,psm=4,dpi=450)",
+  "headers": [
+    "Attachment",
+    "File Name",
+    "Pages",
+    "Notes"
+  ],
+  "footers": [],
+  "page_spans": [
+    {
+      "page": 1,
+      "start": 0,
+      "end": 2541
+    },
+    {
+      "page": 2,
+      "start": 2541,
+      "end": 6417
+    },
+    {
+      "page": 3,
+      "start": 6417,
+      "end": 10958
+    },
+    {
+      "page": 4,
+      "start": 10958,
+      "end": 12464
+    }
+  ],
+  "combined_path": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\combined.txt",
+  "combined_page_json": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\combined_page.json",
+  "combined_ir_json": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\combined_ir.json",
+  "page_files": {
+    "1": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_1.txt",
+    "2": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_2.txt",
+    "3": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_3.txt",
+    "4": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_4.txt"
+  },
+  "page_ir_files": {
+    "1": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_1_ir.json",
+    "2": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_2_ir.json",
+    "3": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_3_ir.json",
+    "4": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_4_ir.json"
+  },
+  "page_page_json": {
+    "1": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_1_page.json",
+    "2": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_2_page.json",
+    "3": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_3_page.json",
+    "4": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\page_4_page.json"
+  }
+}
