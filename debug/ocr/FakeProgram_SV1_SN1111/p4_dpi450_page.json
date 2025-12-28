@@ -2,7 +2,7 @@
   "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
   "page": 4,
   "dpi": 450,
-  "source": "export",
+  "source": "ocr",
   "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/32)",
   "lang": "eng+equ",
   "psm": 4,
@@ -136,6 +136,12 @@
               "paragraph",
               "number",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -217,6 +223,12 @@
               "paragraph",
               "number",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -292,6 +304,12 @@
               "string",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -303,7 +321,7 @@
             "cells_text": [
               "Calibration Data",
               "CAL_SN42_revE.xlsx",
-              "4sheets",
+              "4 sheets",
               "Multi-tab workbook"
             ],
             "cells_tokens": [
@@ -346,12 +364,18 @@
               51,
               52
             ],
-            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4sheets | Multi-tab workbook",
+            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4 sheets | Multi-tab workbook",
             "cells_kind": [
               "string",
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -623,6 +647,12 @@
               "paragraph",
               "number",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -704,6 +734,12 @@
               "paragraph",
               "number",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -779,6 +815,12 @@
               "string",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -790,7 +832,7 @@
             "cells_text": [
               "Calibration Data",
               "CAL_SN42_revE.xlsx",
-              "4sheets",
+              "4 sheets",
               "Multi-tab workbook"
             ],
             "cells_tokens": [
@@ -833,12 +875,18 @@
               51,
               52
             ],
-            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4sheets | Multi-tab workbook",
+            "row_text_cells": "Calibration Data | CAL_SN42_revE.xlsx | 4 sheets | Multi-tab workbook",
             "cells_kind": [
               "string",
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],

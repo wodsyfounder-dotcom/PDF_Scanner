@@ -46,7 +46,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          896.5,
+          985.3666666666667,
           1417.5,
           1860.5,
           2215.0,
@@ -181,6 +181,25 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "plusminus",
+                "raw": "43 \u00b1 3",
+                "center": 43.0,
+                "center_decimal": "43",
+                "delta": 3.0,
+                "delta_decimal": "3",
+                "min": 40.0,
+                "max": 46.0
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -295,6 +314,25 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "plusminus",
+                "raw": "185 \u00b1 10",
+                "center": 185.0,
+                "center_decimal": "185",
+                "delta": 10.0,
+                "delta_decimal": "10",
+                "min": 175.0,
+                "max": 195.0
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -306,7 +344,7 @@
             "cells_text": [
               "burn_duration",
               "Hot-fire duration",
-              "42-48",
+              "42 - 48",
               "0 (not testable)",
               "s",
               "6",
@@ -382,7 +420,6 @@
             "row_token_ids": [
               44,
               45,
-              46,
               47,
               48,
               49,
@@ -400,7 +437,7 @@
               61,
               63
             ],
-            "row_text_cells": "burn_duration | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
+            "row_text_cells": "burn_duration | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -410,6 +447,23 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "range",
+                "raw": "42 - 48",
+                "min": 42.0,
+                "min_decimal": "42",
+                "max": 48.0,
+                "max_decimal": "48"
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -421,7 +475,7 @@
             "cells_text": [
               "resistance",
               "Injector harness resistance",
-              "4.8-5.3",
+              "4.8 - 5.3",
               "6.1",
               "ohm",
               "8",
@@ -510,7 +564,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8 - 5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
               "string",
               "string",
@@ -520,6 +574,23 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "range",
+                "raw": "4.8 - 5.3",
+                "min": 4.8,
+                "min_decimal": "4.8",
+                "max": 5.3,
+                "max_decimal": "5.3"
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -630,6 +701,16 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -738,6 +819,24 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 1.0e-5",
+                "op": "<=",
+                "value": 1e-05,
+                "value_decimal": "0.00001",
+                "exclusive": false,
+                "max": 1e-05
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -811,7 +910,7 @@
               "5.1",
               "5.5",
               "5.32",
-              "Table3",
+              "Table 3",
               "0.97"
             ],
             "cells_tokens": [
@@ -869,7 +968,7 @@
               126,
               127
             ],
-            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table3 | 0.97",
+            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
             "cells_kind": [
               "string",
               "number",
@@ -878,6 +977,15 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -892,7 +1000,7 @@
               "6.2",
               "6.8",
               "6.95",
-              "Table3",
+              "Table 3",
               "0.91"
             ],
             "cells_tokens": [
@@ -950,7 +1058,7 @@
               133,
               134
             ],
-            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table3 | 0.91",
+            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table 3 | 0.91",
             "cells_kind": [
               "string",
               "string",
@@ -959,6 +1067,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1043,6 +1164,15 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1053,11 +1183,11 @@
             ],
             "cells_text": [
               "power_draw_peak",
-              "\u2014",
+              "-",
               "140",
               "155",
               "131",
-              "Table4",
+              "Table 4",
               "0.85"
             ],
             "cells_tokens": [
@@ -1115,7 +1245,7 @@
               148,
               149
             ],
-            "row_text_cells": "power_draw_peak | \u2014 | 140 | 155 | 131 | Table4 | 0.85",
+            "row_text_cells": "power_draw_peak | - | 140 | 155 | 131 | Table 4 | 0.85",
             "cells_kind": [
               "string",
               "string",
@@ -1124,6 +1254,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1208,6 +1351,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -1319,7 +1475,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          896.5,
+          985.3666666666667,
           1417.5,
           1860.5,
           2215.0,
@@ -1454,6 +1610,25 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "plusminus",
+                "raw": "43 \u00b1 3",
+                "center": 43.0,
+                "center_decimal": "43",
+                "delta": 3.0,
+                "delta_decimal": "3",
+                "min": 40.0,
+                "max": 46.0
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1568,6 +1743,25 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "plusminus",
+                "raw": "185 \u00b1 10",
+                "center": 185.0,
+                "center_decimal": "185",
+                "delta": 10.0,
+                "delta_decimal": "10",
+                "min": 175.0,
+                "max": 195.0
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1579,7 +1773,7 @@
             "cells_text": [
               "burn_duration",
               "Hot-fire duration",
-              "42-48",
+              "42 - 48",
               "0 (not testable)",
               "s",
               "6",
@@ -1655,7 +1849,6 @@
             "row_token_ids": [
               44,
               45,
-              46,
               47,
               48,
               49,
@@ -1673,7 +1866,7 @@
               61,
               63
             ],
-            "row_text_cells": "burn_duration | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
+            "row_text_cells": "burn_duration | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -1683,6 +1876,23 @@
               "number",
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "range",
+                "raw": "42 - 48",
+                "min": 42.0,
+                "min_decimal": "42",
+                "max": 48.0,
+                "max_decimal": "48"
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1694,7 +1904,7 @@
             "cells_text": [
               "resistance",
               "Injector harness resistance",
-              "4.8-5.3",
+              "4.8 - 5.3",
               "6.1",
               "ohm",
               "8",
@@ -1783,7 +1993,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8 - 5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
               "string",
               "string",
@@ -1793,6 +2003,23 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "range",
+                "raw": "4.8 - 5.3",
+                "min": 4.8,
+                "min_decimal": "4.8",
+                "max": 5.3,
+                "max_decimal": "5.3"
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1903,6 +2130,16 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2011,6 +2248,24 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 1.0e-5",
+                "op": "<=",
+                "value": 1e-05,
+                "value_decimal": "0.00001",
+                "exclusive": false,
+                "max": 1e-05
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -2083,7 +2338,7 @@
               "5.1",
               "5.5",
               "5.32",
-              "Table3",
+              "Table 3",
               "0.97"
             ],
             "cells_tokens": [
@@ -2141,7 +2396,7 @@
               126,
               127
             ],
-            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table3 | 0.97",
+            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
             "cells_kind": [
               "string",
               "number",
@@ -2150,6 +2405,15 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2164,7 +2428,7 @@
               "6.2",
               "6.8",
               "6.95",
-              "Table3",
+              "Table 3",
               "0.91"
             ],
             "cells_tokens": [
@@ -2222,7 +2486,7 @@
               133,
               134
             ],
-            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table3 | 0.91",
+            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table 3 | 0.91",
             "cells_kind": [
               "string",
               "string",
@@ -2231,6 +2495,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2315,6 +2592,15 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2325,11 +2611,11 @@
             ],
             "cells_text": [
               "power_draw_peak",
-              "\u2014",
+              "-",
               "140",
               "155",
               "131",
-              "Table4",
+              "Table 4",
               "0.85"
             ],
             "cells_tokens": [
@@ -2387,7 +2673,7 @@
               148,
               149
             ],
-            "row_text_cells": "power_draw_peak | \u2014 | 140 | 155 | 131 | Table4 | 0.85",
+            "row_text_cells": "power_draw_peak | - | 140 | 155 | 131 | Table 4 | 0.85",
             "cells_kind": [
               "string",
               "string",
@@ -2396,6 +2682,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2480,6 +2779,19 @@
               "number",
               "string",
               "number"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null
             ]
           }
         ],

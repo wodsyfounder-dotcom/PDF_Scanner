@@ -142,7 +142,7 @@
       ],
       "col_bounds_px": [
         432.0,
-        829.5,
+        985.3666666666667,
         1417.5,
         1860.5,
         2215.0,
@@ -313,7 +313,7 @@
       ],
       "col_bounds_px": [
         432.0,
-        801.5,
+        950.5,
         1174.0,
         1427.5,
         1613.5,
@@ -763,7 +763,12 @@
       "word": 1.0,
       "rehocr_text": "isp",
       "rehocr_conf": 0.96314774,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_tag": "raw:psm7",
+      "rehocr_cell_text": "isp",
+      "rehocr_cell_conf": 0.96314774,
+      "rehocr_cell_tag": "raw:psm7",
+      "rehocr_scope": "cell",
+      "rehocr_cell_key": "432.0,579.5,985.4,1010.5"
     },
     {
       "x0": 1047.0,
@@ -1097,7 +1102,7 @@
       "y1": 1586.0,
       "cx": 771.0,
       "cy": 1582.5,
-      "text": "on",
+      "text": "",
       "conf": 0.49445152,
       "block": 8.0,
       "par": 1.0,
@@ -1222,8 +1227,13 @@
       "line": 15.0,
       "word": 3.0,
       "rehocr_text": "a",
-      "rehocr_conf": 0.24082481,
-      "rehocr_tag": "auto:psm7"
+      "rehocr_conf": 0.1060347,
+      "rehocr_tag": "scaled:psm7",
+      "rehocr_cell_text": "a",
+      "rehocr_cell_conf": 0.1060347,
+      "rehocr_cell_tag": "scaled:psm7",
+      "rehocr_scope": "cell",
+      "rehocr_cell_key": "2215.0,1438.5,2476.5,1768.5"
     },
     {
       "x0": 2550.0,
@@ -1495,7 +1505,9 @@
       "block": 8.0,
       "par": 1.0,
       "line": 21.0,
-      "word": 5.0
+      "word": 5.0,
+      "rehocr_conf": 0.0,
+      "rehocr_tag": "auto:psm7"
     },
     {
       "x0": 2550.0,
@@ -1739,7 +1751,12 @@
       "word": 6.0,
       "rehocr_text": "a",
       "rehocr_conf": 0.9161103799999999,
-      "rehocr_tag": "auto:psm7"
+      "rehocr_tag": "auto:psm7",
+      "rehocr_cell_text": "a",
+      "rehocr_cell_conf": 0.9161103799999999,
+      "rehocr_cell_tag": "auto:psm7",
+      "rehocr_scope": "cell",
+      "rehocr_cell_key": "2215.0,2200.0,2476.5,2533.0"
     },
     {
       "x0": 2550.0,
@@ -2323,14 +2340,14 @@
       "cx": 1707.0,
       "cy": 3729.0,
       "text": "6.95",
-      "conf": 0.8541239899999999,
+      "conf": 0.7747135900000001,
       "block": 18.0,
       "par": 1.0,
       "line": 1.0,
       "word": 5.0,
       "rehocr_text": "6.95",
-      "rehocr_conf": 0.8541239899999999,
-      "rehocr_tag": "thr160:psm8"
+      "rehocr_conf": 0.7747135900000001,
+      "rehocr_tag": "thr160:psm7"
     },
     {
       "x0": 1877.0,
@@ -2344,10 +2361,7 @@
       "block": 18.0,
       "par": 1.0,
       "line": 1.0,
-      "word": 6.0,
-      "rehocr_text": "3",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "thr160:psm7"
+      "word": 6.0
     },
     {
       "x0": 2154.0,
@@ -3139,7 +3153,7 @@
       "cy": 1508.25
     },
     {
-      "text": "on          Hot-fire                      0  (not                                     use    rors",
+      "text": "Hot-fire                      0  (not                                     use    rors",
       "bbox": [
         766.0,
         1494.0,
@@ -3595,7 +3609,7 @@
       "text_norm": "to     test"
     },
     {
-      "text": "on          Hot-fire                      0  (not                                     use    rors",
+      "text": "Hot-fire                      0  (not                                     use    rors",
       "bbox": [
         766.0,
         1494.0,
@@ -3603,7 +3617,7 @@
         1590.0
       ],
       "cy": 1544.4166666666667,
-      "text_norm": "on          Hot-fire                      0  (not                                     use    rors"
+      "text_norm": "Hot-fire                      0  (not                                     use    rors"
     },
     {
       "text": "burn_duration                     42-48                      s          6       NOT_RUN _  textual",

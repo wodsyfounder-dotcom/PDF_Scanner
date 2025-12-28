@@ -2,7 +2,7 @@
   "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
   "page": 3,
   "dpi": 450,
-  "source": "export",
+  "source": "ocr",
   "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(11/48)",
   "lang": "eng+equ",
   "psm": 4,
@@ -148,6 +148,14 @@
               "string",
               "number",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -235,6 +243,14 @@
               "string",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -316,6 +332,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           },
           {
@@ -400,6 +428,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           },
           {
@@ -487,6 +527,14 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -568,6 +616,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           }
         ],
@@ -724,6 +784,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -799,6 +867,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -874,6 +950,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -955,6 +1039,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1033,6 +1125,18 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -1199,6 +1303,14 @@
               "paragraph",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1211,7 +1323,7 @@
               "NCR-25-008",
               "Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading",
+              "Harness swapped due to 6.1 Q reading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -1285,7 +1397,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 Q reading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -1293,6 +1405,14 @@
               "paragraph",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1392,6 +1512,14 @@
               "paragraph",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -1595,6 +1723,14 @@
               "string",
               "number",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1682,6 +1818,14 @@
               "string",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -1763,6 +1907,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           },
           {
@@ -1847,6 +2003,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           },
           {
@@ -1934,6 +2102,14 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2015,6 +2191,18 @@
               "string",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null
             ]
           }
         ],
@@ -2174,6 +2362,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2249,6 +2445,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2324,6 +2528,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2405,6 +2617,14 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2483,6 +2703,18 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "na",
+                "raw": "-",
+                "na": true
+              },
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -2649,6 +2881,14 @@
               "paragraph",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2661,7 +2901,7 @@
               "NCR-25-008",
               "Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading",
+              "Harness swapped due to 6.1 Q reading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -2735,7 +2975,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 Q reading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -2743,6 +2983,14 @@
               "paragraph",
               "paragraph",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           },
           {
@@ -2842,6 +3090,14 @@
               "paragraph",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],

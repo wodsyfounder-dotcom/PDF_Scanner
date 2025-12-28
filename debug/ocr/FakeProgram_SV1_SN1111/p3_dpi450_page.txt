@@ -1,5 +1,5 @@
 PDF: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\user_inputs\Staging_Selected\FakeProgram_SV1_SN1111.pdf
-Page: 3  DPI: 450  Source: export  Lang: eng+equ  PSM: 4
+Page: 3  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
 Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(11/48)
 Image: 3825x4950
 
@@ -53,7 +53,7 @@ col_bounds_px: [452.0, 714.8, 1059.0, 1454.5, 2254.5, 2899.6, 3360.0]
 +-===========-+-========-+-================-+-=======================================-+-====================================-+-========-+
 | DR-2025-014 | Major    | chamber_pressure | Persistent +8% over spec during burn #2 | Added relief orifice, retest pending | OPEN     |
 +-------------+----------+------------------+-----------------------------------------+--------------------------------------+----------+
-| NCR-25-008  | Minor    | resistance       | Harness swapped due to6.1Qreading       | Re-test verified 5.05 Ω              | CLOSED   |
+| NCR-25-008  | Minor    | resistance       | Harness swapped due to 6.1 Ω reading    | Re-test verified 5.05 Ω              | CLOSED   |
 +-------------+----------+------------------+-----------------------------------------+--------------------------------------+----------+
 | WA-25-002   | Info     | leak_check       | Leak test deferred pending new fixture  | Approved by Chief QA                 | APPROVED |
 +-------------+----------+------------------+-----------------------------------------+--------------------------------------+----------+

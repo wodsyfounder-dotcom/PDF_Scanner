@@ -2,6 +2,8 @@
   "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
   "page": 4,
   "dpi": 450,
+  "source": "ocr",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/32)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -1683,6 +1685,173 @@
         2066.0
       ],
       "cy": 2032.3
+    }
+  ],
+  "lines_norm": [
+    {
+      "text": "Attachment             File  Name                      Pages       Notes",
+      "bbox": [
+        474.0,
+        436.0,
+        2611.0,
+        504.0
+      ],
+      "cy": 466.1,
+      "text_norm": "Attachment             File  Name                      Pages       Notes"
+    },
+    {
+      "text": "A     tance     Test",
+      "bbox": [
+        470.0,
+        580.0,
+        929.0,
+        627.0
+      ],
+      "cy": 604.0,
+      "text_norm": "A     tance     Test"
+    },
+    {
+      "text": "eeepranee   ies         ATR_Hyperion_SV3_SN42.pdf  Hyperion  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables",
+      "bbox": [
+        514.0,
+        589.0,
+        3288.0,
+        690.0
+      ],
+      "cy": 642.125,
+      "text_norm": "eeepranee   ies         ATR_Hyperion_SV3_SN42.pdf  Hyperion  SV3_SN42.pdf   124         Contains  Sections  3  &  4  tables"
+    },
+    {
+      "text": "Report",
+      "bbox": [
+        477.0,
+        680.0,
+        660.0,
+        740.0
+      ],
+      "cy": 710.0,
+      "text_norm": "Report"
+    },
+    {
+      "text": "Page  numbers  offset  by  +2  in",
+      "bbox": [
+        2441.0,
+        816.0,
+        3249.0,
+        876.0
+      ],
+      "cy": 841.6666666666666,
+      "text_norm": "Page  numbers  offset  by  +2  in"
+    },
+    {
+      "text": "Thermal  Test  Log        THERM_SV3_SN42_  revC.pdf   56",
+      "bbox": [
+        474.0,
+        862.0,
+        2159.0,
+        930.0
+      ],
+      "cy": 892.5,
+      "text_norm": "Thermal  Test  Log        THERM_SV3_SN42_  revC.pdf   56"
+    },
+    {
+      "text": "footer",
+      "bbox": [
+        2438.0,
+        916.0,
+        2601.0,
+        962.0
+      ],
+      "cy": 939.0,
+      "text_norm": "footer"
+    },
+    {
+      "text": "24",
+      "bbox": [
+        517.0,
+        1052.0,
+        2159.0,
+        1109.0
+      ],
+      "cy": 1095.5,
+      "text_norm": "24"
+    },
+    {
+      "text": "Vib  Test  Photos          VIB_IMG_SN42.zip                         Use  to  test  non-PDF  assets",
+      "bbox": [
+        474.0,
+        1102.0,
+        3202.0,
+        1162.0
+      ],
+      "cy": 1126.2777777777778,
+      "text_norm": "Vib  Test  Photos          VIB_IMG_SN42.zip                         Use  to  test  non-PDF  assets"
+    },
+    {
+      "text": "images",
+      "bbox": [
+        2095.0,
+        1168.0,
+        2291.0,
+        1215.0
+      ],
+      "cy": 1191.5,
+      "text_norm": "images"
+    },
+    {
+      "text": "Calibration  Data         CAL_SN42_revE.xlsx           4sheets     Multi-tab  workbook",
+      "bbox": [
+        474.0,
+        1287.0,
+        2963.0,
+        1355.0
+      ],
+      "cy": 1315.5833333333333,
+      "text_norm": "Calibration  Data         CAL_SN42_revE.xlsx           4sheets     Multi-tab  workbook"
+    },
+    {
+      "text": "Usage  Hints",
+      "bbox": [
+        444.0,
+        1564.0,
+        1065.0,
+        1667.0
+      ],
+      "cy": 1609.75,
+      "text_norm": "Usage  Hints"
+    },
+    {
+      "text": "1.  Place  this  Markdown  file  alongside  PDFs  to  validate  mixed  content  detection.",
+      "bbox": [
+        514.0,
+        1807.0,
+        2697.0,
+        1866.0
+      ],
+      "cy": 1830.7916666666667,
+      "text_norm": "1.  Place  this  Markdown  file  alongside  PDFs  to  validate  mixed  content  detection."
+    },
+    {
+      "text": "2.  Convert  to  PDF  (e.g.,  via  pandoc)  if you  want  to  test  page-scoped  extraction.",
+      "bbox": [
+        507.0,
+        1906.0,
+        2687.0,
+        1966.0
+      ],
+      "cy": 1932.4285714285713,
+      "text_norm": "2.  Convert  to  PDF  (e.g.,  via  pandoc)  if you  want  to  test  page-scoped  extraction."
+    },
+    {
+      "text": "3.  Adjust  term  lists  so  at  least  one  expected  value  lives  in  every  section  above.",
+      "bbox": [
+        507.0,
+        2006.0,
+        2667.0,
+        2066.0
+      ],
+      "cy": 2032.3,
+      "text_norm": "3.  Adjust  term  lists  so  at  least  one  expected  value  lives  in  every  section  above."
     }
   ],
   "normalization_support": {

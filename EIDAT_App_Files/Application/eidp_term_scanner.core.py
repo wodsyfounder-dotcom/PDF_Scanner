@@ -1335,6 +1335,171 @@ def parse_range(s: str) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 
+def _format_decimal_plain(d) -> str:
+    """Format a Decimal as plain string without exponent (trim trailing zeros)."""
+    try:
+        from decimal import Decimal as _Decimal  # type: ignore
+    except Exception:
+        return str(d)
+    try:
+        if not isinstance(d, _Decimal):
+            d = _Decimal(str(d))
+    except Exception:
+        return str(d)
+    try:
+        s = format(d, "f")
+    except Exception:
+        s = str(d)
+    try:
+        # Trim trailing zeros while preserving at least one digit after decimal.
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        if s.startswith("."):
+            s = "0" + s
+        if s.startswith("-."):
+            s = s.replace("-.", "-0.", 1)
+        return s
+    except Exception:
+        return s
+
+
+def _parse_numeric_interval_semantics(text: str) -> Optional[Dict[str, object]]:
+    """Parse common numeric expressions into interval semantics (min/max/op/value).
+
+    This does not change the display text; it's for search/comparison logic.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    # Normalize common OCR symbol noise.
+    s = raw.replace("\u00A0", " ")
+    s = _fix_mojibake_symbols(s)
+    s = s.replace("\u2212", "-")  # minus sign
+    s = s.replace("\u2013", "-").replace("\u2014", "-")  # en/em dash
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return None
+    # Standalone dash marker means "N/A".
+    try:
+        if re.fullmatch(r"-+", s):
+            return {"kind": "na", "raw": raw, "na": True}
+    except Exception:
+        pass
+
+    num_pat = r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?"
+
+    def _dec(nstr: str):
+        try:
+            from decimal import Decimal, InvalidOperation  # type: ignore
+        except Exception:
+            Decimal = None  # type: ignore[assignment]
+            InvalidOperation = Exception  # type: ignore[assignment]
+        ns = str(nstr or "").strip().replace(",", "")
+        if not ns:
+            return None
+        if Decimal is None:
+            try:
+                return float(ns)
+            except Exception:
+                return None
+        try:
+            return Decimal(ns)
+        except InvalidOperation:
+            try:
+                return Decimal(str(float(ns)))
+            except Exception:
+                return None
+
+    def _as_float(x) -> Optional[float]:
+        if x is None:
+            return None
+        try:
+            return float(x)
+        except Exception:
+            try:
+                return float(str(x))
+            except Exception:
+                return None
+
+    # Relational operator: <= 1.0e-5
+    m = re.match(rf"^\s*(?P<op><=|>=|<|>|=)\s*(?P<num>{num_pat})\s*$", s)
+    if m:
+        op = str(m.group("op"))
+        d = _dec(m.group("num"))
+        if d is None:
+            return None
+        val = _as_float(d)
+        out: Dict[str, object] = {
+            "kind": "relop",
+            "raw": raw,
+            "op": op,
+            "value": val,
+            "value_decimal": _format_decimal_plain(d),
+            "exclusive": op in ("<", ">"),
+        }
+        if op in ("<", "<="):
+            out["max"] = val
+        elif op in (">", ">="):
+            out["min"] = val
+        elif op == "=":
+            out["min"] = val
+            out["max"] = val
+        return out
+
+    # Plus/minus tolerance: 185 ± 10 / 185 +/- 10 / 185 Añ 10
+    m = re.match(rf"^\s*(?P<center>{num_pat})\s*(?:±|\+/-|\+\/-|\u00c3\u00b1|Añ|ą)\s*(?P<delta>{num_pat})\s*$", s)
+    if m:
+        c = _dec(m.group("center"))
+        dlt = _dec(m.group("delta"))
+        if c is None or dlt is None:
+            return None
+        c_f = _as_float(c)
+        d_f = _as_float(dlt)
+        if c_f is None or d_f is None:
+            return None
+        try:
+            mn = float(c_f) - float(d_f)
+            mx = float(c_f) + float(d_f)
+        except Exception:
+            mn = mx = None  # type: ignore[assignment]
+        return {
+            "kind": "plusminus",
+            "raw": raw,
+            "center": c_f,
+            "center_decimal": _format_decimal_plain(c),
+            "delta": d_f,
+            "delta_decimal": _format_decimal_plain(dlt),
+            "min": mn,
+            "max": mx,
+        }
+
+    # Numeric range: 42 - 48 (or 42..48)
+    # Keep this strict: no alpha words (avoids matching IDs like "A-112").
+    if not re.search(r"[A-Za-df-zDF-Z]", s):  # allow e/E for exponent only
+        m = re.match(rf"^\s*(?P<lo>{num_pat})\s*(?:\.\.|-|–|—)\s*(?P<hi>{num_pat})\s*$", s)
+        if m:
+            lo = _dec(m.group("lo"))
+            hi = _dec(m.group("hi"))
+            if lo is None or hi is None:
+                return None
+            lo_f = _as_float(lo)
+            hi_f = _as_float(hi)
+            if lo_f is None or hi_f is None:
+                return None
+            mn = min(lo_f, hi_f)
+            mx = max(lo_f, hi_f)
+            return {
+                "kind": "range",
+                "raw": raw,
+                "min": mn,
+                "min_decimal": _format_decimal_plain(lo if lo_f == mn else hi),
+                "max": mx,
+                "max_decimal": _format_decimal_plain(hi if hi_f == mx else lo),
+            }
+
+    return None
+
+
 def _is_na_token(value: Optional[str]) -> bool:
     """Return True if the provided cell text indicates N/A."""
     if value is None:
@@ -4091,6 +4256,119 @@ def _infer_table_row_bands_from_tokens(
 def _join_tokens_as_cell_text(tokens: List[Dict[str, float]]) -> str:
     if not tokens:
         return ""
+
+    def _normalize_cell_spacing(s: str, toks_in: List[Dict[str, float]]) -> str:
+        """Conservative spacing normalization for OCR'd cell text (content-agnostic).
+
+        Goals:
+        - Preserve IDs/filenames (avoid inserting spaces inside identifier strings).
+        - Add missing spaces for common OCR run-ons in prose and numeric expressions.
+        """
+        if not s:
+            return ""
+        try:
+            raw = str(s)
+        except Exception:
+            return s
+        # Standalone dash markers mean "N/A" for a cell. Normalize any dash-run to a single "-".
+        try:
+            if re.fullmatch(r"\s*[-\u2013\u2014]+\s*", raw):
+                return "-"
+        except Exception:
+            pass
+        # Detect identifier/filename-like cells to avoid injecting spaces that would corrupt IDs.
+        try:
+            txts = [str(t.get("text") or "").strip() for t in toks_in if isinstance(t, dict)]
+        except Exception:
+            txts = []
+        try:
+            joined = " ".join([t for t in txts if t]).strip()
+        except Exception:
+            joined = ""
+        try:
+            has_letter_any = bool(re.search(r"[A-Za-z]", raw))
+        except Exception:
+            has_letter_any = False
+        try:
+            ext_re = re.compile(r"\.(pdf|zip|xlsx|xls|csv|json|txt|docx?|png|jpe?g)\b", flags=re.IGNORECASE)
+        except Exception:
+            ext_re = None
+        try:
+            id_like = False
+            for t in (txts or []):
+                if not t or not re.search(r"\d", t):
+                    continue
+                # Filenames / true dotted identifiers.
+                if ext_re is not None and ext_re.search(t):
+                    id_like = True
+                    break
+                # Underscore-heavy IDs.
+                if "_" in t:
+                    id_like = True
+                    break
+                # Hyphen/slash IDs only when the cell also contains letters (avoid treating numeric ranges as IDs).
+                if has_letter_any and any(ch in t for ch in ("-", "/")):
+                    id_like = True
+                    break
+            if not id_like:
+                # Common compact ID patterns without separators (e.g., SN42, TC01, PT07).
+                if re.fullmatch(r"[A-Z]{1,4}\d{2,4}[A-Z]{0,3}", raw.strip()):
+                    id_like = True
+        except Exception:
+            id_like = False
+
+        out = raw
+
+        # Normalize numeric ranges like "42-48" -> "42 - 48" (only when the whole cell is a range).
+        if not id_like:
+            try:
+                m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*[\-\u2013\u2014]\s*(\d+(?:\.\d+)?)\s*", out)
+            except Exception:
+                m = None
+            if m:
+                try:
+                    out = f"{m.group(1)} - {m.group(2)}"
+                except Exception:
+                    pass
+
+        if not id_like:
+            # Ensure spaces around common numeric operators between numbers.
+            try:
+                out = re.sub(r"(?<=\d)\s*(±|\+/-|\+\/-)\s*(?=\d)", " ± ", out)
+            except Exception:
+                pass
+            try:
+                out = re.sub(r"(?<=\d)\s*[x×*]\s*(?=\d)", " x ", out)
+            except Exception:
+                pass
+
+            # Insert spaces between word-like alpha tokens and digits: "Table3" -> "Table 3".
+            # Only triggers when the alpha run contains lowercase (to avoid corrupting IDs like "SN42").
+            try:
+                out = re.sub(r"([A-Za-z]*[a-z][A-Za-z]*)\s*(\d)", r"\1 \2", out)
+            except Exception:
+                pass
+
+            # Insert spaces between digits and word-like alpha runs: "24images" -> "24 images".
+            # Only triggers when the alpha run (including the first char) has lowercase somewhere.
+            try:
+                out = re.sub(r"(\d)\s*([A-Za-z])(?=[A-Za-z]*[a-z])", r"\1 \2", out)
+            except Exception:
+                pass
+
+            # Split unit-ish single-letter prefixes that got stuck to the next word: "6.1Qreading" -> "6.1 Q reading".
+            # Keep this very narrow to avoid splitting normal words after numbers (e.g., "4 tables", "24 images").
+            try:
+                out = re.sub(r"(?<=\d)\s*([A-ZΩµ%])(?=[a-z]{3,})", r" \1 ", out)
+            except Exception:
+                pass
+
+        try:
+            out = re.sub(r"[ \t]+", " ", out).strip()
+        except Exception:
+            out = out.strip()
+        return out
+
     # If any token has a cell-level re-OCR result, prefer the best one and ignore token fragments.
     try:
         toks_nonempty = [t for t in tokens if str(t.get("text") or "").strip()]
@@ -4133,7 +4411,7 @@ def _join_tokens_as_cell_text(tokens: List[Dict[str, float]]) -> str:
                         best = best + ext
             except Exception:
                 pass
-            return best
+            return _normalize_cell_spacing(best, toks_nonempty)
     except Exception:
         pass
     # Estimate a line grouping tolerance from token heights.
@@ -4188,7 +4466,7 @@ def _join_tokens_as_cell_text(tokens: List[Dict[str, float]]) -> str:
         else:
             out = (out + " " + nxt).strip()
     out = re.sub(r"\s+", " ", out).strip()
-    return out
+    return _normalize_cell_spacing(out, toks)
 
 
 def _table_header_virtual_tokens(tokens: List[Dict[str, float]], table: Dict[str, object]) -> List[Dict[str, float]]:
@@ -6309,6 +6587,11 @@ def _assemble_page_debug_json(
                         ct[ci] = _normalize_numeric_misc(_normalize_numeric_plusminus(str(ct[ci] or "")))
                 except Exception:
                     pass
+                # Attach numeric semantics (ranges, <=, plus/minus) for search/display without changing cell text.
+                try:
+                    r["cells_numeric"] = [_parse_numeric_interval_semantics(str(v or "")) for v in ct]
+                except Exception:
+                    r["cells_numeric"] = None
                 r["cells_text"] = ct
                 try:
                     r["row_text_cells"] = " | ".join(str(x or "").strip() for x in ct)
@@ -6368,6 +6651,14 @@ def _assemble_page_debug_json(
                 if new_cell and new_cell != cell:
                     ct[req_idx] = new_cell
                     r["cells_text"] = ct
+                    # Keep numeric semantics in sync with any operator change (e.g., '=' -> '<=').
+                    try:
+                        cn = r.get("cells_numeric")
+                        if isinstance(cn, list) and req_idx < len(cn):
+                            cn[req_idx] = _parse_numeric_interval_semantics(str(new_cell or ""))
+                            r["cells_numeric"] = cn
+                    except Exception:
+                        pass
                     try:
                         cts = r.get("cells_tokens")
                         if isinstance(cts, list) and req_idx < len(cts) and isinstance(cts[req_idx], list) and cts[req_idx]:
@@ -9143,6 +9434,7 @@ def _group_ocr_items_into_rows(items: List[Dict[str, float]], row_eps: float, ta
                     "table_bbox_px": (bx0, by0, bx1, by1),
                     "row_band_px": (y_top, y_bot),
                     "cells_text": cells_text,
+                    "cells_numeric": ([_parse_numeric_interval_semantics(str(v or "")) for v in cells_text] if isinstance(cells_text, list) else None),
                     "row_text_cells": row_text_cells,
                     "spill_text": _join_tokens_as_cell_text(spill_items) if spill_items else None,
                 }

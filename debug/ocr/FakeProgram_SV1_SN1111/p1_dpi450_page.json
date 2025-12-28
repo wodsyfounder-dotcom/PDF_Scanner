@@ -3,7 +3,7 @@
   "page": 1,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/26)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(10/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -17,7 +17,7 @@
         2055.0,
         564.0
       ],
-      "text": "Synthetic End Item Data Package (Debug Reference)"
+      "text": "Synthetic End ltem Data Package (Debug Reference)"
     },
     {
       "type": "text",
@@ -107,7 +107,7 @@
         2852.0,
         1589.0
       ],
-      "text": "Synthetic End Item Data Package (Debug"
+      "text": "synthetic End Item Data Package (Debug"
     },
     {
       "type": "text",
@@ -237,6 +237,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -279,6 +283,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -288,12 +296,12 @@
               3100.0
             ],
             "cells_text": [
-              "serial / Component",
+              "Serial / Comp",
               "SN42-AX"
             ],
             "cells_tokens": [
               [
-                "serial",
+                "Serial / Comp",
                 "/",
                 "Component"
               ],
@@ -317,10 +325,14 @@
               101,
               102
             ],
-            "row_text_cells": "serial / Component | SN42-AX",
+            "row_text_cells": "Serial / Comp | SN42-AX",
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -366,6 +378,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -405,6 +421,10 @@
             "cells_kind": [
               "string",
               "date"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -447,6 +467,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -489,6 +513,10 @@
             "cells_kind": [
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           }
         ],
@@ -576,7 +604,7 @@
               "S",
               "5",
               "PASS",
-              "sample nominal nominal case"
+              "sample nominal case"
             ],
             "cells_tokens": [
               [
@@ -642,8 +670,7 @@
               [
                 137,
                 151,
-                148,
-                140
+                148
               ]
             ],
             "row_token_ids": [
@@ -665,7 +692,7 @@
               151,
               152
             ],
-            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal nominal case",
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal case",
             "cells_kind": [
               "string",
               "paragraph",
@@ -675,6 +702,24 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 0.85",
+                "op": "<=",
+                "value": 0.85,
+                "value_decimal": "0.85",
+                "exclusive": false,
+                "max": 0.85
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
@@ -692,7 +737,7 @@
         2055.0,
         564.0
       ],
-      "text": "Synthetic End Item Data Package (Debug Reference)",
+      "text": "Synthetic End ltem Data Package (Debug Reference)",
       "line_count": 1,
       "word_count": 7,
       "token_ids": [
@@ -918,7 +963,7 @@
         2852.0,
         1737.0
       ],
-      "text": "Synthetic End Item Data Package (Debug Reference)",
+      "text": "synthetic End Item Data Package (Debug Reference)",
       "line_count": 2,
       "word_count": 7,
       "token_ids": [
@@ -978,7 +1023,7 @@
         2055.0,
         564.0
       ],
-      "text": "Synthetic End Item Data Package (Debug Reference)",
+      "text": "Synthetic End ltem Data Package (Debug Reference)",
       "line_count": 1,
       "word_count": 7,
       "token_ids": [
@@ -1154,7 +1199,7 @@
         2852.0,
         1737.0
       ],
-      "text": "Synthetic End Item Data Package (Debug Reference)",
+      "text": "synthetic End Item Data Package (Debug Reference)",
       "line_count": 2,
       "word_count": 7,
       "token_ids": [
@@ -1300,6 +1345,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1342,6 +1391,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1351,12 +1404,12 @@
               3100.0
             ],
             "cells_text": [
-              "serial / Component",
+              "Serial / Comp",
               "SN42-AX"
             ],
             "cells_tokens": [
               [
-                "serial",
+                "Serial / Comp",
                 "/",
                 "Component"
               ],
@@ -1380,10 +1433,14 @@
               101,
               102
             ],
-            "row_text_cells": "serial / Component | SN42-AX",
+            "row_text_cells": "Serial / Comp | SN42-AX",
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1429,6 +1486,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1468,6 +1529,10 @@
             "cells_kind": [
               "string",
               "date"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1510,6 +1575,10 @@
             "cells_kind": [
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           },
           {
@@ -1552,6 +1621,10 @@
             "cells_kind": [
               "string",
               "paragraph"
+            ],
+            "cells_numeric": [
+              null,
+              null
             ]
           }
         ],
@@ -1628,7 +1701,7 @@
               "S",
               "5",
               "PASS",
-              "sample nominal nominal case"
+              "sample nominal case"
             ],
             "cells_tokens": [
               [
@@ -1694,8 +1767,7 @@
               [
                 137,
                 151,
-                148,
-                140
+                148
               ]
             ],
             "row_token_ids": [
@@ -1717,7 +1789,7 @@
               151,
               152
             ],
-            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal nominal case",
+            "row_text_cells": "ignition_delay | Time between arm and ignition | <= 0.85 | 0.62 | S | 5 | PASS | sample nominal case",
             "cells_kind": [
               "string",
               "paragraph",
@@ -1727,6 +1799,24 @@
               "number",
               "string",
               "string"
+            ],
+            "cells_numeric": [
+              null,
+              null,
+              {
+                "kind": "relop",
+                "raw": "<= 0.85",
+                "op": "<=",
+                "value": 0.85,
+                "value_decimal": "0.85",
+                "exclusive": false,
+                "max": 0.85
+              },
+              null,
+              null,
+              null,
+              null,
+              null
             ]
           }
         ],
