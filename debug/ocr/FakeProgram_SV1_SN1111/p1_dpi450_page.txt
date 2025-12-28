@@ -1,7 +1,34 @@
 PDF: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\user_inputs\Staging_Selected\FakeProgram_SV1_SN1111.pdf
 Page: 1  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
-Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(7/48)
+Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/26)
 Image: 3825x4950
+
+[PARA bbox_px=(600.0,505.0,2055.0,564.0)]
+Synthetic End Item Data Package (Debug Reference)
+
+[STRING bbox_px=(675.0,603.0,1203.0,649.0)]
+« Document Profile
+
+[STRING bbox_px=(741.0,701.0,1698.0,760.0)]
+1. Functional Acceptance Snapshot
+
+[STRING bbox_px=(675.0,796.0,1429.0,842.0)]
+« 2. Performance KPI Table
+
+[STRING bbox_px=(734.0,895.0,1691.0,941.0)]
+3. Environmental Endurance Matrix
+
+[STRING bbox_px=(675.0,996.0,1452.0,1042.0)]
+« 4. Calibration & Trim Table
+
+[STRING bbox_px=(675.0,1095.0,1419.0,1154.0)]
+« 5 Anomaly & Waiver Log
+
+[STRING bbox_px=(734.0,1193.0,1587.0,1252.0)]
+6. Attachment Index (Synthetic)
+
+[STRING bbox_px=(875.0,1288.0,1203.0,1347.0)]
+Usage Hints
 
 [STRING bbox_px=(462.0,1475.0,2852.0,1737.0)]
 Synthetic End Item Data Package (Debug Reference)
@@ -37,8 +64,8 @@ col_bounds_px: [459.0, 862.0, 2344.0]
 
 [TABLE 1 bbox_px=(459.0,4312.5,3471.0,4741.5) rows=1 cols=8]
 col_bounds_px: [459.0, 857.0, 1447.5, 1891.5, 2246.5, 2509.0, 2763.0, 3086.5, 3471.0]
-+----------------+-------------------------------+-------------+----------------+--------+--------+--------------+---------------------+
-| Term           | Description                   | Requirement | Measured Value | Units  | Page   | Data Quality | Notes               |
-+-==============-+-=============================-+-===========-+-==============-+-======-+-======-+-============-+-===================-+
-| ignition_delay | Time between arm and ignition | <= 0.85     | 0.62           | s      | 5      | PASS         | sample nominal case |
-+----------------+-------------------------------+-------------+----------------+--------+--------+--------------+---------------------+
++----------------+-------------------------------+-------------+----------------+--------+--------+--------------+-----------------------------+
+| Term           | Description                   | Requirement | Measured Value | Units  | Page   | Data Quality | Notes                       |
++-==============-+-=============================-+-===========-+-==============-+-======-+-======-+-============-+-===========================-+
+| ignition_delay | Time between arm and ignition | <= 0.85     | 0.62           | S      | 5      | PASS         | sample nominal nominal case |
++----------------+-------------------------------+-------------+----------------+--------+--------+--------------+-----------------------------+

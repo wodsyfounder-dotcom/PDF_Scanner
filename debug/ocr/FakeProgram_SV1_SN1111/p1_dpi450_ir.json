@@ -3,7 +3,7 @@
   "page": 1,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(7/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/26)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -319,7 +319,7 @@
       "y1": 541.0,
       "cx": 546.0,
       "cy": 532.5,
-      "text": "e",
+      "text": "",
       "conf": 0.80290024,
       "block": 1.0,
       "par": 1.0,
@@ -473,7 +473,7 @@
       "y1": 741.0,
       "cx": 683.5,
       "cy": 732.5,
-      "text": "e",
+      "text": "",
       "conf": 0.7664054899999999,
       "block": 1.0,
       "par": 1.0,
@@ -613,7 +613,7 @@
       "y1": 934.0,
       "cx": 683.5,
       "cy": 926.0,
-      "text": "e",
+      "text": "",
       "conf": 0.72380615,
       "block": 1.0,
       "par": 1.0,
@@ -782,14 +782,14 @@
       "cx": 757.0,
       "cy": 1117.5,
       "text": "5",
-      "conf": 0.94221245,
+      "conf": 0.83533798,
       "block": 1.0,
       "par": 1.0,
       "line": 7.0,
       "word": 2.0,
       "rehocr_text": "5",
-      "rehocr_conf": 0.94221245,
-      "rehocr_tag": "auto:psm7"
+      "rehocr_conf": 0.83533798,
+      "rehocr_tag": "thr160:psm7"
     },
     {
       "x0": 800.0,
@@ -857,7 +857,7 @@
       "y1": 1232.0,
       "cx": 683.5,
       "cy": 1224.0,
-      "text": "e",
+      "text": "",
       "conf": 0.76820526,
       "block": 1.0,
       "par": 1.0,
@@ -927,7 +927,7 @@
       "y1": 1327.0,
       "cx": 819.5,
       "cy": 1319.0,
-      "text": "e",
+      "text": "",
       "conf": 0.54023125,
       "block": 1.0,
       "par": 1.0,
@@ -1758,7 +1758,10 @@
       "block": 9.0,
       "par": 1.0,
       "line": 1.0,
-      "word": 4.0
+      "word": 4.0,
+      "rehocr_text": "542",
+      "rehocr_conf": 0.0,
+      "rehocr_tag": "thr160:psm7"
     },
     {
       "x0": 498.0,
@@ -2202,11 +2205,14 @@
       "cx": 2674.5,
       "cy": 4202.5,
       "text": "g",
-      "conf": 0.66944687,
+      "conf": 0.90408958,
       "block": 18.0,
       "par": 1.0,
       "line": 2.0,
-      "word": 4.0
+      "word": 4.0,
+      "rehocr_text": "g",
+      "rehocr_conf": 0.90408958,
+      "rehocr_tag": "auto:psm8"
     },
     {
       "x0": 2799.0,
@@ -2257,15 +2263,15 @@
       "y1": 4506.0,
       "cx": 557.0,
       "cy": 4502.5,
-      "text": "a",
-      "conf": 0.5746386,
+      "text": "ignition_delay",
+      "conf": 0.9177426099999999,
       "block": 18.0,
       "par": 1.0,
       "line": 5.0,
       "word": 1.0,
-      "rehocr_text": "a",
-      "rehocr_conf": 0.5746386,
-      "rehocr_tag": "scaled:psm7"
+      "rehocr_text": "ignition_delay",
+      "rehocr_conf": 0.9177426099999999,
+      "rehocr_tag": "auto:psm7"
     },
     {
       "x0": 1078.0,
@@ -2288,15 +2294,15 @@
       "y1": 4506.0,
       "cx": 3289.5,
       "cy": 4502.5,
-      "text": "case",
-      "conf": 0.9674855800000001,
+      "text": "nominal",
+      "conf": 0.96458832,
       "block": 18.0,
       "par": 1.0,
       "line": 5.0,
       "word": 3.0,
-      "rehocr_text": "case",
-      "rehocr_conf": 0.9674855800000001,
-      "rehocr_tag": "raw:psm6"
+      "rehocr_text": "nominal",
+      "rehocr_conf": 0.96458832,
+      "rehocr_tag": "auto:psm6"
     },
     {
       "x0": 498.0,
@@ -2337,14 +2343,14 @@
       "cx": 1591.5,
       "cy": 4522.0,
       "text": "0.85",
-      "conf": 0.0,
+      "conf": 0.9541337599999999,
       "block": 18.0,
       "par": 1.0,
       "line": 6.0,
       "word": 3.0,
       "rehocr_text": "0.85",
-      "rehocr_conf": 0.0,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_conf": 0.9541337599999999,
+      "rehocr_tag": "thr160:psm7"
     },
     {
       "x0": 1927.0,
@@ -2367,15 +2373,15 @@
       "y1": 4562.0,
       "cx": 2294.5,
       "cy": 4528.5,
-      "text": "s",
-      "conf": 0.55088921,
+      "text": "S",
+      "conf": 0.52612518,
       "block": 18.0,
       "par": 1.0,
       "line": 6.0,
       "word": 5.0,
-      "rehocr_text": "s",
-      "rehocr_conf": 0.55088921,
-      "rehocr_tag": "raw:psm7"
+      "rehocr_text": "S",
+      "rehocr_conf": 0.52612518,
+      "rehocr_tag": "scaled:psm7"
     },
     {
       "x0": 2583.0,
@@ -2478,7 +2484,7 @@
   ],
   "lines": [
     {
-      "text": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)",
+      "text": "Synthetic  End  Item  Data  Package  (Debug  Reference)",
       "bbox": [
         538.0,
         505.0,
@@ -2498,7 +2504,7 @@
       "cy": 628.6666666666666
     },
     {
-      "text": "e   1.  Functional  Acceptance  Snapshot",
+      "text": "1.  Functional  Acceptance  Snapshot",
       "bbox": [
         675.0,
         701.0,
@@ -2518,7 +2524,7 @@
       "cy": 820.7
     },
     {
-      "text": "e  3.  Environmental  Endurance  Matrix",
+      "text": "3.  Environmental  Endurance  Matrix",
       "bbox": [
         675.0,
         895.0,
@@ -2548,7 +2554,7 @@
       "cy": 1121.1666666666667
     },
     {
-      "text": "e  6.  Attachment  Index  (Synthetic)",
+      "text": "6.  Attachment  Index  (Synthetic)",
       "bbox": [
         675.0,
         1193.0,
@@ -2558,7 +2564,7 @@
       "cy": 1218.9
     },
     {
-      "text": "e   Usage  Hints",
+      "text": "Usage  Hints",
       "bbox": [
         810.0,
         1288.0,
@@ -2758,7 +2764,7 @@
       "cy": 4433.5
     },
     {
-      "text": "a                between                                         case",
+      "text": "ignition_delay                between                                         nominal",
       "bbox": [
         498.0,
         4446.0,
@@ -2768,7 +2774,7 @@
       "cy": 4494.333333333333
     },
     {
-      "text": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal",
+      "text": "ignition_delay                     =  0.85          0.62         S          5       PASS        nominal",
       "bbox": [
         498.0,
         4495.0,
@@ -2800,7 +2806,7 @@
   ],
   "lines_norm": [
     {
-      "text": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)",
+      "text": "Synthetic  End  Item  Data  Package  (Debug  Reference)",
       "bbox": [
         538.0,
         505.0,
@@ -2808,7 +2814,7 @@
         564.0
       ],
       "cy": 531.8125,
-      "text_norm": "e   Synthetic  End  Item  Data  Package  (Debug  Reference)"
+      "text_norm": "Synthetic  End  Item  Data  Package  (Debug  Reference)"
     },
     {
       "text": "\u00ab   Document  Profile",
@@ -2822,7 +2828,7 @@
       "text_norm": "\u00ab   Document  Profile"
     },
     {
-      "text": "e   1.  Functional  Acceptance  Snapshot",
+      "text": "1.  Functional  Acceptance  Snapshot",
       "bbox": [
         675.0,
         701.0,
@@ -2830,7 +2836,7 @@
         760.0
       ],
       "cy": 728.3,
-      "text_norm": "e   1.  Functional  Acceptance  Snapshot"
+      "text_norm": "1.  Functional  Acceptance  Snapshot"
     },
     {
       "text": "\u00ab  2.  Performance  KPI  Table",
@@ -2844,7 +2850,7 @@
       "text_norm": "\u00ab  2.  Performance  KPI  Table"
     },
     {
-      "text": "e  3.  Environmental  Endurance  Matrix",
+      "text": "3.  Environmental  Endurance  Matrix",
       "bbox": [
         675.0,
         895.0,
@@ -2852,7 +2858,7 @@
         941.0
       ],
       "cy": 919.6,
-      "text_norm": "e  3.  Environmental  Endurance  Matrix"
+      "text_norm": "3.  Environmental  Endurance  Matrix"
     },
     {
       "text": "\u00ab  4.  Calibration  &  Trim  Table",
@@ -2877,7 +2883,7 @@
       "text_norm": "\u00ab  5  Anomaly  &  Waiver  Log"
     },
     {
-      "text": "e  6.  Attachment  Index  (Synthetic)",
+      "text": "6.  Attachment  Index  (Synthetic)",
       "bbox": [
         675.0,
         1193.0,
@@ -2885,10 +2891,10 @@
         1252.0
       ],
       "cy": 1218.9,
-      "text_norm": "e  6.  Attachment  Index  (Synthetic)"
+      "text_norm": "6.  Attachment  Index  (Synthetic)"
     },
     {
-      "text": "e   Usage  Hints",
+      "text": "Usage  Hints",
       "bbox": [
         810.0,
         1288.0,
@@ -2896,7 +2902,7 @@
         1347.0
       ],
       "cy": 1315.8333333333333,
-      "text_norm": "e   Usage  Hints"
+      "text_norm": "Usage  Hints"
     },
     {
       "text": "Synthetic   End   Item   Data   Package   (Debug",
@@ -3108,7 +3114,7 @@
       "text_norm": "sample"
     },
     {
-      "text": "a                between                                         case",
+      "text": "ignition_delay                between                                         nominal",
       "bbox": [
         498.0,
         4446.0,
@@ -3116,10 +3122,10 @@
         4510.0
       ],
       "cy": 4494.333333333333,
-      "text_norm": "a                between                                         case"
+      "text_norm": "ignition_delay                between                                         nominal"
     },
     {
-      "text": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal",
+      "text": "ignition_delay                     =  0.85          0.62         S          5       PASS        nominal",
       "bbox": [
         498.0,
         4495.0,
@@ -3127,7 +3133,7 @@
         4562.0
       ],
       "cy": 4524.0625,
-      "text_norm": "ignition_delay                     =  0.85          0.62         s          5       PASS        nominal"
+      "text_norm": "ignition_delay                     =  0.85          0.62         S          5       PASS        nominal"
     },
     {
       "text": "arm  and                                         case",

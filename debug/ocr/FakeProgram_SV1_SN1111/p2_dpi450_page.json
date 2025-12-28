@@ -3,7 +3,7 @@
   "page": 2,
   "dpi": 450,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(8/48)",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(9/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -27,7 +27,7 @@
         3295.0,
         543.0
       ],
-      "text": "Term Description Requirement Value Units Page Quality = Notes"
+      "text": "Term Description Requirement Value Units Page Quality ; Notes"
     },
     {
       "type": "table",
@@ -46,7 +46,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          829.5,
+          896.5,
           1417.5,
           1860.5,
           2215.0,
@@ -73,23 +73,24 @@
               1010.5
             ],
             "cells_text": [
-              "=P",
-              "Steady-state specific",
+              "isp",
+              "Steady-state specific impulse",
               "43 \u00b1 3",
               "39.4",
-              "see",
-              "5",
-              "Low",
-              "flagged low but inside tolerance"
+              "sec",
+              "6",
+              "LOW",
+              "flagged low but inside tolerance window"
             ],
             "cells_tokens": [
               [
-                "=P"
+                "isp"
               ],
               [
                 "Steady-",
                 "state",
-                "specific"
+                "specific",
+                "impulse"
               ],
               [
                 "43",
@@ -99,16 +100,17 @@
                 "39.4"
               ],
               [
-                "see"
+                "sec"
               ],
               [
-                "5"
+                "6"
               ],
               [
                 "Low"
               ],
               [
                 "flagged",
+                "window",
                 "but",
                 "tolerance",
                 "inside",
@@ -122,7 +124,8 @@
               [
                 11,
                 14,
-                23
+                23,
+                26
               ],
               [
                 15,
@@ -142,6 +145,7 @@
               ],
               [
                 12,
+                27,
                 19,
                 25,
                 20,
@@ -149,23 +153,25 @@
               ]
             ],
             "row_token_ids": [
-              13,
               11,
               12,
-              19,
-              20,
+              13,
               14,
               15,
               16,
               17,
               18,
+              19,
+              20,
               21,
               22,
-              24,
               23,
-              25
+              24,
+              25,
+              26,
+              27
             ],
-            "row_text_cells": "=P | Steady-state specific | 43 \u00b1 3 | 39.4 | see | 5 | Low | flagged low but inside tolerance",
+            "row_text_cells": "isp | Steady-state specific impulse | 43 \u00b1 3 | 39.4 | sec | 6 | LOW | flagged low but inside tolerance window",
             "cells_kind": [
               "string",
               "string",
@@ -186,7 +192,7 @@
             "cells_text": [
               "chamber_pressure",
               "Mean P,,",
-              "185 + 10",
+              "185 \u00b1 10",
               "201",
               "psia",
               "6",
@@ -279,7 +285,7 @@
               42,
               43
             ],
-            "row_text_cells": "chamber_pressure | Mean P,, | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
+            "row_text_cells": "chamber_pressure | Mean P,, | 185 \u00b1 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
               "string",
               "string",
@@ -298,20 +304,18 @@
               1768.5
             ],
             "cells_text": [
-              "on burn_duration ~",
+              "burn_duration",
               "Hot-fire duration",
               "42-48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN NOT_RUN",
-              "use to statuses test statuses textual statuses"
+              "NOT_RUN",
+              "use to test textual statuses"
             ],
             "cells_tokens": [
               [
-                "burn_duration",
-                "~",
-                "on"
+                "burn_duration"
               ],
               [
                 "duration",
@@ -335,20 +339,16 @@
                 "NOT_RUN"
               ],
               [
-                "statuses",
                 "use",
                 "textual",
                 "statuses",
                 "to",
-                "statuses",
                 "test"
               ]
             ],
             "cells_token_ids": [
               [
-                52,
-                59,
-                46
+                52
               ],
               [
                 60,
@@ -369,16 +369,13 @@
                 55
               ],
               [
-                56,
-                62
+                56
               ],
               [
-                57,
                 50,
                 58,
                 63,
                 44,
-                51,
                 45
               ]
             ],
@@ -401,10 +398,9 @@
               59,
               60,
               61,
-              62,
               63
             ],
-            "row_text_cells": "on burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN NOT_RUN | use to statuses test statuses textual statuses",
+            "row_text_cells": "burn_duration | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -427,10 +423,10 @@
               "Injector harness resistance",
               "4.8-5.3",
               "6.1",
-              "Q",
+              "ohm",
               "8",
               "FAIL",
-              "triggers numeric out-of-range numeric failure numeric"
+              "triggers out-of-range numeric failure"
             ],
             "cells_tokens": [
               [
@@ -493,8 +489,6 @@
                 64,
                 68,
                 76,
-                67,
-                78,
                 65
               ]
             ],
@@ -516,7 +510,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers numeric out-of-range numeric failure numeric",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
               "string",
               "string",
@@ -525,7 +519,7 @@
               "string",
               "number",
               "string",
-              "paragraph"
+              "string"
             ]
           },
           {
@@ -647,7 +641,7 @@
             "cells_text": [
               "leak_check",
               "Helium leak rate",
-              "=1.0e-5",
+              "<= 1.0e-5",
               "Not Found",
               "atm-cc/s",
               "10",
@@ -734,7 +728,7 @@
               108,
               109
             ],
-            "row_text_cells": "leak_check | Helium leak rate | =1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
+            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
             "cells_kind": [
               "string",
               "string",
@@ -747,29 +741,8 @@
             ]
           }
         ],
-        "spill_blocks": [
-          {
-            "band_index": 0,
-            "bbox_px": [
-              1050.0,
-              912.0,
-              3334.0,
-              979.0
-            ],
-            "text": "impulse window"
-          }
-        ]
+        "spill_blocks": []
       }
-    },
-    {
-      "type": "text",
-      "bbox_px": [
-        1050.0,
-        912.0,
-        3334.0,
-        979.0
-      ],
-      "text": "impulse window"
     },
     {
       "type": "text",
@@ -808,7 +781,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          801.5,
+          950.5,
           1174.0,
           1427.5,
           1613.5,
@@ -1293,19 +1266,6 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        1050.0,
-        912.0,
-        3334.0,
-        979.0
-      ],
-      "text": "impulse window",
-      "line_count": 1,
-      "word_count": 2
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
         436.0,
         3134.0,
         1900.0,
@@ -1359,7 +1319,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          829.5,
+          896.5,
           1417.5,
           1860.5,
           2215.0,
@@ -1386,23 +1346,24 @@
               1010.5
             ],
             "cells_text": [
-              "=P",
-              "Steady-state specific",
+              "isp",
+              "Steady-state specific impulse",
               "43 \u00b1 3",
               "39.4",
-              "see",
-              "5",
-              "Low",
-              "flagged low but inside tolerance"
+              "sec",
+              "6",
+              "LOW",
+              "flagged low but inside tolerance window"
             ],
             "cells_tokens": [
               [
-                "=P"
+                "isp"
               ],
               [
                 "Steady-",
                 "state",
-                "specific"
+                "specific",
+                "impulse"
               ],
               [
                 "43",
@@ -1412,16 +1373,17 @@
                 "39.4"
               ],
               [
-                "see"
+                "sec"
               ],
               [
-                "5"
+                "6"
               ],
               [
                 "Low"
               ],
               [
                 "flagged",
+                "window",
                 "but",
                 "tolerance",
                 "inside",
@@ -1435,7 +1397,8 @@
               [
                 11,
                 14,
-                23
+                23,
+                26
               ],
               [
                 15,
@@ -1455,6 +1418,7 @@
               ],
               [
                 12,
+                27,
                 19,
                 25,
                 20,
@@ -1462,23 +1426,25 @@
               ]
             ],
             "row_token_ids": [
-              13,
               11,
               12,
-              19,
-              20,
+              13,
               14,
               15,
               16,
               17,
               18,
+              19,
+              20,
               21,
               22,
-              24,
               23,
-              25
+              24,
+              25,
+              26,
+              27
             ],
-            "row_text_cells": "=P | Steady-state specific | 43 \u00b1 3 | 39.4 | see | 5 | Low | flagged low but inside tolerance",
+            "row_text_cells": "isp | Steady-state specific impulse | 43 \u00b1 3 | 39.4 | sec | 6 | LOW | flagged low but inside tolerance window",
             "cells_kind": [
               "string",
               "string",
@@ -1499,7 +1465,7 @@
             "cells_text": [
               "chamber_pressure",
               "Mean P,,",
-              "185 + 10",
+              "185 \u00b1 10",
               "201",
               "psia",
               "6",
@@ -1592,7 +1558,7 @@
               42,
               43
             ],
-            "row_text_cells": "chamber_pressure | Mean P,, | 185 + 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
+            "row_text_cells": "chamber_pressure | Mean P,, | 185 \u00b1 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
               "string",
               "string",
@@ -1611,20 +1577,18 @@
               1768.5
             ],
             "cells_text": [
-              "on burn_duration ~",
+              "burn_duration",
               "Hot-fire duration",
               "42-48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN NOT_RUN",
-              "use to statuses test statuses textual statuses"
+              "NOT_RUN",
+              "use to test textual statuses"
             ],
             "cells_tokens": [
               [
-                "burn_duration",
-                "~",
-                "on"
+                "burn_duration"
               ],
               [
                 "duration",
@@ -1648,20 +1612,16 @@
                 "NOT_RUN"
               ],
               [
-                "statuses",
                 "use",
                 "textual",
                 "statuses",
                 "to",
-                "statuses",
                 "test"
               ]
             ],
             "cells_token_ids": [
               [
-                52,
-                59,
-                46
+                52
               ],
               [
                 60,
@@ -1682,16 +1642,13 @@
                 55
               ],
               [
-                56,
-                62
+                56
               ],
               [
-                57,
                 50,
                 58,
                 63,
                 44,
-                51,
                 45
               ]
             ],
@@ -1714,10 +1671,9 @@
               59,
               60,
               61,
-              62,
               63
             ],
-            "row_text_cells": "on burn_duration ~ | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN NOT_RUN | use to statuses test statuses textual statuses",
+            "row_text_cells": "burn_duration | Hot-fire duration | 42-48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -1740,10 +1696,10 @@
               "Injector harness resistance",
               "4.8-5.3",
               "6.1",
-              "Q",
+              "ohm",
               "8",
               "FAIL",
-              "triggers numeric out-of-range numeric failure numeric"
+              "triggers out-of-range numeric failure"
             ],
             "cells_tokens": [
               [
@@ -1806,8 +1762,6 @@
                 64,
                 68,
                 76,
-                67,
-                78,
                 65
               ]
             ],
@@ -1829,7 +1783,7 @@
               78,
               79
             ],
-            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | Q | 8 | FAIL | triggers numeric out-of-range numeric failure numeric",
+            "row_text_cells": "resistance | Injector harness resistance | 4.8-5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
               "string",
               "string",
@@ -1838,7 +1792,7 @@
               "string",
               "number",
               "string",
-              "paragraph"
+              "string"
             ]
           },
           {
@@ -1960,7 +1914,7 @@
             "cells_text": [
               "leak_check",
               "Helium leak rate",
-              "=1.0e-5",
+              "<= 1.0e-5",
               "Not Found",
               "atm-cc/s",
               "10",
@@ -2047,7 +2001,7 @@
               108,
               109
             ],
-            "row_text_cells": "leak_check | Helium leak rate | =1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
+            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
             "cells_kind": [
               "string",
               "string",
@@ -2060,32 +2014,8 @@
             ]
           }
         ],
-        "spill_blocks": [
-          {
-            "band_index": 0,
-            "bbox_px": [
-              1050.0,
-              912.0,
-              3334.0,
-              979.0
-            ],
-            "text": "impulse window"
-          }
-        ]
+        "spill_blocks": []
       }
-    },
-    {
-      "type": "text",
-      "kind": "string",
-      "bbox_px": [
-        1050.0,
-        912.0,
-        3334.0,
-        979.0
-      ],
-      "text": "impulse window",
-      "line_count": 1,
-      "word_count": 2
     },
     {
       "type": "text",
@@ -2123,7 +2053,7 @@
         ],
         "col_bounds_px": [
           432.0,
-          801.5,
+          950.5,
           1174.0,
           1427.5,
           1613.5,

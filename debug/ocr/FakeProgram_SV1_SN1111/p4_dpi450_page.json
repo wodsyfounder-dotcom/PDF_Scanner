@@ -2,8 +2,8 @@
   "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
   "page": 4,
   "dpi": 450,
-  "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
+  "source": "export",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/32)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -37,7 +37,7 @@
         "col_bounds_px": [
           437.0,
           995.5,
-          1779.5,
+          2047.9642857142858,
           2356.5,
           3392.0
         ],
@@ -55,8 +55,8 @@
               773.0
             ],
             "cells_text": [
-              "A CCeptance tance Test ies Report",
-              "AIR Hyperion. SV3_SN42.pdf",
+              "Acceptance Test Report",
+              "ATR_Hyperion_SV3_SN42.pdf",
               "124",
               "Contains Sections 3 & 4 tables"
             ],
@@ -64,14 +64,14 @@
               [
                 "A",
                 "Report",
-                "CCeptance",
+                "eeepranee",
                 "tance",
                 "Test",
                 "ies"
               ],
               [
-                "AIR",
-                "Hyperion.",
+                "ATR_Hyperion_SV3_SN42.pdf",
+                "Hyperion",
                 "SV3_SN42.pdf"
               ],
               [
@@ -130,9 +130,9 @@
               19,
               20
             ],
-            "row_text_cells": "A CCeptance tance Test ies Report | AIR Hyperion. SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "row_text_cells": "Acceptance Test Report | ATR_Hyperion_SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
             "cells_kind": [
-              "paragraph",
+              "string",
               "paragraph",
               "number",
               "paragraph"
@@ -146,7 +146,7 @@
             ],
             "cells_text": [
               "Thermal Test Log",
-              "THERM_SV3_SN42_ revC.pdf",
+              "THERM_SV3_SN42_revC.pdf",
               "56",
               "Page numbers offset by +2 in footer"
             ],
@@ -211,7 +211,7 @@
               32,
               33
             ],
-            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_ revC.pdf | 56 | Page numbers offset by +2 in footer",
+            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_revC.pdf | 56 | Page numbers offset by +2 in footer",
             "cells_kind": [
               "string",
               "paragraph",
@@ -226,21 +226,19 @@
               1251.5
             ],
             "cells_text": [
-              "Vib a Test Photos",
-              "a VIB_IMG_SN42.zip",
+              "Vib Test Photos",
+              "VIB_IMG_SN42.zip",
               "24 images",
               "Use to test non-PDF assets"
             ],
             "cells_tokens": [
               [
                 "Vib",
-                "a",
                 "Test",
                 "Photos"
               ],
               [
-                "VIB_IMG_SN42.zip",
-                "a"
+                "VIB_IMG_SN42.zip"
               ],
               [
                 "24",
@@ -257,13 +255,11 @@
             "cells_token_ids": [
               [
                 37,
-                34,
                 38,
                 39
               ],
               [
-                40,
-                35
+                40
               ],
               [
                 36,
@@ -278,8 +274,6 @@
               ]
             ],
             "row_token_ids": [
-              34,
-              35,
               36,
               37,
               38,
@@ -292,10 +286,10 @@
               45,
               46
             ],
-            "row_text_cells": "Vib a Test Photos | a VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
             "cells_kind": [
               "string",
-              "paragraph",
+              "string",
               "string",
               "paragraph"
             ]
@@ -530,7 +524,7 @@
         "col_bounds_px": [
           437.0,
           995.5,
-          1779.5,
+          2047.9642857142858,
           2356.5,
           3392.0
         ],
@@ -548,8 +542,8 @@
               773.0
             ],
             "cells_text": [
-              "A CCeptance tance Test ies Report",
-              "AIR Hyperion. SV3_SN42.pdf",
+              "Acceptance Test Report",
+              "ATR_Hyperion_SV3_SN42.pdf",
               "124",
               "Contains Sections 3 & 4 tables"
             ],
@@ -557,14 +551,14 @@
               [
                 "A",
                 "Report",
-                "CCeptance",
+                "eeepranee",
                 "tance",
                 "Test",
                 "ies"
               ],
               [
-                "AIR",
-                "Hyperion.",
+                "ATR_Hyperion_SV3_SN42.pdf",
+                "Hyperion",
                 "SV3_SN42.pdf"
               ],
               [
@@ -623,9 +617,9 @@
               19,
               20
             ],
-            "row_text_cells": "A CCeptance tance Test ies Report | AIR Hyperion. SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
+            "row_text_cells": "Acceptance Test Report | ATR_Hyperion_SV3_SN42.pdf | 124 | Contains Sections 3 & 4 tables",
             "cells_kind": [
-              "paragraph",
+              "string",
               "paragraph",
               "number",
               "paragraph"
@@ -639,7 +633,7 @@
             ],
             "cells_text": [
               "Thermal Test Log",
-              "THERM_SV3_SN42_ revC.pdf",
+              "THERM_SV3_SN42_revC.pdf",
               "56",
               "Page numbers offset by +2 in footer"
             ],
@@ -704,7 +698,7 @@
               32,
               33
             ],
-            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_ revC.pdf | 56 | Page numbers offset by +2 in footer",
+            "row_text_cells": "Thermal Test Log | THERM_SV3_SN42_revC.pdf | 56 | Page numbers offset by +2 in footer",
             "cells_kind": [
               "string",
               "paragraph",
@@ -719,21 +713,19 @@
               1251.5
             ],
             "cells_text": [
-              "Vib a Test Photos",
-              "a VIB_IMG_SN42.zip",
+              "Vib Test Photos",
+              "VIB_IMG_SN42.zip",
               "24 images",
               "Use to test non-PDF assets"
             ],
             "cells_tokens": [
               [
                 "Vib",
-                "a",
                 "Test",
                 "Photos"
               ],
               [
-                "VIB_IMG_SN42.zip",
-                "a"
+                "VIB_IMG_SN42.zip"
               ],
               [
                 "24",
@@ -750,13 +742,11 @@
             "cells_token_ids": [
               [
                 37,
-                34,
                 38,
                 39
               ],
               [
-                40,
-                35
+                40
               ],
               [
                 36,
@@ -771,8 +761,6 @@
               ]
             ],
             "row_token_ids": [
-              34,
-              35,
               36,
               37,
               38,
@@ -785,10 +773,10 @@
               45,
               46
             ],
-            "row_text_cells": "Vib a Test Photos | a VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
+            "row_text_cells": "Vib Test Photos | VIB_IMG_SN42.zip | 24 images | Use to test non-PDF assets",
             "cells_kind": [
               "string",
-              "paragraph",
+              "string",
               "string",
               "paragraph"
             ]

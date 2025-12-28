@@ -1,21 +1,21 @@
 PDF: C:\Users\zachs\Documents\DevProjects\PDF_Scanner\user_inputs\Staging_Selected\FakeProgram_SV1_SN1111.pdf
-Page: 4  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
-Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)
+Page: 4  DPI: 450  Source: export  Lang: eng+equ  PSM: 4
+Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/32)
 Image: 3825x4950
 
 [TABLE 0 bbox_px=(437.0,536.5,3392.0,1426.0) rows=4 cols=4]
-col_bounds_px: [437.0, 995.5, 1779.5, 2356.5, 3392.0]
-+-----------------------------------+----------------------------+-----------+-------------------------------------+
-| Attachment                        | File Name                  | Pages     | Notes                               |
-+-=================================-+-==========================-+-=========-+-===================================-+
-| A CCeptance tance Test ies Report | AIR Hyperion. SV3_SN42.pdf | 124       | Contains Sections 3 & 4 tables      |
-+-----------------------------------+----------------------------+-----------+-------------------------------------+
-| Thermal Test Log                  | THERM_SV3_SN42_ revC.pdf   | 56        | Page numbers offset by +2 in footer |
-+-----------------------------------+----------------------------+-----------+-------------------------------------+
-| Vib a Test Photos                 | a VIB_IMG_SN42.zip         | 24 images | Use to test non-PDF assets          |
-+-----------------------------------+----------------------------+-----------+-------------------------------------+
-| Calibration Data                  | CAL_SN42_revE.xlsx         | 4sheets   | Multi-tab workbook                  |
-+-----------------------------------+----------------------------+-----------+-------------------------------------+
+col_bounds_px: [437.0, 995.5, 2048.0, 2356.5, 3392.0]
++------------------------+---------------------------+-----------+-------------------------------------+
+| Attachment             | File Name                 | Pages     | Notes                               |
++-======================-+-=========================-+-=========-+-===================================-+
+| Acceptance Test Report | ATR_Hyperion_SV3_SN42.pdf | 124       | Contains Sections 3 & 4 tables      |
++------------------------+---------------------------+-----------+-------------------------------------+
+| Thermal Test Log       | THERM_SV3_SN42_revC.pdf   | 56        | Page numbers offset by +2 in footer |
++------------------------+---------------------------+-----------+-------------------------------------+
+| Vib Test Photos        | VIB_IMG_SN42.zip          | 24 images | Use to test non-PDF assets          |
++------------------------+---------------------------+-----------+-------------------------------------+
+| Calibration Data       | CAL_SN42_revE.xlsx        | 4sheets   | Multi-tab workbook                  |
++------------------------+---------------------------+-----------+-------------------------------------+
 
 [STRING bbox_px=(444.0,1564.0,1065.0,1667.0)]
 Usage Hints

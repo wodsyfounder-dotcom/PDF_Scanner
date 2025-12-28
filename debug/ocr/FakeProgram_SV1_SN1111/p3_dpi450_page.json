@@ -2,8 +2,8 @@
   "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\user_inputs\\Staging_Selected\\FakeProgram_SV1_SN1111.pdf",
   "page": 3,
   "dpi": 450,
-  "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(6/48)",
+  "source": "export",
+  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(11/48)",
   "lang": "eng+equ",
   "psm": 4,
   "img_w": 3825,
@@ -56,8 +56,8 @@
         ],
         "col_bounds_px": [
           452.0,
-          851.0,
-          1346.5,
+          1009.25,
+          1373.0416666666667,
           1774.0,
           2331.0,
           2915.0,
@@ -79,20 +79,20 @@
               763.0
             ],
             "cells_text": [
-              "Thermal Soak",
-              "Low -45",
+              "Thermal Soak Low",
+              "-45",
               "2.0",
               "YES",
-              "+0.5",
+              "\u00b10.5",
               "A-112"
             ],
             "cells_tokens": [
               [
                 "Thermal",
-                "Soak"
+                "Soak",
+                "Low"
               ],
               [
-                "Low",
                 "-45"
               ],
               [
@@ -111,10 +111,10 @@
             "cells_token_ids": [
               [
                 10,
-                11
+                11,
+                12
               ],
               [
-                12,
                 13
               ],
               [
@@ -140,10 +140,10 @@
               16,
               17
             ],
-            "row_text_cells": "Thermal Soak | Low -45 | 2.0 | YES | +0.5 | A-112",
+            "row_text_cells": "Thermal Soak Low | -45 | 2.0 | YES | \u00b10.5 | A-112",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "number",
@@ -157,8 +157,8 @@
               998.5
             ],
             "cells_text": [
-              "Thermal Soak",
-              "High +95",
+              "Thermal Soak High",
+              "+95",
               "1.5",
               "NO",
               "Chamber tripped at +88\u00b0C",
@@ -167,10 +167,10 @@
             "cells_tokens": [
               [
                 "Thermal",
-                "Soak"
+                "Soak",
+                "High"
               ],
               [
-                "High",
                 "+95"
               ],
               [
@@ -192,10 +192,10 @@
             "cells_token_ids": [
               [
                 21,
-                22
+                22,
+                23
               ],
               [
-                23,
                 24
               ],
               [
@@ -227,10 +227,10 @@
               27,
               28
             ],
-            "row_text_cells": "Thermal Soak | High +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
+            "row_text_cells": "Thermal Soak High | +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "paragraph",
@@ -497,8 +497,8 @@
             ],
             "cells_text": [
               "Sine Sweep",
-              "\u00a7-500 Hz",
-              "O.5g",
+              "5-500 Hz",
+              "0.59",
               "Not Recorded",
               "-",
               "V-041"
@@ -513,7 +513,7 @@
                 "Hz"
               ],
               [
-                "O.5g"
+                "0.59"
               ],
               [
                 "Not",
@@ -560,11 +560,11 @@
               63,
               66
             ],
-            "row_text_cells": "Sine Sweep | \u00a7-500 Hz | O.5g | Not Recorded | - | V-041",
+            "row_text_cells": "Sine Sweep | 5-500 Hz | 0.59 | Not Recorded | - | V-041",
             "cells_kind": [
               "string",
               "string",
-              "string",
+              "number",
               "string",
               "string",
               "string"
@@ -636,7 +636,7 @@
           1078.5,
           1424.0,
           1895.0,
-          2258.0,
+          2337.625,
           3252.0
         ],
         "header_cells": [
@@ -658,7 +658,7 @@
               "TC-01",
               "1.0034",
               "0.9991",
-              "+0.0100",
+              "\u00b10.0100",
               "PASS",
               "Temperatures within tolerance"
             ],
@@ -716,7 +716,7 @@
               98,
               99
             ],
-            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | +0.0100 | PASS | Temperatures within tolerance",
+            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | \u00b10.0100 | PASS | Temperatures within tolerance",
             "cells_kind": [
               "string",
               "number",
@@ -736,7 +736,7 @@
               "TC-02",
               "0.9989",
               "1.0142",
-              "+0.0100",
+              "\u00b10.0100",
               "FAIL",
               "Out-of-family high"
             ],
@@ -791,7 +791,7 @@
               105,
               106
             ],
-            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | +0.0100 | FAIL | Out-of-family high",
+            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | \u00b10.0100 | FAIL | Out-of-family high",
             "cells_kind": [
               "string",
               "number",
@@ -811,7 +811,7 @@
               "PT-03",
               "1.0000",
               "1.0000",
-              "+0.0020",
+              "\u00b10.0020",
               "PASS",
               "Perfect match"
             ],
@@ -866,7 +866,7 @@
               112,
               113
             ],
-            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | +0.0020 | PASS | Perfect match",
+            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | \u00b10.0020 | PASS | Perfect match",
             "cells_kind": [
               "string",
               "number",
@@ -886,7 +886,7 @@
               "PT-07",
               "0.9977",
               "0.9974",
-              "+0.0020",
+              "\u00b10.0020",
               "INVESTIGATE",
               "Delta close to limit"
             ],
@@ -947,7 +947,7 @@
               121,
               122
             ],
-            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | +0.0020 | INVESTIGATE | Delta close to limit",
+            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
             "cells_kind": [
               "string",
               "number",
@@ -967,7 +967,7 @@
               "LVDT-2",
               "1.0040",
               "-",
-              "+0.0050",
+              "\u00b10.0050",
               "INCOMPLETE",
               "Missing post-trim data"
             ],
@@ -1025,7 +1025,7 @@
               129,
               130
             ],
-            "row_text_cells": "LVDT-2 | 1.0040 | - | +0.0050 | INCOMPLETE | Missing post-trim data",
+            "row_text_cells": "LVDT-2 | 1.0040 | - | \u00b10.0050 | INCOMPLETE | Missing post-trim data",
             "cells_kind": [
               "string",
               "number",
@@ -1047,7 +1047,7 @@
         1911.0,
         3363.0
       ],
-      "text": "9. Anomaly & Waiver Log"
+      "text": "5 Anomaly & Waiver Log"
     },
     {
       "type": "text",
@@ -1076,11 +1076,11 @@
         ],
         "col_bounds_px": [
           452.0,
-          666.5,
+          714.75,
           1059.0,
           1454.5,
-          2177.5,
-          2853.0,
+          2254.5,
+          2899.6071428571427,
           3360.0
         ],
         "header_cells": [
@@ -1102,8 +1102,8 @@
               "DR-2025-014",
               "Major",
               "chamber_pressure",
-              "Persistent n +8% over spec during burn",
-              "Added relief orifice, a #2 retest pending",
+              "Persistent +8% over spec during burn #2",
+              "Added relief orifice, retest pending",
               "OPEN"
             ],
             "cells_tokens": [
@@ -1121,20 +1121,18 @@
               [
                 "spec",
                 "Persistent",
-                "n",
                 "during",
                 "+8%",
                 "burn",
-                "over"
+                "over",
+                "#2"
               ],
               [
-                "#2",
                 "Added",
                 "retest",
                 "pending",
                 "relief",
-                "orifice,",
-                "a"
+                "orifice,"
               ],
               [
                 "OPEN"
@@ -1155,20 +1153,18 @@
               [
                 157,
                 146,
-                143,
                 158,
                 147,
                 159,
-                148
+                148,
+                160
               ],
               [
-                160,
                 149,
                 161,
                 162,
                 150,
-                151,
-                145
+                151
               ],
               [
                 155
@@ -1176,9 +1172,7 @@
             ],
             "row_token_ids": [
               142,
-              143,
               144,
-              145,
               146,
               147,
               148,
@@ -1197,7 +1191,7 @@
               161,
               162
             ],
-            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent n +8% over spec during burn | Added relief orifice, a #2 retest pending | OPEN",
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn #2 | Added relief orifice, retest pending | OPEN",
             "cells_kind": [
               "string",
               "string",
@@ -1215,9 +1209,9 @@
             ],
             "cells_text": [
               "NCR-25-008",
-              "n Minor",
+              "Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading n",
+              "Harness swapped due to6.1Qreading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -1227,8 +1221,7 @@
                 "NCR-"
               ],
               [
-                "Minor",
-                "n"
+                "Minor"
               ],
               [
                 "resistance"
@@ -1237,8 +1230,7 @@
                 "due",
                 "Harness",
                 "to6.1Qreading",
-                "swapped",
-                "n"
+                "swapped"
               ],
               [
                 "Q",
@@ -1256,8 +1248,7 @@
                 163
               ],
               [
-                170,
-                164
+                170
               ],
               [
                 171
@@ -1266,8 +1257,7 @@
                 175,
                 165,
                 176,
-                166,
-                172
+                166
               ],
               [
                 177,
@@ -1281,7 +1271,6 @@
             ],
             "row_token_ids": [
               163,
-              164,
               165,
               166,
               167,
@@ -1296,7 +1285,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | n Minor | resistance | Harness swapped due to6.1Qreading n | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -1465,7 +1454,7 @@
         1911.0,
         3363.0
       ],
-      "text": "9. Anomaly & Waiver Log",
+      "text": "5 Anomaly & Waiver Log",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
@@ -1514,8 +1503,8 @@
         ],
         "col_bounds_px": [
           452.0,
-          851.0,
-          1346.5,
+          1009.25,
+          1373.0416666666667,
           1774.0,
           2331.0,
           2915.0,
@@ -1537,20 +1526,20 @@
               763.0
             ],
             "cells_text": [
-              "Thermal Soak",
-              "Low -45",
+              "Thermal Soak Low",
+              "-45",
               "2.0",
               "YES",
-              "+0.5",
+              "\u00b10.5",
               "A-112"
             ],
             "cells_tokens": [
               [
                 "Thermal",
-                "Soak"
+                "Soak",
+                "Low"
               ],
               [
-                "Low",
                 "-45"
               ],
               [
@@ -1569,10 +1558,10 @@
             "cells_token_ids": [
               [
                 10,
-                11
+                11,
+                12
               ],
               [
-                12,
                 13
               ],
               [
@@ -1598,10 +1587,10 @@
               16,
               17
             ],
-            "row_text_cells": "Thermal Soak | Low -45 | 2.0 | YES | +0.5 | A-112",
+            "row_text_cells": "Thermal Soak Low | -45 | 2.0 | YES | \u00b10.5 | A-112",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "number",
@@ -1615,8 +1604,8 @@
               998.5
             ],
             "cells_text": [
-              "Thermal Soak",
-              "High +95",
+              "Thermal Soak High",
+              "+95",
               "1.5",
               "NO",
               "Chamber tripped at +88\u00b0C",
@@ -1625,10 +1614,10 @@
             "cells_tokens": [
               [
                 "Thermal",
-                "Soak"
+                "Soak",
+                "High"
               ],
               [
-                "High",
                 "+95"
               ],
               [
@@ -1650,10 +1639,10 @@
             "cells_token_ids": [
               [
                 21,
-                22
+                22,
+                23
               ],
               [
-                23,
                 24
               ],
               [
@@ -1685,10 +1674,10 @@
               27,
               28
             ],
-            "row_text_cells": "Thermal Soak | High +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
+            "row_text_cells": "Thermal Soak High | +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "paragraph",
@@ -1955,8 +1944,8 @@
             ],
             "cells_text": [
               "Sine Sweep",
-              "\u00a7-500 Hz",
-              "O.5g",
+              "5-500 Hz",
+              "0.59",
               "Not Recorded",
               "-",
               "V-041"
@@ -1971,7 +1960,7 @@
                 "Hz"
               ],
               [
-                "O.5g"
+                "0.59"
               ],
               [
                 "Not",
@@ -2018,11 +2007,11 @@
               63,
               66
             ],
-            "row_text_cells": "Sine Sweep | \u00a7-500 Hz | O.5g | Not Recorded | - | V-041",
+            "row_text_cells": "Sine Sweep | 5-500 Hz | 0.59 | Not Recorded | - | V-041",
             "cells_kind": [
               "string",
               "string",
-              "string",
+              "number",
               "string",
               "string",
               "string"
@@ -2097,7 +2086,7 @@
           1078.5,
           1424.0,
           1895.0,
-          2258.0,
+          2337.625,
           3252.0
         ],
         "header_cells": [
@@ -2119,7 +2108,7 @@
               "TC-01",
               "1.0034",
               "0.9991",
-              "+0.0100",
+              "\u00b10.0100",
               "PASS",
               "Temperatures within tolerance"
             ],
@@ -2177,7 +2166,7 @@
               98,
               99
             ],
-            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | +0.0100 | PASS | Temperatures within tolerance",
+            "row_text_cells": "TC-01 | 1.0034 | 0.9991 | \u00b10.0100 | PASS | Temperatures within tolerance",
             "cells_kind": [
               "string",
               "number",
@@ -2197,7 +2186,7 @@
               "TC-02",
               "0.9989",
               "1.0142",
-              "+0.0100",
+              "\u00b10.0100",
               "FAIL",
               "Out-of-family high"
             ],
@@ -2252,7 +2241,7 @@
               105,
               106
             ],
-            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | +0.0100 | FAIL | Out-of-family high",
+            "row_text_cells": "TC-02 | 0.9989 | 1.0142 | \u00b10.0100 | FAIL | Out-of-family high",
             "cells_kind": [
               "string",
               "number",
@@ -2272,7 +2261,7 @@
               "PT-03",
               "1.0000",
               "1.0000",
-              "+0.0020",
+              "\u00b10.0020",
               "PASS",
               "Perfect match"
             ],
@@ -2327,7 +2316,7 @@
               112,
               113
             ],
-            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | +0.0020 | PASS | Perfect match",
+            "row_text_cells": "PT-03 | 1.0000 | 1.0000 | \u00b10.0020 | PASS | Perfect match",
             "cells_kind": [
               "string",
               "number",
@@ -2347,7 +2336,7 @@
               "PT-07",
               "0.9977",
               "0.9974",
-              "+0.0020",
+              "\u00b10.0020",
               "INVESTIGATE",
               "Delta close to limit"
             ],
@@ -2408,7 +2397,7 @@
               121,
               122
             ],
-            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | +0.0020 | INVESTIGATE | Delta close to limit",
+            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
             "cells_kind": [
               "string",
               "number",
@@ -2428,7 +2417,7 @@
               "LVDT-2",
               "1.0040",
               "-",
-              "+0.0050",
+              "\u00b10.0050",
               "INCOMPLETE",
               "Missing post-trim data"
             ],
@@ -2486,7 +2475,7 @@
               129,
               130
             ],
-            "row_text_cells": "LVDT-2 | 1.0040 | - | +0.0050 | INCOMPLETE | Missing post-trim data",
+            "row_text_cells": "LVDT-2 | 1.0040 | - | \u00b10.0050 | INCOMPLETE | Missing post-trim data",
             "cells_kind": [
               "string",
               "number",
@@ -2509,7 +2498,7 @@
         1911.0,
         3363.0
       ],
-      "text": "9. Anomaly & Waiver Log",
+      "text": "5 Anomaly & Waiver Log",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
@@ -2537,11 +2526,11 @@
         ],
         "col_bounds_px": [
           452.0,
-          666.5,
+          714.75,
           1059.0,
           1454.5,
-          2177.5,
-          2853.0,
+          2254.5,
+          2899.6071428571427,
           3360.0
         ],
         "header_cells": [
@@ -2563,8 +2552,8 @@
               "DR-2025-014",
               "Major",
               "chamber_pressure",
-              "Persistent n +8% over spec during burn",
-              "Added relief orifice, a #2 retest pending",
+              "Persistent +8% over spec during burn #2",
+              "Added relief orifice, retest pending",
               "OPEN"
             ],
             "cells_tokens": [
@@ -2582,20 +2571,18 @@
               [
                 "spec",
                 "Persistent",
-                "n",
                 "during",
                 "+8%",
                 "burn",
-                "over"
+                "over",
+                "#2"
               ],
               [
-                "#2",
                 "Added",
                 "retest",
                 "pending",
                 "relief",
-                "orifice,",
-                "a"
+                "orifice,"
               ],
               [
                 "OPEN"
@@ -2616,20 +2603,18 @@
               [
                 157,
                 146,
-                143,
                 158,
                 147,
                 159,
-                148
+                148,
+                160
               ],
               [
-                160,
                 149,
                 161,
                 162,
                 150,
-                151,
-                145
+                151
               ],
               [
                 155
@@ -2637,9 +2622,7 @@
             ],
             "row_token_ids": [
               142,
-              143,
               144,
-              145,
               146,
               147,
               148,
@@ -2658,7 +2641,7 @@
               161,
               162
             ],
-            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent n +8% over spec during burn | Added relief orifice, a #2 retest pending | OPEN",
+            "row_text_cells": "DR-2025-014 | Major | chamber_pressure | Persistent +8% over spec during burn #2 | Added relief orifice, retest pending | OPEN",
             "cells_kind": [
               "string",
               "string",
@@ -2676,9 +2659,9 @@
             ],
             "cells_text": [
               "NCR-25-008",
-              "n Minor",
+              "Minor",
               "resistance",
-              "Harness swapped due to6.1Qreading n",
+              "Harness swapped due to6.1Qreading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -2688,8 +2671,7 @@
                 "NCR-"
               ],
               [
-                "Minor",
-                "n"
+                "Minor"
               ],
               [
                 "resistance"
@@ -2698,8 +2680,7 @@
                 "due",
                 "Harness",
                 "to6.1Qreading",
-                "swapped",
-                "n"
+                "swapped"
               ],
               [
                 "Q",
@@ -2717,8 +2698,7 @@
                 163
               ],
               [
-                170,
-                164
+                170
               ],
               [
                 171
@@ -2727,8 +2707,7 @@
                 175,
                 165,
                 176,
-                166,
-                172
+                166
               ],
               [
                 177,
@@ -2742,7 +2721,6 @@
             ],
             "row_token_ids": [
               163,
-              164,
               165,
               166,
               167,
@@ -2757,7 +2735,7 @@
               176,
               177
             ],
-            "row_text_cells": "NCR-25-008 | n Minor | resistance | Harness swapped due to6.1Qreading n | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to6.1Qreading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",

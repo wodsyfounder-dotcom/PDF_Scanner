@@ -1833,7 +1833,15 @@ def _table_context_for_token(token: Dict[str, float], tables: Optional[List[Dict
     return None
 
 
-def _tess_ocr_crop_tsv(img, lang: str, psm: int, allowlist: Optional[str], *, numeric_mode: bool = False) -> Tuple[Optional[str], float]:
+def _tess_ocr_crop_tsv(
+    img,
+    lang: str,
+    psm: int,
+    allowlist: Optional[str],
+    *,
+    numeric_mode: bool = False,
+    full_text: bool = False,
+) -> Tuple[Optional[str], float]:
     """Run Tesseract TSV on a cropped region; return (text, conf 0..1)."""
     try:
         import tempfile as _tmp
@@ -1884,6 +1892,60 @@ def _tess_ocr_crop_tsv(img, lang: str, psm: int, allowlist: Optional[str], *, nu
         idx = {name: i for i, name in enumerate(header)}
         text_idx = idx.get("text")
         conf_idx = idx.get("conf")
+        if full_text:
+            b_idx = idx.get("block_num")
+            p_idx = idx.get("par_num")
+            l_idx = idx.get("line_num")
+            w_idx = idx.get("word_num")
+            left_idx = idx.get("left")
+            top_idx = idx.get("top")
+            words: List[Tuple[int, int, int, int, int, int, str, float]] = []
+            for row in lines[1:]:
+                cols = row.split("\t")
+                if len(cols) <= max(text_idx or 0, conf_idx or 0):
+                    continue
+                txt_raw = cols[text_idx] if text_idx is not None else ""
+                conf_raw = cols[conf_idx] if conf_idx is not None else ""
+                txt = str(txt_raw or "").strip()
+                if not txt:
+                    continue
+                try:
+                    cval = float(conf_raw)
+                except Exception:
+                    cval = -1.0
+                c = 0.0 if cval < 0 else max(0.0, min(1.0, cval / 100.0))
+                def _get_int(i: Optional[int]) -> int:
+                    if i is None or i >= len(cols):
+                        return 0
+                    try:
+                        return int(float(cols[i] or 0))
+                    except Exception:
+                        return 0
+                b = _get_int(b_idx)
+                p = _get_int(p_idx)
+                ln = _get_int(l_idx)
+                wn = _get_int(w_idx)
+                left = _get_int(left_idx)
+                top = _get_int(top_idx)
+                words.append((b, p, ln, wn, top, left, txt, c))
+            if not words:
+                return None, 0.0
+            words.sort(key=lambda e: (e[0], e[1], e[2], e[3], e[4], e[5]))
+            parts: List[str] = []
+            confs: List[float] = []
+            last_line: Optional[Tuple[int, int, int]] = None
+            for b, p, ln, wn, top, left, txt, c in words:
+                key = (int(b), int(p), int(ln))
+                if last_line is None:
+                    parts.append(txt)
+                else:
+                    # Collapse line breaks to spaces for cell text.
+                    parts.append(" " + txt)
+                last_line = key
+                confs.append(float(c))
+            full = re.sub(r"\s+", " ", "".join(parts)).strip()
+            avg = float(sum(confs) / max(1, len(confs))) if confs else 0.0
+            return full, avg
         best_txt: Optional[str] = None
         best_conf: float = 0.0
         for row in lines[1:]:
@@ -2055,12 +2117,71 @@ def _infer_requirement_relop_from_glyph(pdf_path: Path, page: int, dpi: int, op_
             pass
         return None
 
+    def _masked_bar_image() -> object:
+        img2 = thr
+        if strong_rows is not None:
+            try:
+                w2, h2 = thr.size
+                data2 = bytearray(thr.tobytes())
+                for yy in range(h2):
+                    if strong_rows[yy]:
+                        start = yy * w2
+                        data2[start : start + w2] = b"\xff" * w2
+                img2 = _Image.frombytes("L", (w2, h2), bytes(data2))
+            except Exception:
+                img2 = thr
+        return img2
+
+    def _infer_dir_by_density(img2: object) -> Optional[str]:
+        """Fallback: when OCR direction fails, infer wedge direction by black-pixel density."""
+        try:
+            w2, h2 = img2.size  # type: ignore[attr-defined]
+            data2 = img2.tobytes()  # type: ignore[attr-defined]
+        except Exception:
+            return None
+        if w2 <= 4 or h2 <= 4:
+            return None
+        mid = int(w2 // 2)
+        left = 0
+        right = 0
+        try:
+            # Ignore a small border to reduce edge noise.
+            y0b = max(0, int(0.05 * h2))
+            y1b = min(h2, int(0.95 * h2))
+        except Exception:
+            y0b, y1b = 0, h2
+        for yy in range(y0b, y1b):
+            row = data2[yy * w2 : (yy + 1) * w2]
+            left += row[:mid].count(0)
+            right += row[mid:].count(0)
+        # Require a meaningful imbalance; otherwise treat as '='.
+        if left >= int(1.25 * max(1, right)) and left >= 18:
+            return "<"
+        if right >= int(1.25 * max(1, left)) and right >= 18:
+            return ">"
+        return None
+
     if bands >= 2:
         # '≤' / '≥' contain two horizontal bars like '=', so also look for the
         # direction stroke after masking bar rows.
         d = _infer_dir(mask_bars=True)
         if d in ("<", ">"):
             return f"{d}="
+        # Some fonts render the wedge faintly; if masking removes too much, try the
+        # unmasked threshold image as a fallback for direction detection.
+        try:
+            d0 = _infer_dir(mask_bars=False)
+        except Exception:
+            d0 = None
+        if d0 in ("<", ">"):
+            return f"{d0}="
+        # OCR sometimes fails on thin wedge strokes; fall back to density on the masked image.
+        try:
+            d2 = _infer_dir_by_density(_masked_bar_image())
+        except Exception:
+            d2 = None
+        if d2 in ("<", ">"):
+            return f"{d2}="
         return "="
     if bands == 1:
         d = _infer_dir(mask_bars=True)
@@ -2092,6 +2213,7 @@ def _normalize_requirement_leading_operator_from_tokens(
         return s
     op_tok = None
     num_tok = None
+    combined_tok = None
     for tid in token_ids:
         if not (isinstance(tid, int) and 0 <= tid < len(tokens_art)):
             continue
@@ -2103,8 +2225,42 @@ def _normalize_requirement_leading_operator_from_tokens(
             op_tok = t
         if num_tok is None and re.search(r"\d", tt):
             num_tok = t
+        if combined_tok is None and re.match(r"^(?:<=|>=|<|>|=)\s*\S+", tt) and re.search(r"\d", tt):
+            combined_tok = t
         if op_tok is not None and num_tok is not None:
             break
+    # If Tesseract merged the operator and number into a single token (e.g. "=1.0e-5"),
+    # synthesize op/num bboxes by splitting the token bbox near the left edge.
+    if (op_tok is None or num_tok is None) and combined_tok is not None:
+        try:
+            tt = str(combined_tok.get("text") or "").strip()
+        except Exception:
+            tt = ""
+        try:
+            x0 = float(combined_tok.get("x0", 0.0))
+            y0 = float(combined_tok.get("y0", 0.0))
+            x1 = float(combined_tok.get("x1", 0.0))
+            y1 = float(combined_tok.get("y1", 0.0))
+        except Exception:
+            x0 = y0 = x1 = y1 = 0.0
+        w = max(0.0, x1 - x0)
+        if tt and w > 6.0 and y1 > y0:
+            try:
+                m = re.match(r"^(<=|>=|<|>|=)", tt)
+            except Exception:
+                m = None
+            op_len = len(m.group(1)) if m else 1
+            # Estimate operator width proportional to character count, but clamp to a sane range.
+            try:
+                frac = float(op_len) / max(1.0, float(len(tt)))
+            except Exception:
+                frac = 0.15
+            op_w = max(10.0, min(0.45 * w, w * max(0.10, min(0.35, 2.2 * frac))))
+            split_x = min(x1 - 2.0, max(x0 + 6.0, x0 + op_w))
+            if op_tok is None:
+                op_tok = {**combined_tok, "text": m0.group(1), "x0": x0, "x1": split_x, "cx": 0.5 * (x0 + split_x)}
+            if num_tok is None:
+                num_tok = {**combined_tok, "text": re.sub(r"^(?:<=|>=|<|>|=)\s*", "", tt), "x0": split_x, "x1": x1, "cx": 0.5 * (split_x + x1)}
     if op_tok is None or num_tok is None:
         return s
     op = _infer_requirement_relop_from_glyph(pdf_path, page, dpi, op_tok, num_tok)
@@ -2148,11 +2304,87 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         return tokens, base_label
     w, h = img.size
 
+    # Pre-compute per-cell token groupings so we can do cell-level re-OCR once per cell.
+    # This prevents duplicated fragments when a cell-crop retry returns a whole-cell string.
+    tok_id_to_index: Dict[int, int] = {}
+    try:
+        tok_id_to_index = {id(t): i for i, t in enumerate(tokens) if isinstance(t, dict)}
+    except Exception:
+        tok_id_to_index = {}
+    cell_to_indices: Dict[Tuple[float, float, float, float], List[int]] = {}
+    cell_rep_index: Dict[Tuple[float, float, float, float], int] = {}
+    cell_label_suspicious: Dict[Tuple[float, float, float, float], bool] = {}
+    cell_id_like: Dict[Tuple[float, float, float, float], bool] = {}
+    if tables:
+        try:
+            for i, t in enumerate(tokens):
+                ctxi = _table_context_for_token(t, tables)
+                if not isinstance(ctxi, dict):
+                    continue
+                cb = ctxi.get("cell_bbox_px")
+                if not (isinstance(cb, (tuple, list)) and len(cb) == 4):
+                    continue
+                key = (round(float(cb[0]), 1), round(float(cb[1]), 1), round(float(cb[2]), 1), round(float(cb[3]), 1))
+                cell_to_indices.setdefault(key, []).append(int(i))
+            for key, inds in cell_to_indices.items():
+                if not inds:
+                    continue
+                try:
+                    rep = min(inds, key=lambda j: float(tokens[int(j)].get("x0", 0.0)))
+                except Exception:
+                    rep = int(inds[0])
+                cell_rep_index[key] = int(rep)
+                # Suspicion heuristic for label-like cells: fragmented short alpha pieces or low conf.
+                try:
+                    if len(inds) < 3:
+                        cell_label_suspicious[key] = False
+                        continue
+                    stop2 = {"a", "an", "in", "to", "of", "by", "on", "at", "as", "is", "it", "no", "up", "or"}
+                    alpha_low_conf = 0
+                    short_frag = 0
+                    id_like = False
+                    nonempty = 0
+                    for j in inds:
+                        tj = tokens[int(j)]
+                        try:
+                            s = str(tj.get("text") or "").strip()
+                        except Exception:
+                            s = ""
+                        if not s:
+                            continue
+                        nonempty += 1
+                        sl = s.lower()
+                        try:
+                            c = float(tj.get("conf", 0.0))
+                        except Exception:
+                            c = 0.0
+                        if re.search(r"[A-Za-z]", s):
+                            if c < 0.86 and len(s) >= 3:
+                                alpha_low_conf += 1
+                            if re.fullmatch(r"[A-Za-z]{1,2}", s) and sl not in stop2:
+                                short_frag += 1
+                        if re.search(r"\d", s) and any(ch in s for ch in ("_", ".", "-")):
+                            id_like = True
+                    # Trigger cell-level label re-OCR only when the cell looks fragmented, not just "normal text".
+                    cell_label_suspicious[key] = (
+                        (id_like and nonempty >= 2)
+                        or (short_frag >= 1 and (alpha_low_conf >= 1 or nonempty >= 5))
+                        or (alpha_low_conf >= 2 and nonempty >= 3)
+                    )
+                    cell_id_like[key] = bool(id_like)
+                except Exception:
+                    cell_label_suspicious[key] = False
+        except Exception:
+            cell_to_indices = {}
+            cell_rep_index = {}
+            cell_label_suspicious = {}
+            cell_id_like = {}
+
     def _prep_variants(crop_img, kind: str):
         variants = []
         variants.append(("raw", crop_img))
         try:
-            if kind in ("numeric", "unit", "page", "term", "quality") and scale > 1.01:
+            if (kind in ("numeric", "unit", "page", "term", "quality") or (kind == "label" and crop_img.size[0] >= 120 and crop_img.size[1] >= 35)) and scale > 1.01:
                 crop2 = crop_img.resize((int(crop_img.size[0] * scale), int(crop_img.size[1] * scale)))
             else:
                 crop2 = crop_img
@@ -2164,8 +2396,30 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             g = crop_img.convert("L")
             g = _ImageOps.autocontrast(g)
             variants.append(("auto", g))
-            if kind in ("numeric", "page"):
-                for thr in (140, 160, 180):
+            # For page-number cells, whitespace-heavy crops can cause PSM 10 to emit nothing.
+            # Add a trimmed variant that tightens to the ink bbox (helps single-digit reads).
+            if kind == "page":
+                try:
+                    inv = _ImageOps.invert(g)
+                    bb = inv.getbbox()
+                    if bb is not None:
+                        try:
+                            l, t, r, b = (int(bb[0]), int(bb[1]), int(bb[2]), int(bb[3]))
+                        except Exception:
+                            l, t, r, b = bb  # type: ignore[misc]
+                        inset = 2
+                        l2 = min(max(0, int(l) + inset), max(0, int(r) - 1))
+                        t2 = min(max(0, int(t) + inset), max(0, int(b) - 1))
+                        r2 = max(int(l2) + 1, int(r) - inset)
+                        b2 = max(int(t2) + 1, int(b) - inset)
+                        trim = g.crop((l2, t2, r2, b2))
+                        # Avoid pathological trims (too tiny).
+                        if trim.size[0] >= 6 and trim.size[1] >= 10:
+                            variants.append(("trim", trim))
+                except Exception:
+                    pass
+            if kind in ("numeric", "page", "unit") or (kind == "label" and crop_img.size[0] >= 120 and crop_img.size[1] >= 35):
+                for thr in (160, 180, 140):
                     bw = g.point(lambda p: 255 if p > thr else 0, mode="1").convert("L")
                     variants.append((f"thr{thr}", bw))
         except Exception:
@@ -2185,11 +2439,27 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             # Extract a clean numeric/range fragment from noisy cell OCR.
             m = re.search(r"[-+]?\d+(?:\.\d+)?(?:\s*(?:\u00b1|\\+|-)\s*\d+(?:\.\d+)?)?", t)
             if m:
-                return m.group(0).strip()
+                frag = m.group(0).strip()
+                # Collapse duplicated digit runs that can happen when Tesseract sees the same glyph twice
+                # in a tight crop (e.g., "4343" -> "43").
+                try:
+                    mm = re.fullmatch(r"(\d{1,3})\1", frag)
+                    if mm:
+                        frag = mm.group(1)
+                except Exception:
+                    pass
+                return frag
         if kind == "page":
             m = re.search(r"\b\d+\b", t)
             if m:
-                return m.group(0)
+                frag = m.group(0)
+                try:
+                    mm = re.fullmatch(r"(\d{1,3})\1", frag)
+                    if mm:
+                        frag = mm.group(1)
+                except Exception:
+                    pass
+                return frag
         if kind == "unit":
             # Prefer known unit tokens when the crop contains extra junk (e.g. "$s", "Ss").
             try:
@@ -2198,6 +2468,27 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
                 u = None
             if u:
                 return str(u).strip()
+        if kind == "label":
+            # Identifier-like labels (filenames/IDs) often have digit confusions (O/0, I/1, z/2)
+            # and spurious spaces around separators; normalize conservatively.
+            if re.search(r"\d", t) and any(ch in t for ch in ("_", ".", "-")):
+                tt = re.sub(r"\s+", "", t)
+                try:
+                    def _norm_run(m):
+                        run = m.group(0)
+                        try:
+                            run = run.translate(str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1"}))
+                        except Exception:
+                            pass
+                        try:
+                            run = re.sub(r"[zZ]", "2", run)
+                        except Exception:
+                            pass
+                        return run
+                    tt = re.sub(r"[0-9OoIlIzZ]{2,}", _norm_run, tt)
+                except Exception:
+                    pass
+                return tt
         return t
 
     def _valid(kind: str, s: str) -> bool:
@@ -2215,6 +2506,9 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             # common misreads like "$s" -> "s".
             if any(ch in s for ch in ("$", "€", "£", "¥", "¢")):
                 return False
+            # Many tables use the units column for sentinels like "n/a".
+            if re.fullmatch(r"n\s*/\s*a", s, flags=re.IGNORECASE) or s.strip().lower() in ("na", "n\\a"):
+                return True
             try:
                 u = extract_units(s) or s
                 return bool(normalize_unit_token(u))
@@ -2246,11 +2540,19 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
                 bonus -= 0.05
             return bonus
         if kind == "unit":
+            bonus = 0.0
             try:
+                # Many tables use the units column for sentinels like "n/a"; strongly prefer it.
+                if re.fullmatch(r"n\s*/\s*a", s, flags=re.IGNORECASE) or s.strip().lower() in ("na", "n\\a"):
+                    bonus += 0.38
+                if "/" in s or "\\" in s:
+                    bonus += 0.10
                 u = extract_units(s) or s
-                return 0.25 if normalize_unit_token(u) else 0.0
+                if normalize_unit_token(u):
+                    bonus += 0.25
             except Exception:
-                return 0.0
+                pass
+            return bonus
         return 0.05 if _valid(kind, s) else 0.0
 
     def _choose_best_candidate(kind: str, orig_text: str, candidates: List[Tuple[str, float, str]]) -> Tuple[Optional[str], float, str]:
@@ -2351,7 +2653,7 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
                     except Exception:
                         pass
 
-    def _retry_priority(tok: Dict[str, float]) -> Tuple[int, float]:
+    def _retry_priority(tok: Dict[str, float]) -> Tuple[int, float, float]:
         """Lower sorts earlier; prioritize suspicious tokens before exhausting retry budget."""
         try:
             conf = float(tok.get("conf", 0.0))
@@ -2361,12 +2663,134 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             txt = str(tok.get("text") or "")
         except Exception:
             txt = ""
+        try:
+            ctx = _table_context_for_token(tok, tables) if tables else None
+        except Exception:
+            ctx = None
+        kind = (str(ctx.get("kind") or "").strip().lower() if isinstance(ctx, dict) else "") or _classify_token_kind_for_retry(txt)
         pri = 0
         if any(ch in txt for ch in ("$", "€", "£", "¥", "¢")):
             pri -= 10
+        # Prefer re-OCR for structured table columns that heavily influence normalization/rendering.
+        if kind in ("term", "unit", "page", "quality", "op"):
+            pri -= 6
+        elif kind == "numeric":
+            pri -= 2
+        elif kind in ("desc", "notes"):
+            pri += 2
         if txt.strip() in ("=", "<", ">"):
             pri -= 6
-        return pri, conf
+        try:
+            cy = float(tok.get("cy", 0.0))
+        except Exception:
+            cy = 0.0
+        return pri, conf, cy
+
+    def _per_token_attempt_budget(kind: str, conf: float) -> int:
+        # With TESS_RETRY_MAX_TOKENS defaulting to 48 (attempt budget), keep per-token retries tight so we
+        # cover more distinct low-confidence tokens (term/unit/page often matter most).
+        k = (kind or "").strip().lower()
+        if k == "page":
+            return 6 if conf < 0.75 else 4
+        if k in ("term", "unit", "page", "quality", "op"):
+            return 4 if conf < 0.75 else 3
+        if k == "numeric":
+            return 3 if conf < 0.6 else 2
+        if k == "label":
+            # Labels (IDs, filenames, short phrases) are common in tables and often suffer
+            # from high-confidence-but-wrong OCR. Keep retries minimal but non-zero.
+            return 2 if conf < 0.6 else (1 if conf < 0.90 else 0)
+        if k in ("desc", "notes"):
+            return 1 if conf < 0.45 else 0
+        return 0
+
+    def _prefer_cell_crop(kind: str, txt: str) -> bool:
+        k = (kind or "").strip().lower()
+        if k in ("desc", "notes"):
+            return True
+        if k == "label":
+            t = (txt or "").strip()
+            if not t:
+                return False
+            # Prefer the full cell crop for identifier/filename-like tokens so we capture
+            # underscores/dots/hyphens as a single contiguous token when possible.
+            if (len(t) >= 8 and re.search(r"\d", t) and any(ch in t for ch in ("_", ".", "-"))):
+                return True
+            tl = t.lower()
+            if any(tl.endswith(ext) for ext in (".pdf", ".zip", ".xlsx", ".xls", ".csv", ".json", ".txt", ".doc", ".docx")):
+                return True
+            return False
+        if k == "unit":
+            t = (txt or "").strip()
+            # Short unit-like tokens often lose context (e.g., "n/a" becomes "a" after gridline overlap).
+            # Prefer the full cell crop so the retry sees the whole token.
+            if len(t) <= 2:
+                return True
+            if t.lower() in ("n/a", "na"):
+                return True
+            return False
+        # Numeric cells sometimes require cell-wide context (e.g., ranges with ±), but
+        # for short tokens (single digits, short decimals) prefer token crops.
+        if k == "numeric":
+            t = (txt or "").strip()
+            if len(t) <= 2:
+                return False
+            if any(ch in t for ch in ("±", "+", "(", ")", "/")):
+                return True
+            return False
+        return False
+
+    def _term_needs_cell_crop(txt: str) -> bool:
+        t = (txt or "").strip()
+        if not t:
+            return True
+        if any(ch in t for ch in ("=", "<", ">", "$")):
+            return True
+        # Very short term tokens are commonly misread (e.g., 'isp' -> '=P').
+        if len(t) <= 3 and re.search(r"[A-Za-z]", t):
+            return True
+        return False
+
+    def _variant_rank(kind: str, tag: str) -> int:
+        k = (kind or "").strip().lower()
+        t = (tag or "").strip().lower()
+        if k == "page":
+            # Page numbers are often small/isolated; prefer the tight raw crop first.
+            # Thresholding can distort thin glyphs, so keep it late.
+            if t.startswith("raw"):
+                return 0
+            if t.startswith("trim"):
+                return 1
+            if t.startswith("auto"):
+                return 2
+            if t.startswith("scaled"):
+                return 3
+            if t.startswith("thr160"):
+                return 4
+            if t.startswith("thr180"):
+                return 5
+            if t.startswith("thr140"):
+                return 6
+            return 7
+        if k == "numeric":
+            # Prefer thresholded/auto variants first for digit-heavy crops.
+            if t.startswith("thr160"):
+                return 0
+            if t.startswith("thr180"):
+                return 1
+            if t.startswith("thr140"):
+                return 2
+            if t.startswith("auto"):
+                return 3
+            if t.startswith("scaled"):
+                return 4
+            return 5
+        # Prefer autocontrast/scaled ahead of raw for short glyph-y crops.
+        if t.startswith("auto"):
+            return 0
+        if t.startswith("scaled"):
+            return 1
+        return 2
 
     for tok in sorted(tokens, key=_retry_priority):
         if attempted >= max_retry:
@@ -2375,8 +2799,6 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             conf = float(tok.get("conf", 0.0))
         except Exception:
             conf = 0.0
-        if conf >= conf_min:
-            continue
         try:
             txt = str(tok.get("text") or "").strip()
         except Exception:
@@ -2388,6 +2810,88 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             kind = "op" if txt.strip() in ("=", "<", ">") else "label"
         if kind == "other" and conf > 0.7:
             continue
+        # Some tokens are confidently wrong. Allow a forced retry for suspicious table tokens
+        # (e.g., a wide single-glyph unit crop that likely lost characters like "n/").
+        force_retry = False
+        try:
+            if str(kind or "").strip().lower() == "unit" and txt and re.fullmatch(r"[A-Za-z]", txt) and len(txt) == 1:
+                try:
+                    bx0 = float(tok.get("x0", 0.0))
+                    bx1 = float(tok.get("x1", 0.0))
+                except Exception:
+                    bx0 = bx1 = 0.0
+                box_w = float(max(0.0, bx1 - bx0))
+                # Single-letter unit tokens with unusually wide bboxes are often missing a prefix/suffix.
+                if box_w >= 65.0 and conf < 0.985:
+                    force_retry = True
+        except Exception:
+            force_retry = False
+        tok_i = None
+        try:
+            tok_i = tok_id_to_index.get(id(tok)) if tok_id_to_index else None
+        except Exception:
+            tok_i = None
+        cell_bbox = None
+        cell_key = None
+        try:
+            if isinstance(ctx, dict):
+                cell_bbox = ctx.get("cell_bbox_px")
+        except Exception:
+            cell_bbox = None
+        try:
+            if isinstance(cell_bbox, (tuple, list)) and len(cell_bbox) == 4:
+                cell_key = (round(float(cell_bbox[0]), 1), round(float(cell_bbox[1]), 1), round(float(cell_bbox[2]), 1), round(float(cell_bbox[3]), 1))
+        except Exception:
+            cell_key = None
+        cell_label_ocr = False
+        # For fragmented label-like cells, do a single cell-level retry on a representative token.
+        try:
+            if str(kind or "").strip().lower() == "label" and cell_key is not None and cell_label_suspicious.get(cell_key, False):
+                rep_idx = cell_rep_index.get(cell_key)
+                if tok_i is not None and rep_idx is not None and int(tok_i) != int(rep_idx):
+                    continue
+                cell_label_ocr = True
+                force_retry = True
+        except Exception:
+            cell_label_ocr = False
+        cell_is_id_like = False
+        try:
+            if cell_key is not None:
+                cell_is_id_like = bool(cell_id_like.get(cell_key, False))
+        except Exception:
+            cell_is_id_like = False
+        # Some table tokens are confidently wrong (e.g., filenames/IDs and "n/a" units that
+        # collapse to a single letter). Use a higher confidence gate in table-cell context
+        # so re-OCR can correct high-conf-but-wrong reads without hardcoding column names.
+        conf_gate = conf_min
+        try:
+            k = str(kind or "").strip().lower()
+        except Exception:
+            k = ""
+        try:
+            has_cell_bbox = isinstance(cell_bbox, (tuple, list)) and len(cell_bbox) == 4  # type: ignore[arg-type]
+        except Exception:
+            has_cell_bbox = False
+        if has_cell_bbox and k in ("label", "unit"):
+            try:
+                if k == "label":
+                    label_gate = float(os.environ.get("TESS_RETRY_LABEL_CONF_GATE", "0.90"))
+                    conf_gate = max(float(conf_gate), float(label_gate))
+                elif k == "unit" and txt and re.fullmatch(r"[A-Za-z]", txt):
+                    unit_gate = float(os.environ.get("TESS_RETRY_UNIT_SINGLE_LETTER_CONF_GATE", "0.985"))
+                    conf_gate = max(float(conf_gate), float(unit_gate))
+            except Exception:
+                pass
+        if conf >= conf_gate and not force_retry:
+            continue
+        token_attempt_budget = _per_token_attempt_budget(str(kind or ""), float(conf))
+        if cell_label_ocr:
+            try:
+                token_attempt_budget = max(int(token_attempt_budget), 12)
+            except Exception:
+                token_attempt_budget = 12
+        if token_attempt_budget <= 0:
+            continue
         try:
             x0 = float(tok.get("x0", 0.0))
             y0 = float(tok.get("y0", 0.0))
@@ -2395,15 +2899,33 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
             y1 = float(tok.get("y1", 0.0))
         except Exception:
             continue
+        used_cell_crop = False
         # Prefer full cell crops when we know the table cell bounds; otherwise crop just the token bbox.
-        # Avoid cell-wide crops for short/operator/term tokens; they tend to re-OCR the whole cell and create duplicates.
-        if isinstance(ctx, dict) and isinstance(ctx.get("cell_bbox_px"), tuple) and kind in ("numeric", "unit", "page", "quality", "desc", "notes"):
+        # Cell-wide crops are only used when explicitly requested by heuristics (or for label-cell retries).
+        if has_cell_bbox and (cell_label_ocr or _prefer_cell_crop(kind, txt) or (kind == "term" and _term_needs_cell_crop(txt))):
             try:
-                cx0, cy0, cx1, cy1 = ctx.get("cell_bbox_px")  # type: ignore[misc]
+                cx0, cy0, cx1, cy1 = cell_bbox  # type: ignore[misc]
                 x0, y0, x1, y1 = float(cx0), float(cy0), float(cx1), float(cy1)
+                used_cell_crop = True
+            except Exception:
+                pass
+        # When cropping full table cells, avoid including the border/grid lines; they can dominate
+        # OCR on sparse cells and cause high-confidence partial reads.
+        if used_cell_crop:
+            try:
+                inset = 2.0
+                x0, y0, x1, y1 = (x0 + inset, y0 + inset, x1 - inset, y1 - inset)
             except Exception:
                 pass
         pad = 4.0 if kind in ("numeric", "unit", "page", "term", "quality", "op") else 2.0
+        # Page-number digits are small and sit near grid lines; keep crops tight to avoid line artifacts.
+        if kind == "page":
+            pad = 1.5
+        if used_cell_crop:
+            try:
+                pad = min(float(pad), 1.0)
+            except Exception:
+                pad = 1.0
         x0p = max(0, int(_math.floor(x0 - pad)))
         y0p = max(0, int(_math.floor(y0 - pad)))
         x1p = min(w, int(_math.ceil(x1 + pad)))
@@ -2414,18 +2936,31 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
 
         # Intentional settings per region type.
         psm_base = 7
+        if cell_label_ocr:
+            psm_base = 6
         if kind == "op":
             psm_base = 10
         if kind in ("desc", "notes"):
             psm_base = 6
-        if kind in ("numeric", "page"):
+        if kind == "page":
+            psm_base = 10
+        if kind == "page":
+            allow = "0123456789"
+        elif kind == "numeric":
             allow = "0123456789.+-/%"
         elif kind == "unit":
             # Keep allowlist ASCII-only; unicode symbols (Ω/µ/±) are normalized downstream.
             allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/%ohmu.-"
         elif kind == "op":
             allow = "<=>"
-        elif kind in ("label", "term", "quality"):
+        elif kind == "label":
+            # For cell-level phrase recovery, avoid strict allowlists; they can cause Tesseract
+            # to return only a single surviving fragment. Keep allowlists for ID-like cells.
+            if used_cell_crop and cell_label_ocr and not cell_is_id_like:
+                allow = None
+            else:
+                allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_#-/:.&(),"
+        elif kind in ("term", "quality"):
             allow = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_#-/:."
         else:
             allow = None
@@ -2436,26 +2971,56 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
         cand_best_score: float = -1.0
         cand_best_tag: str = ""
         numeric_mode = kind in ("numeric", "page")
+        full_text_mode = bool(used_cell_crop and str(kind or "").strip().lower() == "label")
         psms = [psm_base]
         if psm_base == 7:
             psms.append(8)  # single word can help for short cells
+        if psm_base == 6:
+            psms.extend([7, 11])
         if psm_base == 10:
             psms.append(8)
+            if kind == "page":
+                psms.append(7)
         variants = _prep_variants(crop, kind)
+        variants = sorted(variants, key=lambda v: _variant_rank(str(kind or ""), str(v[0] or "")))
+        token_attempts = 0
         for tag, img_var in variants:
             for psm_try in psms:
-                txt2, c2 = _tess_ocr_crop_tsv(img_var, lang=lang, psm=int(psm_try), allowlist=allow, numeric_mode=numeric_mode)
+                if attempted >= max_retry or token_attempts >= token_attempt_budget:
+                    break
+                txt2, c2 = _tess_ocr_crop_tsv(img_var, lang=lang, psm=int(psm_try), allowlist=allow, numeric_mode=numeric_mode, full_text=full_text_mode)
                 txt2 = _postprocess_retry_text(kind, txt2)
                 attempted += 1
+                token_attempts += 1
                 score = float(c2) + _pattern_bonus(kind, txt2 or "", txt)
+                # For cell-level label retries, prefer longer/multi-word reads to avoid selecting
+                # a single surviving fragment (e.g., "Report") at high confidence.
+                try:
+                    if used_cell_crop and str(kind or "").strip().lower() == "label":
+                        t2 = str(txt2 or "").strip()
+                        if t2:
+                            score += min(0.20, 0.01 * float(len(t2)))
+                            if " " in t2:
+                                score += 0.05
+                except Exception:
+                    pass
                 if score > cand_best_score:
                     cand_best_score = score
                     cand_best_txt = txt2
                     cand_best_conf = float(c2)
                     cand_best_tag = f"{tag}:psm{psm_try}"
-                if attempted >= max_retry:
+                try:
+                    if cand_best_txt and _valid(kind, cand_best_txt) and float(cand_best_conf) >= 0.94:
+                        # If this token was forced into retry, don't stop early when we keep seeing the same
+                        # (likely-wrong) single-glyph result at high confidence.
+                        if force_retry and str(cand_best_txt or "").strip() == txt:
+                            raise RuntimeError("forced retry: keep searching")
+                        break
+                except Exception:
+                    pass
+                if attempted >= max_retry or token_attempts >= token_attempt_budget:
                     break
-            if attempted >= max_retry:
+            if attempted >= max_retry or token_attempts >= token_attempt_budget:
                 break
         # Persist best candidate for inspection
         try:
@@ -2463,6 +3028,13 @@ def _rehocr_tokens_if_needed(tokens: List[Dict[str, float]], img_path: Path, lan
                 tok["rehocr_text"] = str(cand_best_txt)
             tok["rehocr_conf"] = float(cand_best_conf)
             tok["rehocr_tag"] = cand_best_tag
+            if used_cell_crop and cand_best_txt is not None and float(cand_best_conf) > 0.05:
+                tok["rehocr_cell_text"] = str(cand_best_txt)
+                tok["rehocr_cell_conf"] = float(cand_best_conf)
+                tok["rehocr_cell_tag"] = cand_best_tag
+                tok["rehocr_scope"] = "cell"
+                if cell_key is not None:
+                    tok["rehocr_cell_key"] = ",".join(str(v) for v in cell_key)
         except Exception:
             pass
         if not cand_best_txt:
@@ -2490,6 +3062,66 @@ def _median(vals: List[float]) -> Optional[float]:
     if len(vals) % 2:
         return float(vals[mid])
     return 0.5 * (float(vals[mid - 1]) + float(vals[mid]))
+
+def _prune_spurious_micro_alpha_tokens(tokens: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    """Drop tiny 1-letter alphabetic tokens that are almost always gridline/speck OCR artifacts.
+
+    This is intentionally geometry-based (not column-name-based). It is also intentionally narrow:
+    it does not touch multi-letter words, numbers, or punctuation.
+    """
+    if not tokens:
+        return tokens
+    # Compute a robust typical token height so we can identify micro-specks.
+    hs: List[float] = []
+    for t in tokens:
+        try:
+            txt = str(t.get("text") or "").strip()
+            if not txt:
+                continue
+            # Prefer "real" tokens (multi-char or digit) for the baseline height estimate.
+            if len(txt) >= 2 or re.search(r"\d", txt):
+                h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                if h > 0:
+                    hs.append(h)
+        except Exception:
+            continue
+    med_h = _median(hs) or 0.0
+    if med_h <= 0:
+        # Fallback: use any token heights if the page is extremely sparse.
+        try:
+            hs2 = [
+                float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                for t in tokens
+                if str(t.get("text") or "").strip() and (float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))) > 0
+            ]
+            med_h = _median(hs2) or 0.0
+        except Exception:
+            med_h = 0.0
+    if med_h <= 0:
+        return tokens
+
+    # Micro token thresholds relative to typical text size.
+    max_h = max(6.0, 0.40 * float(med_h))
+    max_w = max(6.0, 0.85 * float(med_h))
+
+    out: List[Dict[str, float]] = []
+    for t in tokens:
+        txt = str(t.get("text") or "").strip()
+        if txt.isalpha() and len(txt) <= 2:
+            try:
+                w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+                h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                conf = float(t.get("conf", 0.0))
+            except Exception:
+                w, h, conf = 0.0, 0.0, 0.0
+            if (h > 0 and w > 0) and (h <= max_h and w <= max_w):
+                # Extremely tiny 1-letter tokens are almost never meaningful, even if OCR assigns high confidence.
+                # For 2-letter tokens, require low confidence to avoid dropping real abbreviations (e.g., hr, Hz, QA).
+                if len(txt) == 1 or conf < 0.75:
+                    out.append({**t, "text": ""})
+                    continue
+        out.append(t)
+    return out
 
 
 def _stylize_tokens_as_text(tokens: List[Dict[str, float]], max_extra_spaces: int = 40) -> Tuple[str, List[Dict[str, object]]]:
@@ -3459,6 +4091,51 @@ def _infer_table_row_bands_from_tokens(
 def _join_tokens_as_cell_text(tokens: List[Dict[str, float]]) -> str:
     if not tokens:
         return ""
+    # If any token has a cell-level re-OCR result, prefer the best one and ignore token fragments.
+    try:
+        toks_nonempty = [t for t in tokens if str(t.get("text") or "").strip()]
+        alpha_in_cell = any(re.search(r"[A-Za-z]", str(t.get("text") or "")) for t in toks_nonempty)
+        cell_cands: List[Tuple[float, str]] = []
+        for t in tokens:
+            s = str(t.get("rehocr_cell_text") or "").strip()
+            if not s:
+                continue
+            s = re.sub(r"\s+", " ", s).strip()
+            if not s:
+                continue
+            try:
+                c = float(t.get("rehocr_cell_conf", t.get("rehocr_conf", 0.0)) or 0.0)
+            except Exception:
+                c = 0.0
+            # Avoid selecting very short/digit-only cell reads for clearly alphabetic cells.
+            if len(toks_nonempty) >= 3:
+                if alpha_in_cell and not re.search(r"[A-Za-z]", s):
+                    continue
+                if len(s) < 4 and (" " not in s) and not any(ch in s for ch in ("_", ".", "-", "/")):
+                    continue
+            score = float(c) + min(0.20, 0.01 * float(len(s)))
+            cell_cands.append((score, s))
+        if cell_cands:
+            cell_cands.sort(key=lambda p: p[0], reverse=True)
+            best = cell_cands[0][1]
+            # If the cell looks like an identifier and OCR dropped the extension, recover it from
+            # other tokens in the same cell.
+            try:
+                if best and ("." not in best) and ("_" in best) and re.search(r"\d", best):
+                    ext = None
+                    for t in toks_nonempty:
+                        s2 = str(t.get("text") or "").strip()
+                        m = re.search(r"\.(pdf|zip|xlsx|xls|csv|json|txt|docx?|png|jpe?g)$", s2, flags=re.IGNORECASE)
+                        if m:
+                            ext = "." + m.group(1).lower()
+                            break
+                    if ext and not best.lower().endswith(ext):
+                        best = best + ext
+            except Exception:
+                pass
+            return best
+    except Exception:
+        pass
     # Estimate a line grouping tolerance from token heights.
     heights: List[float] = []
     for t in tokens:
@@ -3622,6 +4299,225 @@ def _table_header_virtual_tokens(tokens: List[Dict[str, float]], table: Dict[str
     return virtuals
 
 
+def _refine_table_col_bounds_by_gaps(
+    tokens: List[Dict[str, float]],
+    table_bbox_px: Tuple[float, float, float, float],
+    row_bands_px: List[Tuple[float, float]],
+    bounds_in: List[float],
+) -> List[float]:
+    """Refine table column boundaries using observed whitespace gaps in table body.
+
+    This is content-agnostic (no header-name checks) and only shifts boundaries that
+    demonstrably cut through tokens.
+    """
+    bounds = [float(v) for v in (bounds_in or [])]
+    if len(bounds) < 4:
+        return bounds
+    try:
+        bx0, by0, bx1, by1 = (float(table_bbox_px[0]), float(table_bbox_px[1]), float(table_bbox_px[2]), float(table_bbox_px[3]))
+    except Exception:
+        return bounds
+    try:
+        band_pairs = [(float(a), float(b)) for a, b in row_bands_px if (float(b) - float(a)) > 0]
+        band_h = [max(0.0, b - a) for a, b in band_pairs]
+        med_band_h = _median(band_h) or 0.0
+        if med_band_h > 0:
+            bands_for_refine = [(a, b) for a, b in band_pairs if (b - a) <= (1.6 * float(med_band_h))]
+        else:
+            bands_for_refine = band_pairs
+    except Exception:
+        bands_for_refine = [(float(a), float(b)) for a, b in row_bands_px]
+    if not bands_for_refine:
+        bands_for_refine = [(float(a), float(b)) for a, b in row_bands_px]
+
+    try:
+        table_toks = [
+            t
+            for t in tokens
+            if isinstance(t, dict)
+            and (bx0 <= float(t.get("cx", 0.0)) <= bx1)
+            and (by0 <= float(t.get("cy", 0.0)) <= by1)
+            and str(t.get("text") or "").strip()
+            and any(a <= float(t.get("cy", 0.0)) <= b for a, b in bands_for_refine)
+        ]
+    except Exception:
+        table_toks = []
+    if not table_toks:
+        return bounds
+
+    # Only consider boundaries that cut through tokens.
+    try:
+        span_counts: Dict[int, int] = {j: 0 for j in range(1, len(bounds) - 1)}
+        for t in table_toks:
+            try:
+                x0t = float(t.get("x0", 0.0))
+                x1t = float(t.get("x1", 0.0))
+            except Exception:
+                continue
+            if x1t <= x0t:
+                continue
+            for j in range(1, len(bounds) - 1):
+                b = float(bounds[j])
+                if x0t < b < x1t:
+                    span_counts[j] = int(span_counts.get(j, 0)) + 1
+        span_min = max(2, int(0.02 * len(table_toks)))
+        targets = {int(j) for j, c in span_counts.items() if int(c) >= int(span_min)}
+    except Exception:
+        targets = set()
+    if not targets:
+        return bounds
+
+    # Adaptive gap thresholds from token geometry.
+    try:
+        char_ws: List[float] = []
+        for t in table_toks:
+            txt = str(t.get("text") or "").strip()
+            if not txt:
+                continue
+            w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+            if w > 0:
+                char_ws.append(w / max(1, len(txt)))
+        char_w = _median(char_ws) or 8.0
+        char_w = max(1.0, min(80.0, float(char_w)))
+    except Exception:
+        char_w = 8.0
+    gap_min = max(40.0, min(220.0, 3.0 * float(char_w)))
+    try:
+        hs = [max(0.0, float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))) for t in table_toks]
+        hs = [h for h in hs if h > 0]
+        med_h = _median(hs) or 12.0
+    except Exception:
+        med_h = 12.0
+    y_eps = max(6.0, min(40.0, 0.85 * float(med_h)))
+
+    cands: Dict[int, List[float]] = {j: [] for j in sorted(targets)}
+    for y0b, y1b in bands_for_refine:
+        band_toks = [t for t in table_toks if y0b <= float(t.get("cy", 0.0)) <= y1b]
+        if len(band_toks) < 4:
+            continue
+        band_toks.sort(key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+        # Cluster into lines by cy.
+        lines: List[List[Dict[str, float]]] = []
+        cur: List[Dict[str, float]] = []
+        last_cy: Optional[float] = None
+        for t in band_toks:
+            cy = float(t.get("cy", 0.0))
+            if last_cy is None or abs(cy - last_cy) <= y_eps:
+                cur.append(t)
+                last_cy = cy if last_cy is None else (0.7 * last_cy + 0.3 * cy)
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = [t]
+                last_cy = cy
+        if cur:
+            lines.append(cur)
+        for ln in lines:
+            ln_sorted = sorted(ln, key=lambda t: float(t.get("x0", 0.0)))
+            for a, b in zip(ln_sorted, ln_sorted[1:]):
+                try:
+                    ax1 = float(a.get("x1", 0.0))
+                    bx0_tok = float(b.get("x0", 0.0))
+                except Exception:
+                    continue
+                gap = float(max(0.0, bx0_tok - ax1))
+                if gap < gap_min:
+                    continue
+                mid = 0.5 * (ax1 + bx0_tok)
+                try:
+                    j = min(targets, key=lambda k: abs(float(bounds[int(k)]) - float(mid)))
+                    j = int(j)
+                except Exception:
+                    continue
+                if j not in targets:
+                    continue
+                try:
+                    if not (float(bounds[j - 1]) + 20.0 <= float(mid) <= float(bounds[j + 1]) - 20.0):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    left_w = float(bounds[j]) - float(bounds[j - 1])
+                    right_w = float(bounds[j + 1]) - float(bounds[j])
+                    min_w = min(left_w, right_w)
+                    max_shift = max(80.0, min(650.0, 0.55 * float(min_w)))
+                except Exception:
+                    max_shift = 200.0
+                if abs(float(mid) - float(bounds[j])) <= float(max_shift):
+                    cands[int(j)].append(float(mid))
+
+    refined = list(bounds)
+    for j, vals in cands.items():
+        if len(vals) >= 2:
+            m = _median([float(v) for v in vals])
+            if m is None:
+                continue
+            try:
+                left_w = float(bounds[int(j)]) - float(bounds[int(j) - 1])
+                right_w = float(bounds[int(j) + 1]) - float(bounds[int(j)])
+                min_w = min(left_w, right_w)
+                max_shift = max(80.0, min(650.0, 0.55 * float(min_w)))
+            except Exception:
+                max_shift = 200.0
+            delta = float(m) - float(bounds[int(j)])
+            delta = max(-float(max_shift), min(float(max_shift), float(delta)))
+            refined[int(j)] = float(bounds[int(j)]) + float(delta)
+
+    # Safety pass: if a boundary still cuts through multiple tokens, push it just outside
+    # the spanning token edges (direction chosen by where span centers lie).
+    try:
+        span_floor = max(2, int(0.015 * len(table_toks)))
+        pad = max(4.0, min(18.0, 0.25 * float(char_w)))
+        for j in range(1, len(refined) - 1):
+            bcur = float(refined[j])
+            spans: List[Dict[str, float]] = []
+            for t in table_toks:
+                try:
+                    x0t = float(t.get("x0", 0.0))
+                    x1t = float(t.get("x1", 0.0))
+                except Exception:
+                    continue
+                if x1t > x0t and x0t < bcur < x1t:
+                    spans.append(t)
+            if len(spans) < span_floor:
+                continue
+            left_votes = 0
+            for t in spans:
+                try:
+                    if float(t.get("cx", 0.0)) <= bcur:
+                        left_votes += 1
+                except Exception:
+                    pass
+            right_votes = max(0, len(spans) - left_votes)
+            lo = float(refined[j - 1]) + 20.0
+            hi = float(refined[j + 1]) - 20.0
+            if hi <= lo:
+                continue
+            if left_votes >= right_votes:
+                try:
+                    edge = max(float(t.get("x1", 0.0)) for t in spans)
+                except Exception:
+                    continue
+                refined[j] = min(hi, max(lo, float(edge) + float(pad)))
+            else:
+                try:
+                    edge = min(float(t.get("x0", 0.0)) for t in spans)
+                except Exception:
+                    continue
+                refined[j] = min(hi, max(lo, float(edge) - float(pad)))
+    except Exception:
+        pass
+
+    # Enforce monotonicity and minimum widths.
+    refined[0] = float(bounds[0])
+    refined[-1] = float(bounds[-1])
+    for j in range(1, len(refined) - 1):
+        refined[j] = max(float(refined[j]), float(refined[j - 1]) + 20.0)
+    for j in range(len(refined) - 2, 0, -1):
+        refined[j] = min(float(refined[j]), float(refined[j + 1]) - 20.0)
+    return refined
+
+
 def _refresh_ir_tables(ir: Dict[str, object]) -> None:
     """(Re)compute inferred table structures for a Tesseract TSV IR dict.
 
@@ -3638,6 +4534,12 @@ def _refresh_ir_tables(ir: Dict[str, object]) -> None:
         return
     if not (tokens and isinstance(grid, dict) and img_w > 0 and img_h > 0):
         return
+
+    # Drop tiny single-letter OCR specks so table reconstruction and line text don't absorb them.
+    try:
+        tokens = _prune_spurious_micro_alpha_tokens(tokens)
+    except Exception:
+        pass
 
     try:
         tables = _table_clusters_from_grid(grid, img_w, img_h, tokens=tokens)
@@ -3669,6 +4571,12 @@ def _refresh_ir_tables(ir: Dict[str, object]) -> None:
                 bounds = _merge_sparse_table_columns(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), bands2, list(bounds))
             except Exception:
                 pass
+        # Refine column bounds by whitespace gaps to reduce boundary drift in dense tables.
+        try:
+            if bounds and isinstance(bbox, (tuple, list)) and len(bbox) == 4 and isinstance(bands, list) and bands:
+                bounds = _refine_table_col_bounds_by_gaps(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), [(float(a), float(b)) for a, b in bands], list(bounds))
+        except Exception:
+            pass
         tb["col_bounds_px"] = bounds if bounds else []
         # If we only detected two horizontal rules, refine row bands from tokens so
         # multi-line cell content stays within the same logical row.
@@ -3685,6 +4593,13 @@ def _refresh_ir_tables(ir: Dict[str, object]) -> None:
             tb["header_virtual_tokens"] = []
 
     ir["tables"] = tables
+    try:
+        styled_text, line_entries = _stylize_tokens_as_text(tokens)
+        ir["text"] = styled_text
+        ir["lines"] = line_entries
+        ir["tokens"] = tokens
+    except Exception:
+        pass
 
 
 def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, object]) -> Optional[Dict[str, object]]:
@@ -3707,6 +4622,179 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
     col_bounds = [float(v) for v in col_bounds] if col_bounds else []
     if len(col_bounds) < 3:
         return None
+    # Refine column boundaries using observed whitespace gaps inside the table body. This stays
+    # agnostic to column names and avoids cross-column token "attachment" rules.
+    def _refine_col_bounds_by_gaps(bounds_in: List[float]) -> List[float]:
+        bounds = [float(v) for v in (bounds_in or [])]
+        if len(bounds) < 4:
+            return bounds
+        try:
+            table_toks = [
+                t
+                for t in tokens
+                if isinstance(t, dict)
+                and (bx0 <= float(t.get("cx", 0.0)) <= bx1)
+                and (by0 <= float(t.get("cy", 0.0)) <= by1)
+                and str(t.get("text") or "").strip()
+            ]
+        except Exception:
+            table_toks = []
+        if not table_toks:
+            return bounds
+        # Prefer only "row-like" bands for refinement. Large outlier bands often include
+        # below-table notes and can pollute span/gap statistics.
+        try:
+            band_pairs = [(float(a), float(b)) for a, b in bands if isinstance(a, (int, float)) and isinstance(b, (int, float))]
+            band_h = [max(0.0, b - a) for a, b in band_pairs if (b - a) > 0]
+            med_band_h = _median(band_h) or 0.0
+            if med_band_h > 0:
+                bands_for_refine = [(a, b) for a, b in band_pairs if (b - a) <= (1.6 * float(med_band_h))]
+            else:
+                bands_for_refine = band_pairs
+        except Exception:
+            bands_for_refine = [(float(a), float(b)) for a, b in bands]  # type: ignore[misc]
+        if not bands_for_refine:
+            bands_for_refine = [(float(a), float(b)) for a, b in bands]  # type: ignore[misc]
+        try:
+            def _in_band(cy: float) -> bool:
+                return any(a <= cy <= b for a, b in bands_for_refine)
+            table_toks = [t for t in table_toks if _in_band(float(t.get("cy", 0.0)))]
+        except Exception:
+            pass
+        # Only refine boundaries that are demonstrably "bad" (i.e., they cut through tokens).
+        # Refining all boundaries can introduce new mis-assignments on otherwise-correct columns.
+        try:
+            span_counts: Dict[int, int] = {j: 0 for j in range(1, len(bounds) - 1)}
+            for t in table_toks:
+                try:
+                    x0t = float(t.get("x0", 0.0))
+                    x1t = float(t.get("x1", 0.0))
+                except Exception:
+                    continue
+                if x1t <= x0t:
+                    continue
+                for j in range(1, len(bounds) - 1):
+                    b = float(bounds[j])
+                    if x0t < b < x1t:
+                        span_counts[j] = int(span_counts.get(j, 0)) + 1
+        except Exception:
+            span_counts = {}
+        try:
+            span_min = max(2, int(0.02 * len(table_toks)))
+            targets = {int(j) for j, c in span_counts.items() if int(c) >= int(span_min)}
+        except Exception:
+            targets = set()
+        if not targets:
+            return bounds
+        # Character width estimate for adaptive gap thresholding.
+        try:
+            char_ws: List[float] = []
+            for t in table_toks:
+                txt = str(t.get("text") or "").strip()
+                if not txt:
+                    continue
+                w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+                if w > 0:
+                    char_ws.append(w / max(1, len(txt)))
+            char_w = _median(char_ws) or 8.0
+            char_w = max(1.0, min(80.0, float(char_w)))
+        except Exception:
+            char_w = 8.0
+        gap_min = max(40.0, min(220.0, 3.0 * float(char_w)))
+        # Line clustering epsilon.
+        try:
+            hs = [max(0.0, float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))) for t in table_toks]
+            hs = [h for h in hs if h > 0]
+            med_h = _median(hs) or 12.0
+        except Exception:
+            med_h = 12.0
+        y_eps = max(6.0, min(40.0, 0.85 * float(med_h)))
+
+        cands: Dict[int, List[float]] = {j: [] for j in sorted(targets)}
+        for y0b, y1b in bands_for_refine:
+            band_toks = [t for t in table_toks if y0b <= float(t.get("cy", 0.0)) <= y1b]
+            if len(band_toks) < 4:
+                continue
+            band_toks.sort(key=lambda t: (float(t.get("cy", 0.0)), float(t.get("x0", 0.0))))
+            # Cluster into lines by cy.
+            lines: List[List[Dict[str, float]]] = []
+            cur: List[Dict[str, float]] = []
+            last_cy: Optional[float] = None
+            for t in band_toks:
+                cy = float(t.get("cy", 0.0))
+                if last_cy is None or abs(cy - last_cy) <= y_eps:
+                    cur.append(t)
+                    last_cy = cy if last_cy is None else (0.7 * last_cy + 0.3 * cy)
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = [t]
+                    last_cy = cy
+            if cur:
+                lines.append(cur)
+            for ln in lines:
+                ln_sorted = sorted(ln, key=lambda t: float(t.get("x0", 0.0)))
+                for a, b in zip(ln_sorted, ln_sorted[1:]):
+                    try:
+                        ax1 = float(a.get("x1", 0.0))
+                        bx0_tok = float(b.get("x0", 0.0))
+                    except Exception:
+                        continue
+                    gap = float(max(0.0, bx0_tok - ax1))
+                    if gap < gap_min:
+                        continue
+                    mid = 0.5 * (ax1 + bx0_tok)
+                    try:
+                        # Assign this whitespace gap to the nearest target boundary, but only when
+                        # the gap midpoint is plausibly within that boundary's neighborhood.
+                        j = min(targets, key=lambda k: abs(float(bounds[int(k)]) - float(mid)))
+                        j = int(j)
+                    except Exception:
+                        continue
+                    if j not in targets:
+                        continue
+                    try:
+                        if not (float(bounds[j - 1]) + 20.0 <= float(mid) <= float(bounds[j + 1]) - 20.0):
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        left_w = float(bounds[j]) - float(bounds[j - 1])
+                        right_w = float(bounds[j + 1]) - float(bounds[j])
+                        min_w = min(left_w, right_w)
+                        max_shift = max(80.0, min(650.0, 0.55 * float(min_w)))
+                    except Exception:
+                        max_shift = 200.0
+                    if abs(float(mid) - float(bounds[j])) <= float(max_shift):
+                        cands[int(j)].append(float(mid))
+        refined = list(bounds)
+        for j, vals in cands.items():
+            if len(vals) >= 2:
+                m = _median([float(v) for v in vals])
+                if m is not None:
+                    try:
+                        left_w = float(bounds[int(j)]) - float(bounds[int(j) - 1])
+                        right_w = float(bounds[int(j) + 1]) - float(bounds[int(j)])
+                        min_w = min(left_w, right_w)
+                        max_shift = max(80.0, min(650.0, 0.55 * float(min_w)))
+                    except Exception:
+                        max_shift = 200.0
+                    delta = float(m) - float(bounds[int(j)])
+                    delta = max(-float(max_shift), min(float(max_shift), float(delta)))
+                    refined[int(j)] = float(bounds[int(j)]) + float(delta)
+        # Enforce monotonicity and minimum widths without changing boundary count.
+        refined[0] = float(bounds[0])
+        refined[-1] = float(bounds[-1])
+        for j in range(1, len(refined) - 1):
+            refined[j] = max(float(refined[j]), float(refined[j - 1]) + 20.0)
+        for j in range(len(refined) - 2, 0, -1):
+            refined[j] = min(float(refined[j]), float(refined[j + 1]) - 20.0)
+        return refined
+
+    try:
+        col_bounds = _refine_col_bounds_by_gaps(col_bounds)
+    except Exception:
+        pass
 
     # Header cell texts from virtual tokens if available.
     header_cells: List[str] = []
@@ -3717,6 +4805,80 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
             header_cells = [str(t.get("text") or "").strip() for t in hv_sorted if str(t.get("text") or "").strip()]
     except Exception:
         header_cells = []
+    # Term-column cleanup logic should only apply to tables that actually contain a Term column.
+    has_term_header = False
+    try:
+        has_term_header = any(_normalize_anchor_token(str(h or "")) == _normalize_anchor_token("Term") for h in header_cells)
+    except Exception:
+        has_term_header = False
+    # Heuristic: infer whether the last column is free-text (wrapped words) rather than
+    # numeric/ID-like. This must be agnostic to header names.
+    last_col_text = False
+    last_text_col_idx: Optional[int] = None
+    try:
+        last_text_col_idx = max(0, len(col_bounds) - 2)  # last visual column index
+    except Exception:
+        last_text_col_idx = None
+    try:
+        last_col_left = float(col_bounds[-2])
+    except Exception:
+        last_col_left = None
+    if last_text_col_idx is not None and last_col_left is not None:
+        try:
+            sample = [
+                t for t in tokens
+                if (bx0 <= float(t.get("cx", 0.0)) <= bx1)
+                and (by0 <= float(t.get("cy", 0.0)) <= by1)
+                and (float(t.get("cx", 0.0)) >= float(last_col_left))
+                and str(t.get("text") or "").strip()
+            ]
+        except Exception:
+            sample = []
+        if sample:
+            try:
+                heights = []
+                for t in sample:
+                    try:
+                        h = float(t.get("y1", 0.0)) - float(t.get("y0", 0.0))
+                    except Exception:
+                        continue
+                    if h > 0:
+                        heights.append(h)
+                med_h = _median(heights) or 12.0
+            except Exception:
+                med_h = 12.0
+            try:
+                y_eps = max(3.0, min(30.0, 0.55 * float(med_h)))
+            except Exception:
+                y_eps = 8.0
+            try:
+                sample_sorted = sorted(sample, key=lambda t: float(t.get("cy", 0.0)))
+                clusters = 0
+                last_cy = None
+                for t in sample_sorted:
+                    cy = float(t.get("cy", 0.0))
+                    if last_cy is None or abs(cy - last_cy) > y_eps:
+                        clusters += 1
+                        last_cy = cy
+                line_clusters = clusters
+            except Exception:
+                line_clusters = 1
+            try:
+                id_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
+            except Exception:
+                id_re = None
+            try:
+                n_total = len(sample)
+                n_alpha = sum(1 for t in sample if re.search(r"[A-Za-z]", str(t.get("text") or "")))
+                n_digit = sum(1 for t in sample if re.search(r"\d", str(t.get("text") or "")))
+                n_id = sum(1 for t in sample if (id_re.match(str(t.get("text") or "").strip()) if id_re is not None else False))
+                alpha_ratio = float(n_alpha) / max(1, n_total)
+                digit_ratio = float(n_digit) / max(1, n_total)
+                # Text columns tend to have multiple line clusters and mostly alphabetic tokens.
+                if (alpha_ratio >= 0.55 and digit_ratio <= 0.35 and n_id <= max(1, int(0.15 * n_total))) or (line_clusters >= 3 and alpha_ratio >= 0.40 and digit_ratio <= 0.45):
+                    last_col_text = True
+            except Exception:
+                last_col_text = False
 
     rows_out: List[Dict[str, object]] = []
     spill_blocks: List[Dict[str, object]] = []
@@ -3745,7 +4907,7 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
         if not row_items:
             continue
         try:
-            row_items, spill_items = _split_table_band_row_and_spill(band_items, col_bounds, (bx0, by0, bx1, by1))
+            row_items, spill_items = _split_table_band_row_and_spill(band_items, col_bounds, (bx0, by0, bx1, by1), last_col_text=last_col_text)
             # Ensure row_items remain within the original table bbox for column assignment.
             row_items = [it for it in row_items if (bx0 <= float(it.get("cx", 0.0)) <= bx1)]
         except Exception:
@@ -3769,14 +4931,19 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
                 "text": spill_text,
             })
         cols: List[List[Dict[str, float]]] = [[] for _ in range(len(col_bounds) - 1)]
-        for it in row_items:
+        # Assign tokens to columns by maximum horizontal overlap with the column bounds.
+        # This is agnostic (no content-based overflow rules) and avoids "run" glue that can
+        # accidentally merge adjacent columns when spacing is tight.
+        for t in row_items:
+            if not str(t.get("text") or "").strip():
+                continue
             try:
-                x0 = float(it.get("x0", 0.0))
-                x1 = float(it.get("x1", 0.0))
-                cx = float(it.get("cx", (x0 + x1) / 2.0))
+                x0 = float(t.get("x0", 0.0))
+                x1 = float(t.get("x1", 0.0))
+                cx = float(t.get("cx", 0.0))
             except Exception:
                 continue
-            best_idx = None
+            best_idx: Optional[int] = None
             best_overlap = 0.0
             for i in range(len(col_bounds) - 1):
                 left = float(col_bounds[i])
@@ -3784,18 +4951,120 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
                 overlap = max(0.0, min(x1, right) - max(x0, left))
                 if overlap > best_overlap:
                     best_overlap = overlap
-                    best_idx = i
+                    best_idx = int(i)
             if best_idx is None or best_overlap <= 0.0:
                 idx = None
                 for i in range(len(col_bounds) - 1):
-                    if col_bounds[i] <= cx < col_bounds[i + 1]:
-                        idx = i
+                    if float(col_bounds[i]) <= float(cx) < float(col_bounds[i + 1]):
+                        idx = int(i)
                         break
                 if idx is None:
                     continue
-                cols[idx].append(it)
+                cols[idx].append(t)
             else:
-                cols[best_idx].append(it)
+                cols[int(best_idx)].append(t)
+        # Boundary-adjacent rebalance (geometry-only): move a token back to the left column when it
+        # is very close to the boundary and tightly adjacent to the right edge of the left column's
+        # content. This prevents small trailing tokens (e.g., unit suffixes) from drifting into the
+        # next column due to a slightly-left boundary.
+        try:
+            try:
+                char_ws: List[float] = []
+                for t in row_items:
+                    txt = str(t.get("text") or "").strip()
+                    if not txt:
+                        continue
+                    w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
+                    if w > 0:
+                        char_ws.append(w / max(1, len(txt)))
+                char_w = _median(char_ws) or 8.0
+                char_w = max(1.0, min(80.0, float(char_w)))
+            except Exception:
+                char_w = 8.0
+
+            # Keep these tight; we only want to correct tiny boundary drift, not move full cell values.
+            boundary_eps = max(12.0, min(60.0, 1.7 * float(char_w)))
+            join_gap = max(8.0, min(70.0, 2.2 * float(char_w)))
+
+            def _y_overlap_ratio(a: Dict[str, float], b: Dict[str, float]) -> float:
+                try:
+                    a0, a1 = float(a.get("y0", 0.0)), float(a.get("y1", 0.0))
+                    b0, b1 = float(b.get("y0", 0.0)), float(b.get("y1", 0.0))
+                except Exception:
+                    return 0.0
+                inter = max(0.0, min(a1, b1) - max(a0, b0))
+                denom = max(1.0, min(a1 - a0, b1 - b0))
+                return float(inter / denom)
+
+            for bi in range(len(col_bounds) - 2):
+                bnd = float(col_bounds[bi + 1])
+                left_col = cols[bi]
+                right_col = cols[bi + 1]
+                if not left_col or not right_col:
+                    continue
+                try:
+                    left_sorted = sorted(left_col, key=lambda t: float(t.get("x1", 0.0)))
+                    right_sorted = sorted(right_col, key=lambda t: float(t.get("x0", 0.0)))
+                except Exception:
+                    continue
+                moves: List[Dict[str, float]] = []
+                for rt in right_sorted:
+                    try:
+                        rx0 = float(rt.get("x0", 0.0))
+                        rx1 = float(rt.get("x1", 0.0))
+                    except Exception:
+                        continue
+                    txt = str(rt.get("text") or "").strip()
+                    # Never move punctuation/noise tokens (e.g., "_" grid artifacts).
+                    if not txt or not re.search(r"[^\W_]", txt, flags=re.UNICODE):
+                        continue
+                    # right_sorted is x-ordered; once we're comfortably inside the column, stop.
+                    if (rx0 - bnd) > boundary_eps:
+                        break
+                    w = max(0.0, rx1 - rx0)
+                    if w > max(24.0, 4.5 * float(char_w)):
+                        continue
+                    # Find the nearest left token end just before this token starts.
+                    best_lt = None
+                    best_dx = None
+                    for lt in reversed(left_sorted):
+                        try:
+                            lx1 = float(lt.get("x1", 0.0))
+                        except Exception:
+                            continue
+                        dx = float(rx0) - float(lx1)
+                        if dx < 0:
+                            continue
+                        if best_dx is None or dx < best_dx:
+                            best_dx = dx
+                            best_lt = lt
+                        if best_dx is not None and best_dx <= 1.0:
+                            break
+                    if best_lt is None or best_dx is None:
+                        continue
+                    # Don't steal tokens that clearly belong to the right column by overlap.
+                    try:
+                        left_left = float(col_bounds[bi])
+                        right_right = float(col_bounds[bi + 2])
+                        left_overlap = max(0.0, min(rx1, bnd) - max(rx0, left_left))
+                        right_overlap = max(0.0, min(rx1, right_right) - max(rx0, bnd))
+                        if w > 0 and right_overlap >= max(10.0, 0.60 * float(w)) and right_overlap >= left_overlap + 6.0:
+                            continue
+                        if txt.isdigit() and w > 0 and right_overlap >= max(10.0, 0.75 * float(w)):
+                            continue
+                    except Exception:
+                        pass
+                    if float(best_dx) <= float(join_gap) and _y_overlap_ratio(best_lt, rt) >= 0.55:
+                        moves.append(rt)
+                if moves:
+                    for rt in moves:
+                        try:
+                            right_col.remove(rt)
+                        except Exception:
+                            continue
+                        left_col.append(rt)
+        except Exception:
+            pass
         # Two-column key/value table cleanup: if the key label is split across
         # columns (e.g., "Serial /" + "Component SN42-AX"), move the label word(s)
         # back into the key column.
@@ -3813,77 +5082,16 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
                         cols[1] = [t for t in cols[1] if t not in moved]
         except Exception:
             pass
-        # Boundary-crossing tokens: if a token spans a column boundary but sits
-        # tightly next to the previous token, keep them together.
-        try:
-            row_sorted = sorted(row_items, key=lambda t: float(t.get("x0", 0.0)))
-            char_ws: List[float] = []
-            for t in row_sorted:
-                txt = str(t.get("text") or "").strip()
-                if not txt:
-                    continue
-                w = float(t.get("x1", 0.0)) - float(t.get("x0", 0.0))
-                if w > 0:
-                    char_ws.append(w / max(1, len(txt)))
-            char_w = _median(char_ws) or 8.0
-            char_w = max(1.0, min(80.0, float(char_w)))
-            join_gap = max(4.0, min(140.0, 2.4 * char_w))
-            col_map: Dict[int, int] = {}
-            for ci, col in enumerate(cols):
-                for t in col:
-                    col_map[id(t)] = ci
-            for idx, t in enumerate(row_sorted):
-                ci = col_map.get(id(t))
-                if ci is None or ci <= 0:
-                    continue
-                try:
-                    x0 = float(t.get("x0", 0.0))
-                    x1 = float(t.get("x1", 0.0))
-                except Exception:
-                    continue
-                boundary = float(col_bounds[ci])
-                if not (x0 < boundary < x1):
-                    continue
-                if idx <= 0:
-                    continue
-                prev = row_sorted[idx - 1]
-                prev_ci = col_map.get(id(prev))
-                if prev_ci != ci - 1:
-                    continue
-                try:
-                    px1 = float(prev.get("x1", 0.0))
-                    gap = max(0.0, x0 - px1)
-                except Exception:
-                    gap = 0.0
-                try:
-                    y0 = float(t.get("y0", 0.0))
-                    y1 = float(t.get("y1", 0.0))
-                    py0 = float(prev.get("y0", 0.0))
-                    py1 = float(prev.get("y1", 0.0))
-                    overlap = max(0.0, min(y1, py1) - max(y0, py0))
-                    denom = max(1.0, min(y1 - y0, py1 - py0))
-                    overlap_ratio = overlap / denom
-                except Exception:
-                    overlap_ratio = 0.0
-                if gap <= join_gap and overlap_ratio >= 0.35:
-                    cols[ci] = [tok for tok in cols[ci] if tok is not t]
-                    cols[ci - 1].append(t)
-                    col_map[id(t)] = ci - 1
-        except Exception:
-            pass
+        # No cross-column token moves here; column boundaries are refined once above.
         # If the last column is a short reference code (e.g., A-118) and has
         # a stray word (e.g., "at A-118"), move the stray token to the left.
         try:
-            if len(cols) >= 2 and cols[-1]:
-                last_txts = [str(t.get("text") or "").strip() for t in cols[-1] if str(t.get("text") or "").strip()]
+            if not last_col_text and len(cols) >= 2 and cols[-1]:
                 id_hits = [t for t in cols[-1] if _logref_re.match(str(t.get("text") or "").strip())]
                 non_id = [t for t in cols[-1] if t not in id_hits and str(t.get("text") or "").strip()]
                 if id_hits and non_id:
-                    # Only rebalance when the non-id tokens are small connector words.
-                    non_id_txt = [str(t.get("text") or "").strip() for t in non_id]
-                    if all(len(s) <= 4 and s.isalpha() for s in non_id_txt):
-                        cols[-2].extend(non_id)
-                        cols[-1] = id_hits
+                    cols[-2].extend(non_id)
+                    cols[-1] = id_hits
         except Exception:
             pass
 
@@ -3932,6 +5140,35 @@ def _debug_assemble_table_cells(tokens: List[Dict[str, float]], tb: Dict[str, ob
             return keep
 
         cols = [_filter_spurious_punct(ct) for ct in cols]
+        # Free-text columns are susceptible to scan/grid artifacts that Tesseract turns into short
+        # garbage tokens (e.g., "gg", "_" or random 3-5 letter blobs). Filter them here so
+        # sequential extractions stabilize.
+        if last_col_text and last_text_col_idx is not None and 0 <= last_text_col_idx < len(cols):
+            def _filter_freetext_noise(col_toks: List[Dict[str, float]]) -> List[Dict[str, float]]:
+                if not col_toks:
+                    return col_toks
+                out: List[Dict[str, float]] = []
+                for t in col_toks:
+                    txt = str(t.get("text") or "").strip()
+                    if not txt:
+                        continue
+                    try:
+                        conf = float(t.get("conf", 0.0))
+                    except Exception:
+                        conf = 0.0
+                    # Always drop underscore artifacts.
+                    if txt in ("_", "__", "___"):
+                        continue
+                    # Drop tiny low-confidence repeated-letter blobs ("gg", "lll").
+                    if txt.isalpha() and len(txt) <= 3:
+                        if len(set(txt.lower())) == 1 and conf < 0.75:
+                            continue
+                    # Drop short low-confidence alphabetic garbage (common near gridlines).
+                    if txt.isalpha() and len(txt) <= 5 and conf < 0.35:
+                        continue
+                    out.append(t)
+                return out
+            cols[last_text_col_idx] = _filter_freetext_noise(cols[last_text_col_idx])
         cells_text = [_join_tokens_as_cell_text(ct) for ct in cols]
         cell_tokens = [[str(t.get("text") or "").strip() for t in sorted(ct, key=lambda t: float(t.get("x0", 0.0))) if str(t.get("text") or "").strip()] for ct in cols]
         row_text_cells = " | ".join([c for c in cells_text if c]).strip()
@@ -4003,6 +5240,8 @@ def _split_table_band_row_and_spill(
     band_items: List[Dict[str, float]],
     col_bounds_px: List[float],
     table_bbox_px: Tuple[float, float, float, float],
+    *,
+    last_col_text: bool = False,
 ) -> Tuple[List[Dict[str, float]], List[Dict[str, float]]]:
     """Split a tall band into (row_items, spill_items).
 
@@ -4059,20 +5298,38 @@ def _split_table_band_row_and_spill(
     _logref_re = re.compile(r"^[A-Za-z]{1,4}-\d{2,4}$")
     _has_digit_re = re.compile(r"\d")
 
-    # Identify the last "row-like" line. Prefer evidence from the rightmost column:
+    # Identify the last "row-like" line.
+    # Default heuristic prefers evidence from the rightmost column:
     # numeric-like or ID-like content there indicates a real table row rather than
     # a paragraph that happens to span wide.
+    #
+    # When the last column is free text (e.g., Notes), treat ANY alphabetic content
+    # in the last column as row evidence; otherwise wrapped Notes lines can be
+    # misclassified as below-table spill text.
     line_cy = [sum(float(t.get("cy", 0.0)) for t in ln) / max(1, len(ln)) for ln in lines]
     has_lastcol = [any(float(t.get("cx", 0.0)) >= last_col_left for t in ln) for ln in lines]
     digit_count = [sum(1 for t in ln if _has_digit_re.search(str(t.get("text") or ""))) for ln in lines]
     lastcol_digit = []
     lastcol_id = []
+    lastcol_alpha = []
     for ln in lines:
         last_tokens = [t for t in ln if float(t.get("cx", 0.0)) >= last_col_left and str(t.get("text") or "").strip()]
         lastcol_digit.append(any(_has_digit_re.search(str(t.get("text") or "")) for t in last_tokens))
         lastcol_id.append(any(_logref_re.match(str(t.get("text") or "").strip()) for t in last_tokens))
+        lastcol_alpha.append(any(re.search(r"[A-Za-z]", str(t.get("text") or "")) for t in last_tokens))
 
-    row_like = [bool(has_lastcol[i] and (lastcol_digit[i] or lastcol_id[i] or digit_count[i] >= 2)) for i in range(len(lines))]
+    row_like = [
+        bool(
+            has_lastcol[i]
+            and (
+                lastcol_digit[i]
+                or lastcol_id[i]
+                or digit_count[i] >= 2
+                or (last_col_text and lastcol_alpha[i])
+            )
+        )
+        for i in range(len(lines))
+    ]
     if any(row_like):
         last_row_line = max(i for i, ok in enumerate(row_like) if ok)
     else:
@@ -4089,6 +5346,9 @@ def _split_table_band_row_and_spill(
     # the later lines look paragraph-like (no digits/IDs in the rightmost column).
     spill_start = None
     for j in range(last_row_line + 1, len(lines)):
+        if last_col_text and has_lastcol[j]:
+            # Wrapped Notes line; keep as part of the row.
+            return band_items, []
         if lastcol_digit[j] or lastcol_id[j] or digit_count[j] >= 1:
             # Likely a multi-line row continuation.
             return band_items, []
@@ -4755,23 +6015,90 @@ def _assemble_page_debug_json(
                 tb["header_cells"] = [_clean_header_cell_text(str(x or "")) for x in hc]
         except Exception:
             pass
-        # Identify free-text columns where adjacent-word de-dupe is safe/helpful.
+        # Identify structured columns (term/units/page/quality) when headers are available.
         try:
             header_cells = tb.get("header_cells") if isinstance(tb.get("header_cells"), list) else []
         except Exception:
             header_cells = []
-        desc_idx = None
-        notes_idx = None
+        term_idx = None
+        units_idx = None
+        page_idx = None
+        quality_idx = None
         try:
             for i, h in enumerate(header_cells):
                 hn = _normalize_anchor_token(str(h or ""))
-                if desc_idx is None and hn == _normalize_anchor_token("Description"):
-                    desc_idx = i
-                if notes_idx is None and hn == _normalize_anchor_token("Notes"):
-                    notes_idx = i
+                if term_idx is None and hn == _normalize_anchor_token("Term"):
+                    term_idx = i
+                if units_idx is None and hn == _normalize_anchor_token("Units"):
+                    units_idx = i
+                if page_idx is None and hn == _normalize_anchor_token("Page"):
+                    page_idx = i
+                if quality_idx is None and hn in (_normalize_anchor_token("Data Quality"), _normalize_anchor_token("Quality")):
+                    quality_idx = i
         except Exception:
-            desc_idx = None
-            notes_idx = None
+            term_idx = None
+            units_idx = None
+            page_idx = None
+            quality_idx = None
+
+        # Identify free-text columns (agnostic to header names) so we can apply safe
+        # adjacent-word de-dupe without depending on a column being called "Notes".
+        free_text_cols: set[int] = set()
+        try:
+            rows0 = tb.get("rows") if isinstance(tb.get("rows"), list) else []
+        except Exception:
+            rows0 = []
+        try:
+            col_count = len(header_cells) if header_cells else 0
+        except Exception:
+            col_count = 0
+        for r in rows0:
+            if isinstance(r, dict) and isinstance(r.get("cells_text"), list):
+                col_count = max(col_count, len(r.get("cells_text") or []))
+        if col_count > 0 and rows0:
+            word_re = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+            for ci in range(col_count):
+                total = 0
+                numeric = 0
+                max_wc = 0
+                multi_wc = 0
+                for r in rows0:
+                    if not isinstance(r, dict):
+                        continue
+                    ct0 = r.get("cells_text")
+                    if not isinstance(ct0, list) or ci >= len(ct0):
+                        continue
+                    s0 = str(ct0[ci] or "").strip()
+                    if not s0:
+                        continue
+                    total += 1
+                    try:
+                        kinds0 = r.get("cells_kind")
+                        if isinstance(kinds0, list) and ci < len(kinds0) and str(kinds0[ci] or "") == "number":
+                            numeric += 1
+                    except Exception:
+                        pass
+                    try:
+                        wc = len(word_re.findall(s0))
+                    except Exception:
+                        wc = len(s0.split())
+                    max_wc = max(max_wc, wc)
+                    if wc >= 3:
+                        multi_wc += 1
+                # Heuristic: free-text columns tend to have multi-word cells (>=3 words) in at least
+                # some rows, and aren't predominantly numeric.
+                # Guardrails:
+                # - require multi-word cells in multiple rows (single outliers like "0 (not testable)" shouldn't flip a column)
+                # - don't classify known structured columns (term/units/page/quality) as free-text when headers exist
+                if total >= 2 and max_wc >= 3 and multi_wc >= 2 and numeric <= int(0.4 * total):
+                    free_text_cols.add(ci)
+        # Never treat identified structured columns as free-text (even if noisy OCR inflates word counts).
+        try:
+            for idx in (term_idx, units_idx, page_idx, quality_idx):
+                if idx is not None:
+                    free_text_cols.discard(int(idx))
+        except Exception:
+            pass
 
         def _dedupe_adjacent_words_text(s: str) -> str:
             t = re.sub(r"\s+", " ", str(s or "").strip())
@@ -4789,6 +6116,67 @@ def _assemble_page_debug_json(
                 out.append(p)
                 prev = key
             return " ".join(out).strip()
+
+        def _normalize_term_tokens(ded: List[str]) -> List[str]:
+            if not ded:
+                return ded
+            # Common format: snake_case identifiers. Prefer the underscore token when present.
+            unders = [t for t in ded if "_" in str(t)]
+            if unders:
+                best = max(unders, key=lambda s: (str(s).count("_"), len(str(s))))
+                return [str(best).strip()]
+            # Otherwise preserve multi-token terms; terms can be strings.
+            cleaned = [str(t).strip() for t in ded if re.search(r"[A-Za-z0-9]", str(t))]
+            return cleaned if cleaned else [str(ded[0]).strip()]
+
+        def _normalize_numeric_plusminus(text: str) -> str:
+            """Normalize numeric 'A + B' patterns to 'A ± B' (agnostic to column names)."""
+            s = re.sub(r"\s+", " ", str(text or "").strip())
+            if not s or "+" not in s:
+                return s
+            # Only act on digit-only expressions with a single '+' between two numeric fragments.
+            if re.search(r"[A-Za-z]", s):
+                return s
+            if s.count("+") != 1:
+                return s
+            m = re.search(r"(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)", s)
+            if not m:
+                return s
+            return re.sub(r"(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)", r"\1 ± \2", s, count=1).strip()
+
+        def _normalize_numeric_misc(text: str) -> str:
+            """Normalize other common numeric-ish OCR confusions (agnostic to column names)."""
+            s = re.sub(r"\s+", " ", str(text or "").strip())
+            if not s:
+                return s
+            pm = "\u00b1"
+            arrow = "\u2194"
+            # Fix common OCR confusion: section sign used for a leading '5' in ranges like "5-500".
+            try:
+                s = re.sub(r"^\s*\u00a7\s*-\s*(\d)", r"5-\1", s)
+            except Exception:
+                pass
+            # Normalize a leading '+' on small decimal magnitudes to plus/minus (typical for deltas/tolerances).
+            # Keep as '+' for large integers like temperatures (+95).
+            if s.startswith("+") and not re.search(r"[A-Za-z]", s):
+                m0 = re.match(r"^\+\s*(\d+(?:\.\d+)?)\s*$", s)
+                if m0:
+                    num = m0.group(1)
+                    if ("." in num) or num.startswith("0"):
+                        s = f"{pm}{num}"
+            # Some OCR runs emit a control character for the range arrow (e.g., "-35 \x1d +85").
+            try:
+                s = re.sub(r"^(-\d{1,3})\s*[\x00-\x1f]+\s*\+(\d{1,3})$", rf"\1 {arrow} +\2", s)
+            except Exception:
+                pass
+            # Range arrow collapse: some OCR runs turn "-35↔+85" into "359485" (35 94 85).
+            try:
+                m1 = re.fullmatch(r"(\d{2})(\d{2})(\d{2})", s)
+            except Exception:
+                m1 = None
+            if m1 and m1.group(2) in ("94", "95", "96", "97", "98", "99"):
+                s = f"-{m1.group(1)} {arrow} +{m1.group(3)}"
+            return s.strip()
 
         # Rows
         rows = tb.get("rows")
@@ -4809,8 +6197,9 @@ def _assemble_page_debug_json(
                     if not isinstance(cell_tokens, list):
                         continue
                     ded = _dedupe_adjacent([str(x or "") for x in cell_tokens])
+                    term_col = term_idx
                     # Term column: drop leading single-letter junk (e.g. "a ignition_delay").
-                    if i == 0 and len(ded) == 2 and len(ded[0]) == 1 and "_" in ded[1]:
+                    if term_col is not None and i == term_col and len(ded) == 2 and len(ded[0]) == 1 and "_" in ded[1]:
                         ded = [ded[1]]
                         try:
                             if isinstance(cids, list) and i < len(cids) and isinstance(cids[i], list) and len(cids[i]) == 2:
@@ -4822,14 +6211,102 @@ def _assemble_page_debug_json(
                                 ct[i] = ded[0]
                         except Exception:
                             pass
+                    # Term column: prefer the identifier-like token (fixes artifacts like "on burn_duration ~").
+                    if term_col is not None and i == term_col and ded:
+                        norm_ded = _normalize_term_tokens(ded)
+                        if norm_ded and norm_ded != ded:
+                            try:
+                                if isinstance(cids, list) and i < len(cids) and isinstance(cids[i], list):
+                                    raw = [str(x or "").strip() for x in cell_tokens]
+                                    for j, rt in enumerate(raw):
+                                        if rt == norm_ded[0] and j < len(cids[i]):
+                                            cids[i] = [cids[i][j]]
+                                            break
+                            except Exception:
+                                pass
+                            ded = norm_ded
+                        try:
+                            if i < len(ct) and ded:
+                                term_txt = " ".join(str(x or "").strip() for x in ded if str(x or "").strip()).strip()
+                                if term_txt:
+                                    ct[i] = term_txt
+                        except Exception:
+                            pass
+                    # Non-free-text columns: update the displayed cell text from de-duped tokens.
+                    try:
+                        if i < len(ct) and ded and i not in free_text_cols:
+                            # Status-like cells can pick up spurious boundary/gridline tokens.
+                            # Keep only the canonical status token when the rest looks like junk.
+                            try:
+                                status_re = re.compile(r"^[A-Z]{2,}(?:_[A-Z]{2,})*$")
+                                keep_tok = None
+                                for t in ded:
+                                    tu = str(t or "").strip().upper()
+                                    if status_re.fullmatch(tu):
+                                        keep_tok = tu
+                                        break
+                                if keep_tok is not None:
+                                    junk = []
+                                    for t in ded:
+                                        ts = str(t or "").strip()
+                                        if not ts:
+                                            continue
+                                        if ts.upper() == keep_tok:
+                                            continue
+                                        if (ts.isalpha() and len(ts) == 1) or re.fullmatch(r"[_~\-]+", ts):
+                                            junk.append(ts)
+                                    if junk and len(junk) == (len([t for t in ded if str(t or '').strip()]) - 1):
+                                        ded = [keep_tok]
+                                        try:
+                                            if isinstance(cids, list) and i < len(cids) and isinstance(cids[i], list):
+                                                raw = [str(x or "").strip().upper() for x in cell_tokens]
+                                                for j, rt in enumerate(raw):
+                                                    if rt == keep_tok and j < len(cids[i]):
+                                                        cids[i] = [cids[i][j]]
+                                                        break
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                pass
+                            if quality_idx is not None and i == quality_idx:
+                                qd = list(ded)
+                                # Drop trailing 1-letter junk tokens (common noise near gridlines).
+                                if len(qd) >= 2 and len(str(qd[-1] or "").strip()) == 1 and str(qd[-1] or "").strip().isalpha():
+                                    qd = qd[:-1]
+                                ct[i] = " ".join(qd).strip().upper()
+                            elif page_idx is not None and i == page_idx:
+                                ct[i] = next((t for t in ded if str(t).strip().isdigit()), str(ded[0]).strip())
+                            elif units_idx is not None and i == units_idx:
+                                ct[i] = " ".join(ded).strip()
+                    except Exception:
+                        pass
                     cts[i] = ded
                 r["cells_tokens"] = cts
                 # Light cleanup on known free-text columns.
                 try:
-                    if desc_idx is not None and desc_idx < len(ct):
-                        ct[desc_idx] = _dedupe_adjacent_words_text(str(ct[desc_idx] or ""))
-                    if notes_idx is not None and notes_idx < len(ct):
-                        ct[notes_idx] = _dedupe_adjacent_words_text(str(ct[notes_idx] or ""))
+                    for ci in sorted(c for c in free_text_cols if isinstance(c, int)):
+                        if 0 <= ci < len(ct):
+                            ct[ci] = _dedupe_adjacent_words_text(str(ct[ci] or ""))
+                except Exception:
+                    pass
+
+                # Units heuristics (agnostic to row name):
+                # - Standalone "Q" in a units cell is almost always an ohms glyph.
+                try:
+                    u_idx = units_idx
+                    if u_idx is None and len(ct) >= 5:
+                        u_idx = 4
+                    if u_idx is not None and 0 <= int(u_idx) < len(ct):
+                        u_raw = str(ct[int(u_idx)] or "").strip()
+                        if u_raw in ("Q", "q", "Ic", "℧", "Ω"):
+                            ct[int(u_idx)] = "ohm"
+                except Exception:
+                    pass
+
+                # Normalize numeric +/- patterns (e.g., "185 + 10" -> "185 ± 10") outside free-text columns.
+                try:
+                    for ci in range(len(ct)):
+                        ct[ci] = _normalize_numeric_misc(_normalize_numeric_plusminus(str(ct[ci] or "")))
                 except Exception:
                     pass
                 r["cells_text"] = ct
@@ -5536,6 +7013,12 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
                                 bounds = _merge_sparse_table_columns(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), bands2, list(bounds))
                             except Exception:
                                 pass
+                        # Refine column bounds by whitespace gaps before re-OCR so cell crops are stable.
+                        try:
+                            if bounds and isinstance(bands2, list) and bands2:
+                                bounds = _refine_table_col_bounds_by_gaps(tokens, (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])), list(bands2), list(bounds))
+                        except Exception:
+                            pass
                         tb["col_bounds_px"] = bounds if bounds else []
                         # If only two rules were detected, refine row bands from tokens.
                         try:
@@ -5556,6 +7039,10 @@ def _get_tess_tsv_ir(pdf_path: Path, page: int, dpi: int) -> Tuple[Optional[Dict
             tables = []
         # Re-OCR low-confidence tokens now that we (may) know table column bounds.
         tokens, label_tag = _rehocr_tokens_if_needed(tokens, img_path, lang, label_tag, tables)
+        try:
+            tokens = _prune_spurious_micro_alpha_tokens(tokens)
+        except Exception:
+            pass
         styled_text, line_entries = _stylize_tokens_as_text(tokens)
         ir: Dict[str, object] = {
             "text": styled_text,
