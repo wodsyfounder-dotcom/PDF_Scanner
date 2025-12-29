@@ -1,10 +1,10 @@
-PDF: C:\Users\zachs\Documents\DevProjects\EIDPs\FakeProgram_SV1_SN1111.pdf
-Page: 4  DPI: 450  Source: ocr  Lang: eng+equ  PSM: 4
-Pipeline: tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(3/32)
-Image: 3825x4950
+PDF: Data Packages\FakeProgram_SV1_SN1111.pdf
+Page: 4  DPI: 700  Source: ocr  Lang: eng  PSM: 6
+Pipeline: tess_tsv:ocr(lang=eng,psm=6)+rehocr(5/19)
+Image: 5950x7700
 
-[TABLE 0 bbox_px=(437.0,536.5,3392.0,1426.0) rows=4 cols=4]
-col_bounds_px: [437.0, 995.5, 2048.0, 2356.5, 3392.0]
+[TABLE 0 bbox_px=(681.0,834.5,5276.0,2217.5) rows=4 cols=4]
+col_bounds_px: [681.0, 1548.5, 3194.5, 3665.0, 5276.0]
 +------------------------+---------------------------+-----------+-------------------------------------+
 | Attachment             | File Name                 | Pages     | Notes                               |
 +-======================-+-=========================-+-=========-+-===================================-+
@@ -14,17 +14,17 @@ col_bounds_px: [437.0, 995.5, 2048.0, 2356.5, 3392.0]
 +------------------------+---------------------------+-----------+-------------------------------------+
 | Vib Test Photos        | VIB_IMG_SN42.zip          | 24 images | Use to test non-PDF assets          |
 +------------------------+---------------------------+-----------+-------------------------------------+
-| Calibration Data       | CAL_SN42_revE.xlsx        | 4 sheets  | Multi-tab workbook                  |
+| Calibration Data       | CAL SN42_revE.xlsx        | 4 sheets  | Multi-tab workbook                  |
 +------------------------+---------------------------+-----------+-------------------------------------+
 
-[STRING bbox_px=(444.0,1564.0,1065.0,1667.0)]
+[STRING bbox_px=(691.0,2432.0,1657.0,2592.0)]
 Usage Hints
 
-[STRING bbox_px=(514.0,1807.0,2697.0,1866.0)]
+[STRING bbox_px=(799.0,2809.0,4195.0,2902.0)]
 1. Place this Markdown file alongside PDFs to validate mixed content detection.
 
-[STRING bbox_px=(507.0,1906.0,2687.0,1966.0)]
+[STRING bbox_px=(789.0,2964.0,4179.0,3057.0)]
 2. Convert to PDF (e.g., via pandoc) if you want to test page-scoped extraction.
 
-[STRING bbox_px=(507.0,2006.0,2667.0,2066.0)]
+[STRING bbox_px=(789.0,3120.0,4148.0,3213.0)]
 3. Adjust term lists so at least one expected value lives in every section above.

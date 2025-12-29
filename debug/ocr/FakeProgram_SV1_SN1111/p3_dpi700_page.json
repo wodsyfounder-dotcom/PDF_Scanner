@@ -1,82 +1,82 @@
 {
-  "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\EIDPs\\FakeProgram_SV1_SN1111.pdf",
+  "pdf_file": "Data Packages\\FakeProgram_SV1_SN1111.pdf",
   "page": 3,
-  "dpi": 450,
+  "dpi": 700,
   "source": "ocr",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(11/48)",
-  "lang": "eng+equ",
-  "psm": 4,
-  "img_w": 3825,
-  "img_h": 4950,
+  "pipeline": "tess_tsv:ocr(lang=eng,psm=6)+rehocr(10/48)",
+  "lang": "eng",
+  "psm": 6,
+  "img_w": 5950,
+  "img_h": 7700,
   "elements": [
     {
       "type": "text",
       "bbox_px": [
-        1093.0,
-        432.0,
-        3229.0,
-        499.0
+        1701.0,
+        673.0,
+        5024.0,
+        773.0
       ],
-      "text": "Temp Duration Requirement Log"
+      "text": "Temp Duration Requirement \u2014 Log"
     },
     {
       "type": "text",
       "bbox_px": [
-        488.0,
-        481.0,
-        2706.0,
-        549.0
+        760.0,
+        750.0,
+        4209.0,
+        852.0
       ],
       "text": "Test Deviation"
     },
     {
       "type": "text",
       "bbox_px": [
-        1096.0,
-        534.0,
-        3223.0,
-        593.0
+        1706.0,
+        830.0,
+        5013.0,
+        921.0
       ],
       "text": "(\u00b0C) (hr) Met? Ref"
     },
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        628.5,
-        3360.0,
-        1870.0
+        705.0,
+        976.9999999999999,
+        5228.0,
+        2908.5
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          628.5,
-          3360.0,
-          1870.0
+          705.0,
+          976.9999999999999,
+          5228.0,
+          2908.5
         ],
         "col_bounds_px": [
-          452.0,
-          1009.25,
-          1373.0416666666667,
-          1774.0,
-          2331.0,
-          2915.0,
-          3360.0
+          705.0,
+          1571.0,
+          2135.5,
+          2758.5,
+          3627.0,
+          4535.0,
+          5228.0
         ],
         "header_cells": [
           "Test",
           "Temp (\u00b0C)",
           "Duration (hr)",
           "Requirement Met?",
-          "Deviation",
+          "\u2014 Deviation",
           "Log Ref"
         ],
         "rows": [
           {
             "band_index": 0,
             "row_band_px": [
-              628.5,
-              763.0
+              976.9999999999999,
+              1186.0
             ],
             "cells_text": [
               "Thermal Soak Low",
@@ -110,11 +110,8 @@
             ],
             "cells_token_ids": [
               [
-                10,
                 11,
-                12
-              ],
-              [
+                12,
                 13
               ],
               [
@@ -128,17 +125,20 @@
               ],
               [
                 17
+              ],
+              [
+                18
               ]
             ],
             "row_token_ids": [
-              10,
               11,
               12,
               13,
               14,
               15,
               16,
-              17
+              17,
+              18
             ],
             "row_text_cells": "Thermal Soak Low | -45 | 2.0 | YES | \u00b10.5 | A-112",
             "cells_kind": [
@@ -161,8 +161,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              763.0,
-              998.5
+              1186.0,
+              1552.0
             ],
             "cells_text": [
               "Thermal Soak High",
@@ -199,31 +199,30 @@
             ],
             "cells_token_ids": [
               [
-                21,
-                22,
-                23
-              ],
-              [
-                24
-              ],
-              [
+                23,
+                24,
                 25
               ],
               [
                 26
               ],
               [
-                18,
-                28,
-                19,
-                20
+                27
               ],
               [
-                27
+                28
+              ],
+              [
+                20,
+                30,
+                21,
+                22
+              ],
+              [
+                29
               ]
             ],
             "row_token_ids": [
-              18,
               19,
               20,
               21,
@@ -233,7 +232,9 @@
               25,
               26,
               27,
-              28
+              28,
+              29,
+              30
             ],
             "row_text_cells": "Thermal Soak High | +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
             "cells_kind": [
@@ -256,12 +257,12 @@
           {
             "band_index": 2,
             "row_band_px": [
-              998.5,
-              1233.5
+              1552.0,
+              1919.0
             ],
             "cells_text": [
               "Thermal Ramp Cycling",
-              "-35++85",
+              "355485",
               "6 cycles",
               "YES",
               "-",
@@ -274,11 +275,10 @@
                 "Ramp"
               ],
               [
-                "-35++85"
+                "355485"
               ],
               [
-                "6",
-                "cycles"
+                "6cycles"
               ],
               [
                 "YES"
@@ -292,15 +292,11 @@
             ],
             "cells_token_ids": [
               [
-                29,
-                37,
-                30
+                31,
+                38,
+                32
               ],
               [
-                31
-              ],
-              [
-                32,
                 33
               ],
               [
@@ -311,23 +307,25 @@
               ],
               [
                 36
+              ],
+              [
+                37
               ]
             ],
             "row_token_ids": [
-              29,
-              30,
               31,
               32,
               33,
               34,
               35,
               36,
-              37
+              37,
+              38
             ],
-            "row_text_cells": "Thermal Ramp Cycling | -35++85 | 6 cycles | YES | - | A-126",
+            "row_text_cells": "Thermal Ramp Cycling | 355485 | 6 cycles | YES | - | A-126",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "string",
               "string",
               "string",
@@ -349,13 +347,13 @@
           {
             "band_index": 3,
             "row_band_px": [
-              1233.5,
-              1364.5
+              1919.0,
+              2122.0
             ],
             "cells_text": [
               "Random Vib (X)",
-              "14.1 grms",
-              "7 min",
+              "14.1 9 rms",
+              "/min",
               "YES",
               "-",
               "V-031"
@@ -368,11 +366,10 @@
               ],
               [
                 "14.1",
-                "grms"
+                "9rms"
               ],
               [
-                "7",
-                "min"
+                "/min"
               ],
               [
                 "YES"
@@ -386,16 +383,15 @@
             ],
             "cells_token_ids": [
               [
-                38,
                 39,
-                40
+                40,
+                41
               ],
               [
-                41,
-                42
+                42,
+                43
               ],
               [
-                43,
                 44
               ],
               [
@@ -409,7 +405,6 @@
               ]
             ],
             "row_token_ids": [
-              38,
               39,
               40,
               41,
@@ -420,11 +415,11 @@
               46,
               47
             ],
-            "row_text_cells": "Random Vib (X) | 14.1 grms | 7 min | YES | - | V-031",
+            "row_text_cells": "Random Vib (X) | 14.1 9 rms | /min | YES | - | V-031",
             "cells_kind": [
               "string",
               "string",
-              "time",
+              "string",
               "string",
               "string",
               "string"
@@ -445,13 +440,13 @@
           {
             "band_index": 4,
             "row_band_px": [
-              1364.5,
-              1502.0
+              2122.0,
+              2336.0
             ],
             "cells_text": [
               "Random Vib (Z)",
-              "12.0 grms",
-              "7 min",
+              "17.0 O rns",
+              "/min",
               "CONDITIONAL",
               "sensor SAT",
               "V-035"
@@ -463,12 +458,11 @@
                 "(Z)"
               ],
               [
-                "12.0",
-                "grms"
+                "17.0",
+                "Orns"
               ],
               [
-                "7",
-                "min"
+                "/min"
               ],
               [
                 "CONDITIONAL"
@@ -492,18 +486,17 @@
                 52
               ],
               [
-                53,
+                53
+              ],
+              [
                 54
               ],
               [
-                55
+                55,
+                56
               ],
               [
-                56,
                 57
-              ],
-              [
-                58
               ]
             ],
             "row_token_ids": [
@@ -516,14 +509,13 @@
               54,
               55,
               56,
-              57,
-              58
+              57
             ],
-            "row_text_cells": "Random Vib (Z) | 12.0 grms | 7 min | CONDITIONAL | sensor SAT | V-035",
+            "row_text_cells": "Random Vib (Z) | 17.0 O rns | /min | CONDITIONAL | sensor SAT | V-035",
             "cells_kind": [
               "string",
               "string",
-              "time",
+              "string",
               "string",
               "string",
               "string"
@@ -540,24 +532,24 @@
           {
             "band_index": 5,
             "row_band_px": [
-              1502.0,
-              1870.0
+              2336.0,
+              2908.5
             ],
             "cells_text": [
-              "Sine Sweep",
-              "5-500 Hz",
+              "sine Sweep",
+              "5500 Hz",
               "0.59",
               "Not Recorded",
-              "-",
+              "=",
               "V-041"
             ],
             "cells_tokens": [
               [
-                "Sine",
+                "sine",
                 "Sweep"
               ],
               [
-                "\u00a7-500",
+                "5500",
                 "Hz"
               ],
               [
@@ -568,7 +560,7 @@
                 "Recorded"
               ],
               [
-                "-"
+                "="
               ],
               [
                 "V-041"
@@ -576,42 +568,42 @@
             ],
             "cells_token_ids": [
               [
-                59,
-                60
+                58,
+                59
               ],
               [
-                61,
+                60,
+                61
+              ],
+              [
                 62
               ],
               [
-                63
+                63,
+                64
               ],
               [
-                64,
                 65
               ],
               [
                 66
-              ],
-              [
-                67
               ]
             ],
             "row_token_ids": [
-              59,
-              61,
-              62,
-              64,
-              65,
-              67,
+              58,
               60,
+              61,
               63,
-              66
+              64,
+              66,
+              59,
+              62,
+              65
             ],
-            "row_text_cells": "Sine Sweep | 5-500 Hz | 0.59 | Not Recorded | - | V-041",
+            "row_text_cells": "sine Sweep | 5500 Hz | 0.59 | Not Recorded | = | V-041",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "string",
@@ -622,11 +614,7 @@
               null,
               null,
               null,
-              {
-                "kind": "na",
-                "raw": "-",
-                "na": true
-              },
+              null,
               null
             ]
           }
@@ -635,10 +623,10 @@
           {
             "band_index": 5,
             "bbox_px": [
-              455.0,
-              1721.0,
-              2843.0,
-              1780.0
+              709.0,
+              2677.0,
+              4423.0,
+              2768.0
             ],
             "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
           }
@@ -648,60 +636,60 @@
     {
       "type": "text",
       "bbox_px": [
-        455.0,
-        1721.0,
-        2843.0,
-        1780.0
+        709.0,
+        2677.0,
+        4423.0,
+        2768.0
       ],
       "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
     },
     {
       "type": "text",
       "bbox_px": [
-        455.0,
-        2002.0,
-        1989.0,
-        2091.0
+        709.0,
+        3114.0,
+        3095.0,
+        3252.0
       ],
       "text": "4. Calibration & Trim Table"
     },
     {
       "type": "text",
       "bbox_px": [
-        488.0,
-        2303.0,
-        2683.0,
-        2349.0
+        760.0,
+        3583.0,
+        4174.0,
+        3654.0
       ],
-      "text": "Channel PreTrim PostTrim Allowed Delta Status Comment"
+      "text": "Channel PretTrim PostTrim Allowed Delta Status Comment"
     },
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        2398.0,
-        3252.0,
-        3116.0
+        705.0,
+        3730.0,
+        5060.0,
+        4847.0
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          2398.0,
-          3252.0,
-          3116.0
+          705.0,
+          3730.0,
+          5060.0,
+          4847.0
         ],
         "col_bounds_px": [
-          452.0,
-          764.5,
-          1078.5,
-          1424.0,
-          1895.0,
-          2337.625,
-          3252.0
+          705.0,
+          1189.5,
+          1678.5,
+          2215.0,
+          2948.0,
+          3635.7916666666665,
+          5060.0
         ],
         "header_cells": [
           "Channel",
-          "PreTrim",
+          "PretTrim",
           "PostTrim",
           "Allowed Delta",
           "Status",
@@ -711,8 +699,8 @@
           {
             "band_index": 0,
             "row_band_px": [
-              2398.0,
-              2535.5
+              3730.0,
+              3944.0
             ],
             "cells_text": [
               "TC-01",
@@ -746,6 +734,9 @@
             ],
             "cells_token_ids": [
               [
+                91
+              ],
+              [
                 92
               ],
               [
@@ -758,23 +749,20 @@
                 95
               ],
               [
-                96
-              ],
-              [
+                96,
                 97,
-                98,
-                99
+                98
               ]
             ],
             "row_token_ids": [
+              91,
               92,
               93,
               94,
               95,
               96,
               97,
-              98,
-              99
+              98
             ],
             "row_text_cells": "TC-01 | 1.0034 | 0.9991 | \u00b10.0100 | PASS | Temperatures within tolerance",
             "cells_kind": [
@@ -797,8 +785,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              2535.5,
-              2672.5
+              3944.0,
+              4157.5
             ],
             "cells_text": [
               "TC-02",
@@ -831,6 +819,9 @@
             ],
             "cells_token_ids": [
               [
+                99
+              ],
+              [
                 100
               ],
               [
@@ -843,21 +834,18 @@
                 103
               ],
               [
-                104
-              ],
-              [
-                105,
-                106
+                104,
+                105
               ]
             ],
             "row_token_ids": [
+              99,
               100,
               101,
               102,
               103,
               104,
-              105,
-              106
+              105
             ],
             "row_text_cells": "TC-02 | 0.9989 | 1.0142 | \u00b10.0100 | FAIL | Out-of-family high",
             "cells_kind": [
@@ -880,8 +868,8 @@
           {
             "band_index": 2,
             "row_band_px": [
-              2672.5,
-              2806.5
+              4157.5,
+              4366.0
             ],
             "cells_text": [
               "PT-03",
@@ -914,6 +902,9 @@
             ],
             "cells_token_ids": [
               [
+                106
+              ],
+              [
                 107
               ],
               [
@@ -926,21 +917,18 @@
                 110
               ],
               [
-                111
-              ],
-              [
-                112,
-                113
+                111,
+                112
               ]
             ],
             "row_token_ids": [
+              106,
               107,
               108,
               109,
               110,
               111,
-              112,
-              113
+              112
             ],
             "row_text_cells": "PT-03 | 1.0000 | 1.0000 | \u00b10.0020 | PASS | Perfect match",
             "cells_kind": [
@@ -963,11 +951,11 @@
           {
             "band_index": 3,
             "row_band_px": [
-              2806.5,
-              2941.0000000000005
+              4366.0,
+              4575.0
             ],
             "cells_text": [
-              "PT-07",
+              "PT-O7",
               "0.9977",
               "0.9974",
               "\u00b10.0020",
@@ -976,7 +964,7 @@
             ],
             "cells_tokens": [
               [
-                "PT-07"
+                "PT-O7"
               ],
               [
                 "0.9977"
@@ -999,6 +987,9 @@
             ],
             "cells_token_ids": [
               [
+                113
+              ],
+              [
                 114
               ],
               [
@@ -1011,16 +1002,14 @@
                 117
               ],
               [
-                118
-              ],
-              [
+                118,
                 119,
                 120,
-                121,
-                122
+                121
               ]
             ],
             "row_token_ids": [
+              113,
               114,
               115,
               116,
@@ -1028,10 +1017,9 @@
               118,
               119,
               120,
-              121,
-              122
+              121
             ],
-            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
+            "row_text_cells": "PT-O7 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
             "cells_kind": [
               "string",
               "number",
@@ -1052,8 +1040,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              2941.0000000000005,
-              3116.0
+              4575.0,
+              4847.0
             ],
             "cells_text": [
               "LVDT-2",
@@ -1087,6 +1075,9 @@
             ],
             "cells_token_ids": [
               [
+                122
+              ],
+              [
                 123
               ],
               [
@@ -1099,23 +1090,20 @@
                 126
               ],
               [
-                127
-              ],
-              [
+                127,
                 128,
-                129,
-                130
+                129
               ]
             ],
             "row_token_ids": [
+              122,
               123,
               124,
               125,
               126,
               127,
               128,
-              129,
-              130
+              129
             ],
             "row_text_cells": "LVDT-2 | 1.0040 | - | \u00b10.0050 | INCOMPLETE | Missing post-trim data",
             "cells_kind": [
@@ -1146,61 +1134,61 @@
     {
       "type": "text",
       "bbox_px": [
-        459.0,
-        3248.0,
-        1911.0,
-        3363.0
+        714.0,
+        5053.0,
+        2973.0,
+        5231.0
       ],
       "text": "5 Anomaly & Waiver Log"
     },
     {
       "type": "text",
       "bbox_px": [
-        491.0,
-        3550.0,
-        3167.0,
-        3619.0
+        765.0,
+        5527.0,
+        4927.0,
+        5627.0
       ],
-      "text": "ID Severity Term Description Containment Status"
+      "text": "ID severity Term Description Containment status"
     },
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        3650.5,
-        3360.0,
-        4486.0
+        705.0,
+        5679.0,
+        5228.0,
+        6979.0
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          3650.5,
-          3360.0,
-          4486.0
+          705.0,
+          5679.0,
+          5228.0,
+          6979.0
         ],
         "col_bounds_px": [
-          452.0,
-          714.75,
-          1059.0,
-          1454.5,
-          2254.5,
-          2899.6071428571427,
-          3360.0
+          705.0,
+          1084.8214285714287,
+          1647.5,
+          2263.5,
+          3507.5,
+          4510.821428571428,
+          5228.0
         ],
         "header_cells": [
           "ID",
-          "Severity",
+          "severity",
           "Term",
           "Description",
           "Containment",
-          "Status"
+          "status"
         ],
         "rows": [
           {
             "band_index": 0,
             "row_band_px": [
-              3650.5,
-              3980.5
+              5679.0,
+              6193.0
             ],
             "cells_text": [
               "DR-2025-014",
@@ -1244,39 +1232,40 @@
             ],
             "cells_token_ids": [
               [
-                152,
+                151,
                 156,
-                142
+                141
+              ],
+              [
+                152
               ],
               [
                 153
               ],
               [
-                154
-              ],
-              [
                 157,
-                146,
+                145,
                 158,
-                147,
+                146,
                 159,
-                148,
+                147,
                 160
               ],
               [
-                149,
+                148,
                 161,
                 162,
-                150,
-                151
+                149,
+                150
               ],
               [
                 155
               ]
             ],
             "row_token_ids": [
-              142,
+              141,
               144,
+              145,
               146,
               147,
               148,
@@ -1316,14 +1305,14 @@
           {
             "band_index": 1,
             "row_band_px": [
-              3980.5,
-              4216.0
+              6193.0,
+              6559.0
             ],
             "cells_text": [
               "NCR-25-008",
               "Minor",
               "resistance",
-              "Harness swapped due to 6.1 Q reading",
+              "Harness swapped due to 6.1 0 reading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -1341,8 +1330,11 @@
               [
                 "due",
                 "Harness",
-                "to6.1Qreading",
-                "swapped"
+                "to",
+                "6.1",
+                "swapped",
+                "0",
+                "reading"
               ],
               [
                 "Q",
@@ -1356,33 +1348,37 @@
             ],
             "cells_token_ids": [
               [
-                174,
+                172,
                 163
+              ],
+              [
+                169
               ],
               [
                 170
               ],
               [
-                171
-              ],
-              [
+                173,
+                164,
+                174,
                 175,
                 165,
                 176,
-                166
+                177
               ],
               [
-                177,
+                178,
+                166,
                 167,
-                168,
-                169
+                168
               ],
               [
-                173
+                171
               ]
             ],
             "row_token_ids": [
               163,
+              164,
               165,
               166,
               167,
@@ -1395,9 +1391,10 @@
               174,
               175,
               176,
-              177
+              177,
+              178
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 Q reading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 0 reading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -1418,13 +1415,13 @@
           {
             "band_index": 2,
             "row_band_px": [
-              4216.0,
-              4486.0
+              6559.0,
+              6979.0
             ],
             "cells_text": [
               "WA-25-002",
               "Info",
-              "leak_check",
+              "leak check",
               "Leak test deferred pending new fixture",
               "Approved by Chief QA",
               "APPROVED"
@@ -1438,7 +1435,8 @@
                 "Info"
               ],
               [
-                "leak_check"
+                "leak",
+                "check"
               ],
               [
                 "Leak",
@@ -1460,35 +1458,34 @@
             ],
             "cells_token_ids": [
               [
-                178,
-                188
-              ],
-              [
-                185
+                179,
+                190
               ],
               [
                 186
               ],
               [
-                179,
-                189,
-                180,
-                190,
-                181,
-                191
-              ],
-              [
-                182,
-                192,
-                183,
-                184
-              ],
-              [
                 187
+              ],
+              [
+                180,
+                192,
+                181,
+                193,
+                182,
+                194
+              ],
+              [
+                183,
+                195,
+                184,
+                185
+              ],
+              [
+                189
               ]
             ],
             "row_token_ids": [
-              178,
               179,
               180,
               181,
@@ -1502,9 +1499,12 @@
               189,
               190,
               191,
-              192
+              192,
+              193,
+              194,
+              195
             ],
-            "row_text_cells": "WA-25-002 | Info | leak_check | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
+            "row_text_cells": "WA-25-002 | Info | leak check | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
             "cells_kind": [
               "string",
               "string",
@@ -1529,10 +1529,10 @@
     {
       "type": "text",
       "bbox_px": [
-        455.0,
-        4618.0,
-        2277.0,
-        4733.0
+        709.0,
+        7185.0,
+        3543.0,
+        7363.0
       ],
       "text": "6. Attachment Index (Synthetic)"
     }
@@ -1542,10 +1542,10 @@
       "type": "text",
       "kind": "paragraph",
       "bbox_px": [
-        455.0,
-        1721.0,
-        2843.0,
-        1780.0
+        709.0,
+        2677.0,
+        4423.0,
+        2768.0
       ],
       "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions.",
       "line_count": 1,
@@ -1557,59 +1557,59 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        455.0,
-        2002.0,
-        1989.0,
-        2091.0
+        709.0,
+        3114.0,
+        3095.0,
+        3252.0
       ],
       "text": "4. Calibration & Trim Table",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
+        79,
         80,
         81,
         82,
-        83,
-        84
+        83
       ]
     },
     {
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        459.0,
-        3248.0,
-        1911.0,
-        3363.0
+        714.0,
+        5053.0,
+        2973.0,
+        5231.0
       ],
       "text": "5 Anomaly & Waiver Log",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
+        130,
         131,
         132,
         133,
-        134,
-        135
+        134
       ]
     },
     {
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        455.0,
-        4618.0,
-        2277.0,
-        4733.0
+        709.0,
+        7185.0,
+        3543.0,
+        7363.0
       ],
       "text": "6. Attachment Index (Synthetic)",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        193,
-        194,
-        195,
-        196
+        196,
+        197,
+        198,
+        199
       ]
     }
   ],
@@ -1617,41 +1617,41 @@
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        628.5,
-        3360.0,
-        1870.0
+        705.0,
+        976.9999999999999,
+        5228.0,
+        2908.5
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          628.5,
-          3360.0,
-          1870.0
+          705.0,
+          976.9999999999999,
+          5228.0,
+          2908.5
         ],
         "col_bounds_px": [
-          452.0,
-          1009.25,
-          1373.0416666666667,
-          1774.0,
-          2331.0,
-          2915.0,
-          3360.0
+          705.0,
+          1571.0,
+          2135.5,
+          2758.5,
+          3627.0,
+          4535.0,
+          5228.0
         ],
         "header_cells": [
           "Test",
           "Temp (\u00b0C)",
           "Duration (hr)",
           "Requirement Met?",
-          "Deviation",
+          "\u2014 Deviation",
           "Log Ref"
         ],
         "rows": [
           {
             "band_index": 0,
             "row_band_px": [
-              628.5,
-              763.0
+              976.9999999999999,
+              1186.0
             ],
             "cells_text": [
               "Thermal Soak Low",
@@ -1685,11 +1685,8 @@
             ],
             "cells_token_ids": [
               [
-                10,
                 11,
-                12
-              ],
-              [
+                12,
                 13
               ],
               [
@@ -1703,17 +1700,20 @@
               ],
               [
                 17
+              ],
+              [
+                18
               ]
             ],
             "row_token_ids": [
-              10,
               11,
               12,
               13,
               14,
               15,
               16,
-              17
+              17,
+              18
             ],
             "row_text_cells": "Thermal Soak Low | -45 | 2.0 | YES | \u00b10.5 | A-112",
             "cells_kind": [
@@ -1736,8 +1736,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              763.0,
-              998.5
+              1186.0,
+              1552.0
             ],
             "cells_text": [
               "Thermal Soak High",
@@ -1774,31 +1774,30 @@
             ],
             "cells_token_ids": [
               [
-                21,
-                22,
-                23
-              ],
-              [
-                24
-              ],
-              [
+                23,
+                24,
                 25
               ],
               [
                 26
               ],
               [
-                18,
-                28,
-                19,
-                20
+                27
               ],
               [
-                27
+                28
+              ],
+              [
+                20,
+                30,
+                21,
+                22
+              ],
+              [
+                29
               ]
             ],
             "row_token_ids": [
-              18,
               19,
               20,
               21,
@@ -1808,7 +1807,9 @@
               25,
               26,
               27,
-              28
+              28,
+              29,
+              30
             ],
             "row_text_cells": "Thermal Soak High | +95 | 1.5 | NO | Chamber tripped at +88\u00b0C | A-118",
             "cells_kind": [
@@ -1831,12 +1832,12 @@
           {
             "band_index": 2,
             "row_band_px": [
-              998.5,
-              1233.5
+              1552.0,
+              1919.0
             ],
             "cells_text": [
               "Thermal Ramp Cycling",
-              "-35++85",
+              "355485",
               "6 cycles",
               "YES",
               "-",
@@ -1849,11 +1850,10 @@
                 "Ramp"
               ],
               [
-                "-35++85"
+                "355485"
               ],
               [
-                "6",
-                "cycles"
+                "6cycles"
               ],
               [
                 "YES"
@@ -1867,15 +1867,11 @@
             ],
             "cells_token_ids": [
               [
-                29,
-                37,
-                30
+                31,
+                38,
+                32
               ],
               [
-                31
-              ],
-              [
-                32,
                 33
               ],
               [
@@ -1886,23 +1882,25 @@
               ],
               [
                 36
+              ],
+              [
+                37
               ]
             ],
             "row_token_ids": [
-              29,
-              30,
               31,
               32,
               33,
               34,
               35,
               36,
-              37
+              37,
+              38
             ],
-            "row_text_cells": "Thermal Ramp Cycling | -35++85 | 6 cycles | YES | - | A-126",
+            "row_text_cells": "Thermal Ramp Cycling | 355485 | 6 cycles | YES | - | A-126",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "string",
               "string",
               "string",
@@ -1924,13 +1922,13 @@
           {
             "band_index": 3,
             "row_band_px": [
-              1233.5,
-              1364.5
+              1919.0,
+              2122.0
             ],
             "cells_text": [
               "Random Vib (X)",
-              "14.1 grms",
-              "7 min",
+              "14.1 9 rms",
+              "/min",
               "YES",
               "-",
               "V-031"
@@ -1943,11 +1941,10 @@
               ],
               [
                 "14.1",
-                "grms"
+                "9rms"
               ],
               [
-                "7",
-                "min"
+                "/min"
               ],
               [
                 "YES"
@@ -1961,16 +1958,15 @@
             ],
             "cells_token_ids": [
               [
-                38,
                 39,
-                40
+                40,
+                41
               ],
               [
-                41,
-                42
+                42,
+                43
               ],
               [
-                43,
                 44
               ],
               [
@@ -1984,7 +1980,6 @@
               ]
             ],
             "row_token_ids": [
-              38,
               39,
               40,
               41,
@@ -1995,11 +1990,11 @@
               46,
               47
             ],
-            "row_text_cells": "Random Vib (X) | 14.1 grms | 7 min | YES | - | V-031",
+            "row_text_cells": "Random Vib (X) | 14.1 9 rms | /min | YES | - | V-031",
             "cells_kind": [
               "string",
               "string",
-              "time",
+              "string",
               "string",
               "string",
               "string"
@@ -2020,13 +2015,13 @@
           {
             "band_index": 4,
             "row_band_px": [
-              1364.5,
-              1502.0
+              2122.0,
+              2336.0
             ],
             "cells_text": [
               "Random Vib (Z)",
-              "12.0 grms",
-              "7 min",
+              "17.0 O rns",
+              "/min",
               "CONDITIONAL",
               "sensor SAT",
               "V-035"
@@ -2038,12 +2033,11 @@
                 "(Z)"
               ],
               [
-                "12.0",
-                "grms"
+                "17.0",
+                "Orns"
               ],
               [
-                "7",
-                "min"
+                "/min"
               ],
               [
                 "CONDITIONAL"
@@ -2067,18 +2061,17 @@
                 52
               ],
               [
-                53,
+                53
+              ],
+              [
                 54
               ],
               [
-                55
+                55,
+                56
               ],
               [
-                56,
                 57
-              ],
-              [
-                58
               ]
             ],
             "row_token_ids": [
@@ -2091,14 +2084,13 @@
               54,
               55,
               56,
-              57,
-              58
+              57
             ],
-            "row_text_cells": "Random Vib (Z) | 12.0 grms | 7 min | CONDITIONAL | sensor SAT | V-035",
+            "row_text_cells": "Random Vib (Z) | 17.0 O rns | /min | CONDITIONAL | sensor SAT | V-035",
             "cells_kind": [
               "string",
               "string",
-              "time",
+              "string",
               "string",
               "string",
               "string"
@@ -2115,24 +2107,24 @@
           {
             "band_index": 5,
             "row_band_px": [
-              1502.0,
-              1870.0
+              2336.0,
+              2908.5
             ],
             "cells_text": [
-              "Sine Sweep",
-              "5-500 Hz",
+              "sine Sweep",
+              "5500 Hz",
               "0.59",
               "Not Recorded",
-              "-",
+              "=",
               "V-041"
             ],
             "cells_tokens": [
               [
-                "Sine",
+                "sine",
                 "Sweep"
               ],
               [
-                "\u00a7-500",
+                "5500",
                 "Hz"
               ],
               [
@@ -2143,7 +2135,7 @@
                 "Recorded"
               ],
               [
-                "-"
+                "="
               ],
               [
                 "V-041"
@@ -2151,42 +2143,42 @@
             ],
             "cells_token_ids": [
               [
-                59,
-                60
+                58,
+                59
               ],
               [
-                61,
+                60,
+                61
+              ],
+              [
                 62
               ],
               [
-                63
+                63,
+                64
               ],
               [
-                64,
                 65
               ],
               [
                 66
-              ],
-              [
-                67
               ]
             ],
             "row_token_ids": [
-              59,
-              61,
-              62,
-              64,
-              65,
-              67,
+              58,
               60,
+              61,
               63,
-              66
+              64,
+              66,
+              59,
+              62,
+              65
             ],
-            "row_text_cells": "Sine Sweep | 5-500 Hz | 0.59 | Not Recorded | - | V-041",
+            "row_text_cells": "sine Sweep | 5500 Hz | 0.59 | Not Recorded | = | V-041",
             "cells_kind": [
               "string",
-              "string",
+              "number",
               "number",
               "string",
               "string",
@@ -2197,11 +2189,7 @@
               null,
               null,
               null,
-              {
-                "kind": "na",
-                "raw": "-",
-                "na": true
-              },
+              null,
               null
             ]
           }
@@ -2210,10 +2198,10 @@
           {
             "band_index": 5,
             "bbox_px": [
-              455.0,
-              1721.0,
-              2843.0,
-              1780.0
+              709.0,
+              2677.0,
+              4423.0,
+              2768.0
             ],
             "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions."
           }
@@ -2224,10 +2212,10 @@
       "type": "text",
       "kind": "paragraph",
       "bbox_px": [
-        455.0,
-        1721.0,
-        2843.0,
-        1780.0
+        709.0,
+        2677.0,
+        4423.0,
+        2768.0
       ],
       "text": "Mix of numeric, range (arrow), textual, and missing entries stresses parser assumptions.",
       "line_count": 1,
@@ -2237,49 +2225,49 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        455.0,
-        2002.0,
-        1989.0,
-        2091.0
+        709.0,
+        3114.0,
+        3095.0,
+        3252.0
       ],
       "text": "4. Calibration & Trim Table",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
+        79,
         80,
         81,
         82,
-        83,
-        84
+        83
       ]
     },
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        2398.0,
-        3252.0,
-        3116.0
+        705.0,
+        3730.0,
+        5060.0,
+        4847.0
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          2398.0,
-          3252.0,
-          3116.0
+          705.0,
+          3730.0,
+          5060.0,
+          4847.0
         ],
         "col_bounds_px": [
-          452.0,
-          764.5,
-          1078.5,
-          1424.0,
-          1895.0,
-          2337.625,
-          3252.0
+          705.0,
+          1189.5,
+          1678.5,
+          2215.0,
+          2948.0,
+          3635.7916666666665,
+          5060.0
         ],
         "header_cells": [
           "Channel",
-          "PreTrim",
+          "PretTrim",
           "PostTrim",
           "Allowed Delta",
           "Status",
@@ -2289,8 +2277,8 @@
           {
             "band_index": 0,
             "row_band_px": [
-              2398.0,
-              2535.5
+              3730.0,
+              3944.0
             ],
             "cells_text": [
               "TC-01",
@@ -2324,6 +2312,9 @@
             ],
             "cells_token_ids": [
               [
+                91
+              ],
+              [
                 92
               ],
               [
@@ -2336,23 +2327,20 @@
                 95
               ],
               [
-                96
-              ],
-              [
+                96,
                 97,
-                98,
-                99
+                98
               ]
             ],
             "row_token_ids": [
+              91,
               92,
               93,
               94,
               95,
               96,
               97,
-              98,
-              99
+              98
             ],
             "row_text_cells": "TC-01 | 1.0034 | 0.9991 | \u00b10.0100 | PASS | Temperatures within tolerance",
             "cells_kind": [
@@ -2375,8 +2363,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              2535.5,
-              2672.5
+              3944.0,
+              4157.5
             ],
             "cells_text": [
               "TC-02",
@@ -2409,6 +2397,9 @@
             ],
             "cells_token_ids": [
               [
+                99
+              ],
+              [
                 100
               ],
               [
@@ -2421,21 +2412,18 @@
                 103
               ],
               [
-                104
-              ],
-              [
-                105,
-                106
+                104,
+                105
               ]
             ],
             "row_token_ids": [
+              99,
               100,
               101,
               102,
               103,
               104,
-              105,
-              106
+              105
             ],
             "row_text_cells": "TC-02 | 0.9989 | 1.0142 | \u00b10.0100 | FAIL | Out-of-family high",
             "cells_kind": [
@@ -2458,8 +2446,8 @@
           {
             "band_index": 2,
             "row_band_px": [
-              2672.5,
-              2806.5
+              4157.5,
+              4366.0
             ],
             "cells_text": [
               "PT-03",
@@ -2492,6 +2480,9 @@
             ],
             "cells_token_ids": [
               [
+                106
+              ],
+              [
                 107
               ],
               [
@@ -2504,21 +2495,18 @@
                 110
               ],
               [
-                111
-              ],
-              [
-                112,
-                113
+                111,
+                112
               ]
             ],
             "row_token_ids": [
+              106,
               107,
               108,
               109,
               110,
               111,
-              112,
-              113
+              112
             ],
             "row_text_cells": "PT-03 | 1.0000 | 1.0000 | \u00b10.0020 | PASS | Perfect match",
             "cells_kind": [
@@ -2541,11 +2529,11 @@
           {
             "band_index": 3,
             "row_band_px": [
-              2806.5,
-              2941.0000000000005
+              4366.0,
+              4575.0
             ],
             "cells_text": [
-              "PT-07",
+              "PT-O7",
               "0.9977",
               "0.9974",
               "\u00b10.0020",
@@ -2554,7 +2542,7 @@
             ],
             "cells_tokens": [
               [
-                "PT-07"
+                "PT-O7"
               ],
               [
                 "0.9977"
@@ -2577,6 +2565,9 @@
             ],
             "cells_token_ids": [
               [
+                113
+              ],
+              [
                 114
               ],
               [
@@ -2589,16 +2580,14 @@
                 117
               ],
               [
-                118
-              ],
-              [
+                118,
                 119,
                 120,
-                121,
-                122
+                121
               ]
             ],
             "row_token_ids": [
+              113,
               114,
               115,
               116,
@@ -2606,10 +2595,9 @@
               118,
               119,
               120,
-              121,
-              122
+              121
             ],
-            "row_text_cells": "PT-07 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
+            "row_text_cells": "PT-O7 | 0.9977 | 0.9974 | \u00b10.0020 | INVESTIGATE | Delta close to limit",
             "cells_kind": [
               "string",
               "number",
@@ -2630,8 +2618,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              2941.0000000000005,
-              3116.0
+              4575.0,
+              4847.0
             ],
             "cells_text": [
               "LVDT-2",
@@ -2665,6 +2653,9 @@
             ],
             "cells_token_ids": [
               [
+                122
+              ],
+              [
                 123
               ],
               [
@@ -2677,23 +2668,20 @@
                 126
               ],
               [
-                127
-              ],
-              [
+                127,
                 128,
-                129,
-                130
+                129
               ]
             ],
             "row_token_ids": [
+              122,
               123,
               124,
               125,
               126,
               127,
               128,
-              129,
-              130
+              129
             ],
             "row_text_cells": "LVDT-2 | 1.0040 | - | \u00b10.0050 | INCOMPLETE | Missing post-trim data",
             "cells_kind": [
@@ -2725,60 +2713,60 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        459.0,
-        3248.0,
-        1911.0,
-        3363.0
+        714.0,
+        5053.0,
+        2973.0,
+        5231.0
       ],
       "text": "5 Anomaly & Waiver Log",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
+        130,
         131,
         132,
         133,
-        134,
-        135
+        134
       ]
     },
     {
       "type": "table",
       "bbox_px": [
-        452.0,
-        3650.5,
-        3360.0,
-        4486.0
+        705.0,
+        5679.0,
+        5228.0,
+        6979.0
       ],
       "table": {
         "bbox_px": [
-          452.0,
-          3650.5,
-          3360.0,
-          4486.0
+          705.0,
+          5679.0,
+          5228.0,
+          6979.0
         ],
         "col_bounds_px": [
-          452.0,
-          714.75,
-          1059.0,
-          1454.5,
-          2254.5,
-          2899.6071428571427,
-          3360.0
+          705.0,
+          1084.8214285714287,
+          1647.5,
+          2263.5,
+          3507.5,
+          4510.821428571428,
+          5228.0
         ],
         "header_cells": [
           "ID",
-          "Severity",
+          "severity",
           "Term",
           "Description",
           "Containment",
-          "Status"
+          "status"
         ],
         "rows": [
           {
             "band_index": 0,
             "row_band_px": [
-              3650.5,
-              3980.5
+              5679.0,
+              6193.0
             ],
             "cells_text": [
               "DR-2025-014",
@@ -2822,39 +2810,40 @@
             ],
             "cells_token_ids": [
               [
-                152,
+                151,
                 156,
-                142
+                141
+              ],
+              [
+                152
               ],
               [
                 153
               ],
               [
-                154
-              ],
-              [
                 157,
-                146,
+                145,
                 158,
-                147,
+                146,
                 159,
-                148,
+                147,
                 160
               ],
               [
-                149,
+                148,
                 161,
                 162,
-                150,
-                151
+                149,
+                150
               ],
               [
                 155
               ]
             ],
             "row_token_ids": [
-              142,
+              141,
               144,
+              145,
               146,
               147,
               148,
@@ -2894,14 +2883,14 @@
           {
             "band_index": 1,
             "row_band_px": [
-              3980.5,
-              4216.0
+              6193.0,
+              6559.0
             ],
             "cells_text": [
               "NCR-25-008",
               "Minor",
               "resistance",
-              "Harness swapped due to 6.1 Q reading",
+              "Harness swapped due to 6.1 0 reading",
               "Re-test verified 5.05 Q",
               "CLOSED"
             ],
@@ -2919,8 +2908,11 @@
               [
                 "due",
                 "Harness",
-                "to6.1Qreading",
-                "swapped"
+                "to",
+                "6.1",
+                "swapped",
+                "0",
+                "reading"
               ],
               [
                 "Q",
@@ -2934,33 +2926,37 @@
             ],
             "cells_token_ids": [
               [
-                174,
+                172,
                 163
+              ],
+              [
+                169
               ],
               [
                 170
               ],
               [
-                171
-              ],
-              [
+                173,
+                164,
+                174,
                 175,
                 165,
                 176,
-                166
+                177
               ],
               [
-                177,
+                178,
+                166,
                 167,
-                168,
-                169
+                168
               ],
               [
-                173
+                171
               ]
             ],
             "row_token_ids": [
               163,
+              164,
               165,
               166,
               167,
@@ -2973,9 +2969,10 @@
               174,
               175,
               176,
-              177
+              177,
+              178
             ],
-            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 Q reading | Re-test verified 5.05 Q | CLOSED",
+            "row_text_cells": "NCR-25-008 | Minor | resistance | Harness swapped due to 6.1 0 reading | Re-test verified 5.05 Q | CLOSED",
             "cells_kind": [
               "string",
               "string",
@@ -2996,13 +2993,13 @@
           {
             "band_index": 2,
             "row_band_px": [
-              4216.0,
-              4486.0
+              6559.0,
+              6979.0
             ],
             "cells_text": [
               "WA-25-002",
               "Info",
-              "leak_check",
+              "leak check",
               "Leak test deferred pending new fixture",
               "Approved by Chief QA",
               "APPROVED"
@@ -3016,7 +3013,8 @@
                 "Info"
               ],
               [
-                "leak_check"
+                "leak",
+                "check"
               ],
               [
                 "Leak",
@@ -3038,35 +3036,34 @@
             ],
             "cells_token_ids": [
               [
-                178,
-                188
-              ],
-              [
-                185
+                179,
+                190
               ],
               [
                 186
               ],
               [
-                179,
-                189,
-                180,
-                190,
-                181,
-                191
-              ],
-              [
-                182,
-                192,
-                183,
-                184
-              ],
-              [
                 187
+              ],
+              [
+                180,
+                192,
+                181,
+                193,
+                182,
+                194
+              ],
+              [
+                183,
+                195,
+                184,
+                185
+              ],
+              [
+                189
               ]
             ],
             "row_token_ids": [
-              178,
               179,
               180,
               181,
@@ -3080,9 +3077,12 @@
               189,
               190,
               191,
-              192
+              192,
+              193,
+              194,
+              195
             ],
-            "row_text_cells": "WA-25-002 | Info | leak_check | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
+            "row_text_cells": "WA-25-002 | Info | leak check | Leak test deferred pending new fixture | Approved by Chief QA | APPROVED",
             "cells_kind": [
               "string",
               "string",
@@ -3108,19 +3108,19 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        455.0,
-        4618.0,
-        2277.0,
-        4733.0
+        709.0,
+        7185.0,
+        3543.0,
+        7363.0
       ],
       "text": "6. Attachment Index (Synthetic)",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        193,
-        194,
-        195,
-        196
+        196,
+        197,
+        198,
+        199
       ]
     }
   ]

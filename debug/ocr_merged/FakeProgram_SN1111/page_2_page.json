@@ -1,66 +1,76 @@
 {
-  "pdf_file": "C:\\Users\\zachs\\Documents\\DevProjects\\EIDPs\\FakeProgram_SV1_SN1111.pdf",
+  "pdf_file": "Data Packages\\FakeProgram_SV1_SN1111.pdf",
   "page": 2,
-  "dpi": 450,
+  "dpi": 700,
   "source": "merged",
-  "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(9/48)",
-  "lang": "eng+equ",
-  "psm": 4,
-  "img_w": 3825,
-  "img_h": 4950,
+  "pipeline": "tess_tsv:ocr(lang=eng,psm=6)+rehocr(9/48)",
+  "lang": "eng",
+  "psm": 6,
+  "img_w": 5950,
+  "img_h": 7700,
   "elements": [
     {
       "type": "text",
       "bbox_px": [
-        1896.0,
-        387.0,
-        2896.0,
-        432.0
+        2950.0,
+        601.0,
+        4505.0,
+        672.0
       ],
       "text": "Measured Data"
     },
     {
       "type": "text",
       "bbox_px": [
-        468.0,
-        431.0,
-        3295.0,
-        543.0
+        729.0,
+        673.0,
+        5125.0,
+        773.0
       ],
-      "text": "Term Description Requirement Value Units Page Quality ; Notes"
+      "text": "Term Description _\u2014 Requirement ; Units ; Page Notes"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        2945.0,
+        753.0,
+        4622.0,
+        845.0
+      ],
+      "text": "Value Quality"
     },
     {
       "type": "table",
       "bbox_px": [
-        432.0,
-        579.5,
-        3471.0,
-        2999.0
+        674.0,
+        901.0,
+        5400.0,
+        4663.5
       ],
       "table": {
         "bbox_px": [
-          432.0,
-          579.5,
-          3471.0,
-          2999.0
+          674.0,
+          901.0,
+          5400.0,
+          4663.5
         ],
         "col_bounds_px": [
-          432.0,
-          985.3571428571429,
-          1417.5,
-          1860.5,
-          2215.0,
-          2476.5,
-          2730.0,
-          3051.5,
-          3471.0
+          674.0,
+          1521.5,
+          2205.5,
+          2894.0,
+          3445.5,
+          3851.5,
+          4245.5,
+          4746.5,
+          5400.0
         ],
         "header_cells": [
           "Term",
-          "Description",
-          "Requirement",
+          "_\u2014 Description",
+          "; Requirement",
           "Measured Value",
-          "Units",
+          "; Units",
           "Page",
           "Data Quality",
           "Notes"
@@ -69,22 +79,22 @@
           {
             "band_index": 0,
             "row_band_px": [
-              579.5,
-              1010.5
+              901.0,
+              1571.5
             ],
             "cells_text": [
-              "isp",
+              "SP",
               "Steady-state specific impulse",
-              "43 \u00b1 3",
-              "39.4",
-              "sec",
+              "1344 \u00b1 3",
+              "30.4",
+              "Sec",
               "6",
               "LOW",
               "flagged low but inside tolerance window"
             ],
             "cells_tokens": [
               [
-                "isp"
+                "SP"
               ],
               [
                 "Steady-",
@@ -93,14 +103,14 @@
                 "impulse"
               ],
               [
-                "43",
+                "1344",
                 "\u00b1 3"
               ],
               [
-                "39.4"
+                "30.4"
               ],
               [
-                "sec"
+                "Sec"
               ],
               [
                 "6"
@@ -119,46 +129,43 @@
             ],
             "cells_token_ids": [
               [
-                22
-              ],
-              [
-                11,
-                14,
-                23,
                 26
               ],
               [
-                15,
-                21
+                13,
+                17,
+                27,
+                30
               ],
               [
-                16
-              ],
-              [
+                18,
                 24
               ],
               [
-                17
+                19
               ],
               [
-                18
+                28
               ],
               [
-                12,
-                27,
-                19,
-                25,
-                20,
-                13
+                20
+              ],
+              [
+                21
+              ],
+              [
+                14,
+                31,
+                22,
+                29,
+                23,
+                15
               ]
             ],
             "row_token_ids": [
-              11,
-              12,
               13,
               14,
               15,
-              16,
               17,
               18,
               19,
@@ -169,9 +176,13 @@
               24,
               25,
               26,
-              27
+              27,
+              28,
+              29,
+              30,
+              31
             ],
-            "row_text_cells": "isp | Steady-state specific impulse | 43 \u00b1 3 | 39.4 | sec | 6 | LOW | flagged low but inside tolerance window",
+            "row_text_cells": "SP | Steady-state specific impulse | 1344 \u00b1 3 | 30.4 | Sec | 6 | LOW | flagged low but inside tolerance window",
             "cells_kind": [
               "string",
               "string",
@@ -187,13 +198,13 @@
               null,
               {
                 "kind": "plusminus",
-                "raw": "43 \u00b1 3",
-                "center": 43.0,
-                "center_decimal": "43",
+                "raw": "1344 \u00b1 3",
+                "center": 1344.0,
+                "center_decimal": "1344",
                 "delta": 3.0,
                 "delta_decimal": "3",
-                "min": 40.0,
-                "max": 46.0
+                "min": 1341.0,
+                "max": 1347.0
               },
               null,
               null,
@@ -205,8 +216,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              1010.5,
-              1438.5
+              1571.5,
+              2237.0
             ],
             "cells_text": [
               "chamber_pressure",
@@ -254,43 +265,39 @@
             ],
             "cells_token_ids": [
               [
-                31
+                35
               ],
               [
-                32,
-                33
-              ],
-              [
-                34,
-                35,
-                36
-              ],
-              [
+                36,
                 37
               ],
               [
-                38
-              ],
-              [
-                39
-              ],
-              [
+                38,
+                39,
                 40
               ],
               [
-                41,
-                28,
-                30,
-                43,
-                29,
+                41
+              ],
+              [
                 42
+              ],
+              [
+                43
+              ],
+              [
+                44
+              ],
+              [
+                45,
+                32,
+                34,
+                47,
+                33,
+                46
               ]
             ],
             "row_token_ids": [
-              28,
-              29,
-              30,
-              31,
               32,
               33,
               34,
@@ -302,7 +309,11 @@
               40,
               41,
               42,
-              43
+              43,
+              44,
+              45,
+              46,
+              47
             ],
             "row_text_cells": "chamber_pressure | Mean P,, | 185 \u00b1 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
@@ -338,22 +349,22 @@
           {
             "band_index": 2,
             "row_band_px": [
-              1438.5,
-              1768.5
+              2237.0,
+              2750.5
             ],
             "cells_text": [
-              "burn_duration",
+              "burn_",
               "Hot-fire duration",
               "42 - 48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN",
-              "use to test textual statuses"
+              "NOT RUB",
+              "usewoess to test textual statuses"
             ],
             "cells_tokens": [
               [
-                "burn_duration"
+                "burn_"
               ],
               [
                 "duration",
@@ -374,10 +385,11 @@
                 "6"
               ],
               [
-                "NOT_RUN"
+                "NOT",
+                "RUb"
               ],
               [
-                "use",
+                "usewoess",
                 "textual",
                 "statuses",
                 "to",
@@ -386,44 +398,41 @@
             ],
             "cells_token_ids": [
               [
-                52
-              ],
-              [
-                60,
-                47
-              ],
-              [
-                53
-              ],
-              [
-                61,
-                48,
-                49
-              ],
-              [
-                54
-              ],
-              [
                 55
               ],
               [
-                56
+                64,
+                51
               ],
               [
-                50,
-                58,
+                57
+              ],
+              [
+                65,
+                52,
+                53
+              ],
+              [
+                58
+              ],
+              [
+                59
+              ],
+              [
+                60,
+                61
+              ],
+              [
+                54,
                 63,
-                44,
-                45
+                66,
+                48,
+                49
               ]
             ],
             "row_token_ids": [
-              44,
-              45,
-              47,
               48,
               49,
-              50,
               51,
               52,
               53,
@@ -435,9 +444,13 @@
               59,
               60,
               61,
-              63
+              62,
+              63,
+              64,
+              65,
+              66
             ],
-            "row_text_cells": "burn_duration | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
+            "row_text_cells": "burn_ | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT RUB | usewoess to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -469,8 +482,8 @@
           {
             "band_index": 3,
             "row_band_px": [
-              1768.5,
-              2200.0
+              2750.5,
+              3421.0
             ],
             "cells_text": [
               "resistance",
@@ -516,21 +529,12 @@
             ],
             "cells_token_ids": [
               [
-                69
-              ],
-              [
-                70,
-                77,
-                66
-              ],
-              [
-                71
-              ],
-              [
                 72
               ],
               [
-                73
+                73,
+                81,
+                69
               ],
               [
                 74
@@ -539,17 +543,23 @@
                 75
               ],
               [
-                79,
-                64,
-                68,
-                76,
-                65
+                76
+              ],
+              [
+                77
+              ],
+              [
+                78
+              ],
+              [
+                83,
+                67,
+                71,
+                80,
+                68
               ]
             ],
             "row_token_ids": [
-              64,
-              65,
-              66,
               67,
               68,
               69,
@@ -562,7 +572,11 @@
               76,
               77,
               78,
-              79
+              79,
+              80,
+              81,
+              82,
+              83
             ],
             "row_text_cells": "resistance | Injector harness resistance | 4.8 - 5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
@@ -596,8 +610,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              2200.0,
-              2533.0
+              3421.0,
+              3940.0
             ],
             "cells_text": [
               "valve_alignment",
@@ -643,44 +657,39 @@
             ],
             "cells_token_ids": [
               [
-                85
-              ],
-              [
-                80,
-                86,
-                94
-              ],
-              [
-                87,
                 88
               ],
               [
+                84,
                 89,
-                84
+                97
               ],
               [
-                90
-              ],
-              [
+                90,
                 91
               ],
               [
-                92
+                92,
+                87
               ],
               [
-                81,
-                93,
+                93
+              ],
+              [
+                94
+              ],
+              [
                 95
+              ],
+              [
+                85,
+                96,
+                98
               ]
             ],
             "row_token_ids": [
-              80,
-              81,
-              82,
-              83,
               84,
               85,
-              86,
               87,
               88,
               89,
@@ -689,7 +698,10 @@
               92,
               93,
               94,
-              95
+              95,
+              96,
+              97,
+              98
             ],
             "row_text_cells": "valve_alignment | Valve alignment photo | Visual match | Image #49 | n/a | 9 | PASS | non-numeric text extraction",
             "cells_kind": [
@@ -716,15 +728,15 @@
           {
             "band_index": 5,
             "row_band_px": [
-              2533.0,
-              2999.0
+              3940.0,
+              4663.5
             ],
             "cells_text": [
               "leak_check",
               "Helium leak rate",
               "<= 1.0e-5",
               "Not Found",
-              "atm-cc/s",
+              "atm-ce/s",
               "10",
               "MISSING",
               "ensures missing term handling"
@@ -739,14 +751,15 @@
                 "leak"
               ],
               [
-                "=1.0e-5"
+                "<=",
+                "1.0e-5"
               ],
               [
                 "Not",
                 "Found"
               ],
               [
-                "atm-cc/s"
+                "atm-ce/s"
               ],
               [
                 "10"
@@ -763,40 +776,38 @@
             ],
             "cells_token_ids": [
               [
-                101
-              ],
-              [
-                106,
-                97,
-                98
-              ],
-              [
-                102
-              ],
-              [
-                99,
-                107
-              ],
-              [
-                103
-              ],
-              [
                 104
               ],
               [
-                105
+                110,
+                100,
+                101
               ],
               [
-                96,
-                100,
-                108,
+                105,
+                106
+              ],
+              [
+                102,
+                111
+              ],
+              [
+                107
+              ],
+              [
+                108
+              ],
+              [
                 109
+              ],
+              [
+                99,
+                103,
+                112,
+                113
               ]
             ],
             "row_token_ids": [
-              96,
-              97,
-              98,
               99,
               100,
               101,
@@ -807,9 +818,13 @@
               106,
               107,
               108,
-              109
+              109,
+              110,
+              111,
+              112,
+              113
             ],
-            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
+            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-ce/s | 10 | MISSING | ensures missing term handling",
             "cells_kind": [
               "string",
               "string",
@@ -846,47 +861,47 @@
     {
       "type": "text",
       "bbox_px": [
-        436.0,
-        3134.0,
-        1900.0,
-        3222.0
+        678.0,
+        4875.0,
+        2955.0,
+        5012.0
       ],
       "text": "2. Performance KPI Table"
     },
     {
       "type": "text",
       "bbox_px": [
-        472.0,
-        3438.0,
-        2485.0,
-        3497.0
+        734.0,
+        5347.0,
+        3864.0,
+        5439.0
       ],
       "text": "KPI Min Target Max Value Source Confidence"
     },
     {
       "type": "table",
       "bbox_px": [
-        432.0,
-        3533.0,
-        2520.0,
-        4534.0
+        674.0,
+        5495.0,
+        3921.0,
+        7052.5
       ],
       "table": {
         "bbox_px": [
-          432.0,
-          3533.0,
-          2520.0,
-          4534.0
+          674.0,
+          5495.0,
+          3921.0,
+          7052.5
         ],
         "col_bounds_px": [
-          432.0,
-          950.5,
-          1174.0,
-          1427.5,
-          1613.5,
-          1842.5,
-          2118.5,
-          2520.0
+          674.0,
+          1478.0,
+          1826.5,
+          2220.5,
+          2510.0,
+          2865.5,
+          3295.0,
+          3921.0
         ],
         "header_cells": [
           "KPI",
@@ -901,12 +916,12 @@
           {
             "band_index": 0,
             "row_band_px": [
-              3533.0,
-              3666.5
+              5495.0,
+              5703.0
             ],
             "cells_text": [
               "thrust_nominal",
-              "48",
+              "438",
               "5.1",
               "5.5",
               "5.32",
@@ -918,7 +933,7 @@
                 "thrust_nominal"
               ],
               [
-                "48"
+                "438"
               ],
               [
                 "5.1"
@@ -938,18 +953,6 @@
             ],
             "cells_token_ids": [
               [
-                121
-              ],
-              [
-                122
-              ],
-              [
-                123
-              ],
-              [
-                124
-              ],
-              [
                 125
               ],
               [
@@ -957,18 +960,30 @@
               ],
               [
                 127
+              ],
+              [
+                128
+              ],
+              [
+                129
+              ],
+              [
+                130
+              ],
+              [
+                131
               ]
             ],
             "row_token_ids": [
-              121,
-              122,
-              123,
-              124,
               125,
               126,
-              127
+              127,
+              128,
+              129,
+              130,
+              131
             ],
-            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
+            "row_text_cells": "thrust_nominal | 438 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
             "cells_kind": [
               "string",
               "number",
@@ -991,15 +1006,15 @@
           {
             "band_index": 1,
             "row_band_px": [
-              3666.5,
-              3800.5
+              5703.0,
+              5911.0
             ],
             "cells_text": [
               "thrust_peak",
               "-",
               "6.2",
               "6.8",
-              "6.95",
+              "695",
               "Table 3",
               "0.91"
             ],
@@ -1008,7 +1023,7 @@
                 "thrust_peak"
               ],
               [
-                "-"
+                "\u2014"
               ],
               [
                 "6.2"
@@ -1017,7 +1032,7 @@
                 "6.8"
               ],
               [
-                "6.95"
+                "695"
               ],
               [
                 "Table3"
@@ -1028,18 +1043,6 @@
             ],
             "cells_token_ids": [
               [
-                128
-              ],
-              [
-                129
-              ],
-              [
-                130
-              ],
-              [
-                131
-              ],
-              [
                 132
               ],
               [
@@ -1047,18 +1050,30 @@
               ],
               [
                 134
+              ],
+              [
+                135
+              ],
+              [
+                136
+              ],
+              [
+                137
+              ],
+              [
+                138
               ]
             ],
             "row_token_ids": [
-              128,
-              129,
-              130,
-              131,
               132,
               133,
-              134
+              134,
+              135,
+              136,
+              137,
+              138
             ],
-            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table 3 | 0.91",
+            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 695 | Table 3 | 0.91",
             "cells_kind": [
               "string",
               "string",
@@ -1085,13 +1100,13 @@
           {
             "band_index": 2,
             "row_band_px": [
-              3800.5,
-              3938.0
+              5911.0,
+              6125.0
             ],
             "cells_text": [
               "power_draw_idle",
               "75",
-              "80",
+              "#80",
               "95",
               "104",
               "Table 4",
@@ -1105,7 +1120,7 @@
                 "75"
               ],
               [
-                "80"
+                "#80"
               ],
               [
                 "95"
@@ -1114,8 +1129,7 @@
                 "104"
               ],
               [
-                "Table",
-                "4"
+                "Table4"
               ],
               [
                 "0.77"
@@ -1123,43 +1137,41 @@
             ],
             "cells_token_ids": [
               [
-                135
-              ],
-              [
-                136
-              ],
-              [
-                137
-              ],
-              [
-                138
-              ],
-              [
                 139
               ],
               [
-                140,
+                140
+              ],
+              [
                 141
               ],
               [
                 142
+              ],
+              [
+                143
+              ],
+              [
+                144
+              ],
+              [
+                145
               ]
             ],
             "row_token_ids": [
-              135,
-              136,
-              137,
-              138,
               139,
               140,
               141,
-              142
+              142,
+              143,
+              144,
+              145
             ],
-            "row_text_cells": "power_draw_idle | 75 | 80 | 95 | 104 | Table 4 | 0.77",
+            "row_text_cells": "power_draw_idle | 75 | #80 | 95 | 104 | Table 4 | 0.77",
             "cells_kind": [
               "string",
               "number",
-              "number",
+              "string",
               "number",
               "number",
               "string",
@@ -1178,8 +1190,8 @@
           {
             "band_index": 3,
             "row_band_px": [
-              3938.0,
-              4075.0
+              6125.0,
+              6338.0
             ],
             "cells_text": [
               "power_draw_peak",
@@ -1215,15 +1227,6 @@
             ],
             "cells_token_ids": [
               [
-                143
-              ],
-              [
-                144
-              ],
-              [
-                145
-              ],
-              [
                 146
               ],
               [
@@ -1234,16 +1237,25 @@
               ],
               [
                 149
+              ],
+              [
+                150
+              ],
+              [
+                151
+              ],
+              [
+                152
               ]
             ],
             "row_token_ids": [
-              143,
-              144,
-              145,
               146,
               147,
               148,
-              149
+              149,
+              150,
+              151,
+              152
             ],
             "row_text_cells": "power_draw_peak | - | 140 | 155 | 131 | Table 4 | 0.85",
             "cells_kind": [
@@ -1272,8 +1284,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              4075.0,
-              4534.0
+              6338.0,
+              7052.5
             ],
             "cells_text": [
               "thermal_margin",
@@ -1295,7 +1307,7 @@
                 "12"
               ],
               [
-                "-"
+                "\u2014"
               ],
               [
                 "6"
@@ -1310,37 +1322,37 @@
             ],
             "cells_token_ids": [
               [
-                150
-              ],
-              [
-                151
-              ],
-              [
-                152
-              ],
-              [
                 153
               ],
               [
                 154
               ],
               [
-                155,
+                155
+              ],
+              [
                 156
               ],
               [
                 157
+              ],
+              [
+                158,
+                159
+              ],
+              [
+                160
               ]
             ],
             "row_token_ids": [
-              151,
-              152,
               154,
-              156,
+              155,
               157,
-              150,
+              159,
+              160,
               153,
-              155
+              156,
+              158
             ],
             "row_text_cells": "thermal_margin | 8 | 12 | - | 6 | Fig. 5 | 0.63",
             "cells_kind": [
@@ -1371,12 +1383,12 @@
           {
             "band_index": 4,
             "bbox_px": [
-              504.0,
-              4291.0,
-              3207.0,
-              4448.0
+              785.0,
+              6674.0,
+              4820.0,
+              6918.0
             ],
-            "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands (no min or max defined)."
+            "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands min or max defined)."
           }
         ]
       }
@@ -1384,20 +1396,30 @@
     {
       "type": "text",
       "bbox_px": [
-        504.0,
-        4291.0,
-        3207.0,
-        4448.0
+        785.0,
+        6674.0,
+        4820.0,
+        6918.0
       ],
-      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands (no min or max defined)."
+      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands min or max defined)."
     },
     {
       "type": "text",
       "bbox_px": [
-        436.0,
-        4670.0,
-        2485.0,
-        4758.0
+        4850.0,
+        6674.0,
+        4987.0,
+        6765.0
+      ],
+      "text": "(no"
+    },
+    {
+      "type": "text",
+      "bbox_px": [
+        678.0,
+        7263.0,
+        3864.0,
+        7400.0
       ],
       "text": "3. Environmental Endurance Matrix"
     }
@@ -1407,14 +1429,17 @@
       "type": "text",
       "kind": "paragraph",
       "bbox_px": [
-        504.0,
-        4291.0,
-        3207.0,
-        4448.0
+        785.0,
+        6674.0,
+        4987.0,
+        6918.0
       ],
-      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands (no min or max defined).",
-      "line_count": 1,
-      "word_count": 18
+      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands min or max defined). (no",
+      "line_count": 2,
+      "word_count": 18,
+      "token_ids": [
+        174
+      ]
     }
   ],
   "strings": [
@@ -1422,38 +1447,38 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        436.0,
-        3134.0,
-        1900.0,
-        3222.0
+        678.0,
+        4875.0,
+        2955.0,
+        5012.0
       ],
       "text": "2. Performance KPI Table",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        110,
-        111,
-        112,
-        113
+        114,
+        115,
+        116,
+        117
       ]
     },
     {
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        436.0,
-        4670.0,
-        2485.0,
-        4758.0
+        678.0,
+        7263.0,
+        3864.0,
+        7400.0
       ],
       "text": "3. Environmental Endurance Matrix",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        176,
-        177,
-        178,
-        179
+        179,
+        180,
+        181,
+        182
       ]
     }
   ],
@@ -1461,35 +1486,35 @@
     {
       "type": "table",
       "bbox_px": [
-        432.0,
-        579.5,
-        3471.0,
-        2999.0
+        674.0,
+        901.0,
+        5400.0,
+        4663.5
       ],
       "table": {
         "bbox_px": [
-          432.0,
-          579.5,
-          3471.0,
-          2999.0
+          674.0,
+          901.0,
+          5400.0,
+          4663.5
         ],
         "col_bounds_px": [
-          432.0,
-          985.3571428571429,
-          1417.5,
-          1860.5,
-          2215.0,
-          2476.5,
-          2730.0,
-          3051.5,
-          3471.0
+          674.0,
+          1521.5,
+          2205.5,
+          2894.0,
+          3445.5,
+          3851.5,
+          4245.5,
+          4746.5,
+          5400.0
         ],
         "header_cells": [
           "Term",
-          "Description",
-          "Requirement",
+          "_\u2014 Description",
+          "; Requirement",
           "Measured Value",
-          "Units",
+          "; Units",
           "Page",
           "Data Quality",
           "Notes"
@@ -1498,22 +1523,22 @@
           {
             "band_index": 0,
             "row_band_px": [
-              579.5,
-              1010.5
+              901.0,
+              1571.5
             ],
             "cells_text": [
-              "isp",
+              "SP",
               "Steady-state specific impulse",
-              "43 \u00b1 3",
-              "39.4",
-              "sec",
+              "1344 \u00b1 3",
+              "30.4",
+              "Sec",
               "6",
               "LOW",
               "flagged low but inside tolerance window"
             ],
             "cells_tokens": [
               [
-                "isp"
+                "SP"
               ],
               [
                 "Steady-",
@@ -1522,14 +1547,14 @@
                 "impulse"
               ],
               [
-                "43",
+                "1344",
                 "\u00b1 3"
               ],
               [
-                "39.4"
+                "30.4"
               ],
               [
-                "sec"
+                "Sec"
               ],
               [
                 "6"
@@ -1548,46 +1573,43 @@
             ],
             "cells_token_ids": [
               [
-                22
-              ],
-              [
-                11,
-                14,
-                23,
                 26
               ],
               [
-                15,
-                21
+                13,
+                17,
+                27,
+                30
               ],
               [
-                16
-              ],
-              [
+                18,
                 24
               ],
               [
-                17
+                19
               ],
               [
-                18
+                28
               ],
               [
-                12,
-                27,
-                19,
-                25,
-                20,
-                13
+                20
+              ],
+              [
+                21
+              ],
+              [
+                14,
+                31,
+                22,
+                29,
+                23,
+                15
               ]
             ],
             "row_token_ids": [
-              11,
-              12,
               13,
               14,
               15,
-              16,
               17,
               18,
               19,
@@ -1598,9 +1620,13 @@
               24,
               25,
               26,
-              27
+              27,
+              28,
+              29,
+              30,
+              31
             ],
-            "row_text_cells": "isp | Steady-state specific impulse | 43 \u00b1 3 | 39.4 | sec | 6 | LOW | flagged low but inside tolerance window",
+            "row_text_cells": "SP | Steady-state specific impulse | 1344 \u00b1 3 | 30.4 | Sec | 6 | LOW | flagged low but inside tolerance window",
             "cells_kind": [
               "string",
               "string",
@@ -1616,13 +1642,13 @@
               null,
               {
                 "kind": "plusminus",
-                "raw": "43 \u00b1 3",
-                "center": 43.0,
-                "center_decimal": "43",
+                "raw": "1344 \u00b1 3",
+                "center": 1344.0,
+                "center_decimal": "1344",
                 "delta": 3.0,
                 "delta_decimal": "3",
-                "min": 40.0,
-                "max": 46.0
+                "min": 1341.0,
+                "max": 1347.0
               },
               null,
               null,
@@ -1634,8 +1660,8 @@
           {
             "band_index": 1,
             "row_band_px": [
-              1010.5,
-              1438.5
+              1571.5,
+              2237.0
             ],
             "cells_text": [
               "chamber_pressure",
@@ -1683,43 +1709,39 @@
             ],
             "cells_token_ids": [
               [
-                31
+                35
               ],
               [
-                32,
-                33
-              ],
-              [
-                34,
-                35,
-                36
-              ],
-              [
+                36,
                 37
               ],
               [
-                38
-              ],
-              [
-                39
-              ],
-              [
+                38,
+                39,
                 40
               ],
               [
-                41,
-                28,
-                30,
-                43,
-                29,
+                41
+              ],
+              [
                 42
+              ],
+              [
+                43
+              ],
+              [
+                44
+              ],
+              [
+                45,
+                32,
+                34,
+                47,
+                33,
+                46
               ]
             ],
             "row_token_ids": [
-              28,
-              29,
-              30,
-              31,
               32,
               33,
               34,
@@ -1731,7 +1753,11 @@
               40,
               41,
               42,
-              43
+              43,
+              44,
+              45,
+              46,
+              47
             ],
             "row_text_cells": "chamber_pressure | Mean P,, | 185 \u00b1 10 | 201 | psia | 6 | WARN | value above requirement, watch for drift",
             "cells_kind": [
@@ -1767,22 +1793,22 @@
           {
             "band_index": 2,
             "row_band_px": [
-              1438.5,
-              1768.5
+              2237.0,
+              2750.5
             ],
             "cells_text": [
-              "burn_duration",
+              "burn_",
               "Hot-fire duration",
               "42 - 48",
               "0 (not testable)",
               "s",
               "6",
-              "NOT_RUN",
-              "use to test textual statuses"
+              "NOT RUB",
+              "usewoess to test textual statuses"
             ],
             "cells_tokens": [
               [
-                "burn_duration"
+                "burn_"
               ],
               [
                 "duration",
@@ -1803,10 +1829,11 @@
                 "6"
               ],
               [
-                "NOT_RUN"
+                "NOT",
+                "RUb"
               ],
               [
-                "use",
+                "usewoess",
                 "textual",
                 "statuses",
                 "to",
@@ -1815,44 +1842,41 @@
             ],
             "cells_token_ids": [
               [
-                52
-              ],
-              [
-                60,
-                47
-              ],
-              [
-                53
-              ],
-              [
-                61,
-                48,
-                49
-              ],
-              [
-                54
-              ],
-              [
                 55
               ],
               [
-                56
+                64,
+                51
               ],
               [
-                50,
-                58,
+                57
+              ],
+              [
+                65,
+                52,
+                53
+              ],
+              [
+                58
+              ],
+              [
+                59
+              ],
+              [
+                60,
+                61
+              ],
+              [
+                54,
                 63,
-                44,
-                45
+                66,
+                48,
+                49
               ]
             ],
             "row_token_ids": [
-              44,
-              45,
-              47,
               48,
               49,
-              50,
               51,
               52,
               53,
@@ -1864,9 +1888,13 @@
               59,
               60,
               61,
-              63
+              62,
+              63,
+              64,
+              65,
+              66
             ],
-            "row_text_cells": "burn_duration | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT_RUN | use to test textual statuses",
+            "row_text_cells": "burn_ | Hot-fire duration | 42 - 48 | 0 (not testable) | s | 6 | NOT RUB | usewoess to test textual statuses",
             "cells_kind": [
               "string",
               "string",
@@ -1898,8 +1926,8 @@
           {
             "band_index": 3,
             "row_band_px": [
-              1768.5,
-              2200.0
+              2750.5,
+              3421.0
             ],
             "cells_text": [
               "resistance",
@@ -1945,21 +1973,12 @@
             ],
             "cells_token_ids": [
               [
-                69
-              ],
-              [
-                70,
-                77,
-                66
-              ],
-              [
-                71
-              ],
-              [
                 72
               ],
               [
-                73
+                73,
+                81,
+                69
               ],
               [
                 74
@@ -1968,17 +1987,23 @@
                 75
               ],
               [
-                79,
-                64,
-                68,
-                76,
-                65
+                76
+              ],
+              [
+                77
+              ],
+              [
+                78
+              ],
+              [
+                83,
+                67,
+                71,
+                80,
+                68
               ]
             ],
             "row_token_ids": [
-              64,
-              65,
-              66,
               67,
               68,
               69,
@@ -1991,7 +2016,11 @@
               76,
               77,
               78,
-              79
+              79,
+              80,
+              81,
+              82,
+              83
             ],
             "row_text_cells": "resistance | Injector harness resistance | 4.8 - 5.3 | 6.1 | ohm | 8 | FAIL | triggers out-of-range numeric failure",
             "cells_kind": [
@@ -2025,8 +2054,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              2200.0,
-              2533.0
+              3421.0,
+              3940.0
             ],
             "cells_text": [
               "valve_alignment",
@@ -2072,44 +2101,39 @@
             ],
             "cells_token_ids": [
               [
-                85
-              ],
-              [
-                80,
-                86,
-                94
-              ],
-              [
-                87,
                 88
               ],
               [
+                84,
                 89,
-                84
+                97
               ],
               [
-                90
-              ],
-              [
+                90,
                 91
               ],
               [
-                92
+                92,
+                87
               ],
               [
-                81,
-                93,
+                93
+              ],
+              [
+                94
+              ],
+              [
                 95
+              ],
+              [
+                85,
+                96,
+                98
               ]
             ],
             "row_token_ids": [
-              80,
-              81,
-              82,
-              83,
               84,
               85,
-              86,
               87,
               88,
               89,
@@ -2118,7 +2142,10 @@
               92,
               93,
               94,
-              95
+              95,
+              96,
+              97,
+              98
             ],
             "row_text_cells": "valve_alignment | Valve alignment photo | Visual match | Image #49 | n/a | 9 | PASS | non-numeric text extraction",
             "cells_kind": [
@@ -2145,15 +2172,15 @@
           {
             "band_index": 5,
             "row_band_px": [
-              2533.0,
-              2999.0
+              3940.0,
+              4663.5
             ],
             "cells_text": [
               "leak_check",
               "Helium leak rate",
               "<= 1.0e-5",
               "Not Found",
-              "atm-cc/s",
+              "atm-ce/s",
               "10",
               "MISSING",
               "ensures missing term handling"
@@ -2168,14 +2195,15 @@
                 "leak"
               ],
               [
-                "=1.0e-5"
+                "<=",
+                "1.0e-5"
               ],
               [
                 "Not",
                 "Found"
               ],
               [
-                "atm-cc/s"
+                "atm-ce/s"
               ],
               [
                 "10"
@@ -2192,40 +2220,38 @@
             ],
             "cells_token_ids": [
               [
-                101
-              ],
-              [
-                106,
-                97,
-                98
-              ],
-              [
-                102
-              ],
-              [
-                99,
-                107
-              ],
-              [
-                103
-              ],
-              [
                 104
               ],
               [
-                105
+                110,
+                100,
+                101
               ],
               [
-                96,
-                100,
-                108,
+                105,
+                106
+              ],
+              [
+                102,
+                111
+              ],
+              [
+                107
+              ],
+              [
+                108
+              ],
+              [
                 109
+              ],
+              [
+                99,
+                103,
+                112,
+                113
               ]
             ],
             "row_token_ids": [
-              96,
-              97,
-              98,
               99,
               100,
               101,
@@ -2236,9 +2262,13 @@
               106,
               107,
               108,
-              109
+              109,
+              110,
+              111,
+              112,
+              113
             ],
-            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-cc/s | 10 | MISSING | ensures missing term handling",
+            "row_text_cells": "leak_check | Helium leak rate | <= 1.0e-5 | Not Found | atm-ce/s | 10 | MISSING | ensures missing term handling",
             "cells_kind": [
               "string",
               "string",
@@ -2276,45 +2306,45 @@
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        436.0,
-        3134.0,
-        1900.0,
-        3222.0
+        678.0,
+        4875.0,
+        2955.0,
+        5012.0
       ],
       "text": "2. Performance KPI Table",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        110,
-        111,
-        112,
-        113
+        114,
+        115,
+        116,
+        117
       ]
     },
     {
       "type": "table",
       "bbox_px": [
-        432.0,
-        3533.0,
-        2520.0,
-        4534.0
+        674.0,
+        5495.0,
+        3921.0,
+        7052.5
       ],
       "table": {
         "bbox_px": [
-          432.0,
-          3533.0,
-          2520.0,
-          4534.0
+          674.0,
+          5495.0,
+          3921.0,
+          7052.5
         ],
         "col_bounds_px": [
-          432.0,
-          950.5,
-          1174.0,
-          1427.5,
-          1613.5,
-          1842.5,
-          2118.5,
-          2520.0
+          674.0,
+          1478.0,
+          1826.5,
+          2220.5,
+          2510.0,
+          2865.5,
+          3295.0,
+          3921.0
         ],
         "header_cells": [
           "KPI",
@@ -2329,12 +2359,12 @@
           {
             "band_index": 0,
             "row_band_px": [
-              3533.0,
-              3666.5
+              5495.0,
+              5703.0
             ],
             "cells_text": [
               "thrust_nominal",
-              "48",
+              "438",
               "5.1",
               "5.5",
               "5.32",
@@ -2346,7 +2376,7 @@
                 "thrust_nominal"
               ],
               [
-                "48"
+                "438"
               ],
               [
                 "5.1"
@@ -2366,18 +2396,6 @@
             ],
             "cells_token_ids": [
               [
-                121
-              ],
-              [
-                122
-              ],
-              [
-                123
-              ],
-              [
-                124
-              ],
-              [
                 125
               ],
               [
@@ -2385,18 +2403,30 @@
               ],
               [
                 127
+              ],
+              [
+                128
+              ],
+              [
+                129
+              ],
+              [
+                130
+              ],
+              [
+                131
               ]
             ],
             "row_token_ids": [
-              121,
-              122,
-              123,
-              124,
               125,
               126,
-              127
+              127,
+              128,
+              129,
+              130,
+              131
             ],
-            "row_text_cells": "thrust_nominal | 48 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
+            "row_text_cells": "thrust_nominal | 438 | 5.1 | 5.5 | 5.32 | Table 3 | 0.97",
             "cells_kind": [
               "string",
               "number",
@@ -2419,15 +2449,15 @@
           {
             "band_index": 1,
             "row_band_px": [
-              3666.5,
-              3800.5
+              5703.0,
+              5911.0
             ],
             "cells_text": [
               "thrust_peak",
               "-",
               "6.2",
               "6.8",
-              "6.95",
+              "695",
               "Table 3",
               "0.91"
             ],
@@ -2436,7 +2466,7 @@
                 "thrust_peak"
               ],
               [
-                "-"
+                "\u2014"
               ],
               [
                 "6.2"
@@ -2445,7 +2475,7 @@
                 "6.8"
               ],
               [
-                "6.95"
+                "695"
               ],
               [
                 "Table3"
@@ -2456,18 +2486,6 @@
             ],
             "cells_token_ids": [
               [
-                128
-              ],
-              [
-                129
-              ],
-              [
-                130
-              ],
-              [
-                131
-              ],
-              [
                 132
               ],
               [
@@ -2475,18 +2493,30 @@
               ],
               [
                 134
+              ],
+              [
+                135
+              ],
+              [
+                136
+              ],
+              [
+                137
+              ],
+              [
+                138
               ]
             ],
             "row_token_ids": [
-              128,
-              129,
-              130,
-              131,
               132,
               133,
-              134
+              134,
+              135,
+              136,
+              137,
+              138
             ],
-            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 6.95 | Table 3 | 0.91",
+            "row_text_cells": "thrust_peak | - | 6.2 | 6.8 | 695 | Table 3 | 0.91",
             "cells_kind": [
               "string",
               "string",
@@ -2513,13 +2543,13 @@
           {
             "band_index": 2,
             "row_band_px": [
-              3800.5,
-              3938.0
+              5911.0,
+              6125.0
             ],
             "cells_text": [
               "power_draw_idle",
               "75",
-              "80",
+              "#80",
               "95",
               "104",
               "Table 4",
@@ -2533,7 +2563,7 @@
                 "75"
               ],
               [
-                "80"
+                "#80"
               ],
               [
                 "95"
@@ -2542,8 +2572,7 @@
                 "104"
               ],
               [
-                "Table",
-                "4"
+                "Table4"
               ],
               [
                 "0.77"
@@ -2551,43 +2580,41 @@
             ],
             "cells_token_ids": [
               [
-                135
-              ],
-              [
-                136
-              ],
-              [
-                137
-              ],
-              [
-                138
-              ],
-              [
                 139
               ],
               [
-                140,
+                140
+              ],
+              [
                 141
               ],
               [
                 142
+              ],
+              [
+                143
+              ],
+              [
+                144
+              ],
+              [
+                145
               ]
             ],
             "row_token_ids": [
-              135,
-              136,
-              137,
-              138,
               139,
               140,
               141,
-              142
+              142,
+              143,
+              144,
+              145
             ],
-            "row_text_cells": "power_draw_idle | 75 | 80 | 95 | 104 | Table 4 | 0.77",
+            "row_text_cells": "power_draw_idle | 75 | #80 | 95 | 104 | Table 4 | 0.77",
             "cells_kind": [
               "string",
               "number",
-              "number",
+              "string",
               "number",
               "number",
               "string",
@@ -2606,8 +2633,8 @@
           {
             "band_index": 3,
             "row_band_px": [
-              3938.0,
-              4075.0
+              6125.0,
+              6338.0
             ],
             "cells_text": [
               "power_draw_peak",
@@ -2643,15 +2670,6 @@
             ],
             "cells_token_ids": [
               [
-                143
-              ],
-              [
-                144
-              ],
-              [
-                145
-              ],
-              [
                 146
               ],
               [
@@ -2662,16 +2680,25 @@
               ],
               [
                 149
+              ],
+              [
+                150
+              ],
+              [
+                151
+              ],
+              [
+                152
               ]
             ],
             "row_token_ids": [
-              143,
-              144,
-              145,
               146,
               147,
               148,
-              149
+              149,
+              150,
+              151,
+              152
             ],
             "row_text_cells": "power_draw_peak | - | 140 | 155 | 131 | Table 4 | 0.85",
             "cells_kind": [
@@ -2700,8 +2727,8 @@
           {
             "band_index": 4,
             "row_band_px": [
-              4075.0,
-              4534.0
+              6338.0,
+              7052.5
             ],
             "cells_text": [
               "thermal_margin",
@@ -2723,7 +2750,7 @@
                 "12"
               ],
               [
-                "-"
+                "\u2014"
               ],
               [
                 "6"
@@ -2738,37 +2765,37 @@
             ],
             "cells_token_ids": [
               [
-                150
-              ],
-              [
-                151
-              ],
-              [
-                152
-              ],
-              [
                 153
               ],
               [
                 154
               ],
               [
-                155,
+                155
+              ],
+              [
                 156
               ],
               [
                 157
+              ],
+              [
+                158,
+                159
+              ],
+              [
+                160
               ]
             ],
             "row_token_ids": [
-              151,
-              152,
               154,
-              156,
+              155,
               157,
-              150,
+              159,
+              160,
               153,
-              155
+              156,
+              158
             ],
             "row_text_cells": "thermal_margin | 8 | 12 | - | 6 | Fig. 5 | 0.63",
             "cells_kind": [
@@ -2799,12 +2826,12 @@
           {
             "band_index": 4,
             "bbox_px": [
-              504.0,
-              4291.0,
-              3207.0,
-              4448.0
+              785.0,
+              6674.0,
+              4820.0,
+              6918.0
             ],
-            "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands (no min or max defined)."
+            "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands min or max defined)."
           }
         ]
       }
@@ -2813,46 +2840,49 @@
       "type": "text",
       "kind": "paragraph",
       "bbox_px": [
-        504.0,
-        4291.0,
-        3207.0,
-        4448.0
+        785.0,
+        6674.0,
+        4987.0,
+        6918.0
       ],
-      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands (no min or max defined).",
-      "line_count": 1,
-      "word_count": 18
+      "text": "Use this table to confirm multi-column parsing and comparisons against asymmetric spec bands min or max defined). (no",
+      "line_count": 2,
+      "word_count": 18,
+      "token_ids": [
+        174
+      ]
     },
     {
       "type": "text",
       "kind": "string",
       "bbox_px": [
-        436.0,
-        4670.0,
-        2485.0,
-        4758.0
+        678.0,
+        7263.0,
+        3864.0,
+        7400.0
       ],
       "text": "3. Environmental Endurance Matrix",
       "line_count": 1,
       "word_count": 4,
       "token_ids": [
-        176,
-        177,
-        178,
-        179
+        179,
+        180,
+        181,
+        182
       ]
     }
   ],
   "artifacts": {
     "tokens": [
       {
-        "x0": 1896.0,
-        "y0": 387.0,
-        "x1": 2177.0,
-        "y1": 432.0,
-        "cx": 2036.5,
-        "cy": 409.5,
-        "text": "Measured",
-        "conf": 0.96418167,
+        "x0": 1898.0,
+        "y0": 677.0,
+        "x1": 2030.0,
+        "y1": 687.0,
+        "cx": 1964.0,
+        "cy": 682.0,
+        "text": "_\u2014",
+        "conf": 0.0316069,
         "block": 1.0,
         "par": 1.0,
         "line": 1.0,
@@ -2860,14 +2890,14 @@
         "_tid": 0
       },
       {
-        "x0": 2766.0,
-        "y0": 387.0,
-        "x1": 2896.0,
-        "y1": 432.0,
-        "cx": 2831.0,
-        "cy": 409.5,
-        "text": "Data",
-        "conf": 0.96895432,
+        "x0": 2502.0,
+        "y0": 677.0,
+        "x1": 2518.0,
+        "y1": 687.0,
+        "cx": 2510.0,
+        "cy": 682.0,
+        "text": ";",
+        "conf": 0.32918259,
         "block": 1.0,
         "par": 1.0,
         "line": 1.0,
@@ -2875,2797 +2905,2826 @@
         "_tid": 1
       },
       {
-        "x0": 468.0,
-        "y0": 431.0,
-        "x1": 609.0,
-        "y1": 499.0,
-        "cx": 538.5,
-        "cy": 465.0,
-        "text": "Term",
-        "conf": 0.9543225099999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 1.0,
-        "word": 1.0,
-        "_tid": 2
-      },
-      {
-        "x0": 1050.0,
-        "y0": 436.0,
-        "x1": 1380.0,
-        "y1": 494.0,
-        "cx": 1215.0,
-        "cy": 465.0,
-        "text": "Description",
-        "conf": 0.95587334,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 1.0,
-        "word": 2.0,
-        "_tid": 3
-      },
-      {
-        "x0": 1455.0,
-        "y0": 436.0,
-        "x1": 1828.0,
-        "y1": 494.0,
-        "cx": 1641.5,
-        "cy": 465.0,
-        "text": "Requirement",
-        "conf": 0.95587334,
-        "block": 8.0,
+        "x0": 2950.0,
+        "y0": 601.0,
+        "x1": 3387.0,
+        "y1": 672.0,
+        "cx": 3168.5,
+        "cy": 636.5,
+        "text": "Measured",
+        "conf": 0.96015381,
+        "block": 1.0,
         "par": 1.0,
         "line": 1.0,
         "word": 3.0,
-        "_tid": 4
+        "_tid": 2
       },
       {
-        "x0": 2253.0,
-        "y0": 431.0,
-        "x1": 2400.0,
-        "y1": 499.0,
-        "cx": 2326.5,
-        "cy": 465.0,
-        "text": "Units",
-        "conf": 0.9686709600000001,
-        "block": 8.0,
+        "x0": 3631.0,
+        "y0": 677.0,
+        "x1": 3646.0,
+        "y1": 687.0,
+        "cx": 3638.5,
+        "cy": 682.0,
+        "text": ";",
+        "conf": 0.41043990999999996,
+        "block": 1.0,
         "par": 1.0,
         "line": 1.0,
         "word": 4.0,
-        "_tid": 5
+        "_tid": 3
       },
       {
-        "x0": 2553.0,
-        "y0": 436.0,
-        "x1": 2694.0,
-        "y1": 494.0,
-        "cx": 2623.5,
-        "cy": 465.0,
-        "text": "Page",
-        "conf": 0.96652702,
-        "block": 8.0,
+        "x0": 4301.0,
+        "y0": 601.0,
+        "x1": 4505.0,
+        "y1": 672.0,
+        "cx": 4403.0,
+        "cy": 636.5,
+        "text": "Data",
+        "conf": 0.9680288699999999,
+        "block": 1.0,
         "par": 1.0,
         "line": 1.0,
         "word": 5.0,
-        "_tid": 6
+        "_tid": 4
       },
       {
-        "x0": 2903.0,
-        "y0": 485.0,
-        "x1": 2913.0,
-        "y1": 491.0,
-        "cx": 2908.0,
-        "cy": 488.0,
-        "text": ";",
-        "conf": 0.0,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 1.0,
-        "word": 6.0,
-        "_tid": 7
-      },
-      {
-        "x0": 3132.0,
-        "y0": 436.0,
-        "x1": 3295.0,
-        "y1": 481.0,
-        "cx": 3213.5,
-        "cy": 458.5,
-        "text": "Notes",
-        "conf": 0.96641556,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 1.0,
-        "word": 7.0,
-        "_tid": 8
-      },
-      {
-        "x0": 1893.0,
-        "y0": 485.0,
-        "x1": 2053.0,
-        "y1": 530.0,
-        "cx": 1973.0,
-        "cy": 507.5,
-        "text": "Value",
-        "conf": 0.96349693,
-        "block": 8.0,
+        "x0": 729.0,
+        "y0": 673.0,
+        "x1": 947.0,
+        "y1": 773.0,
+        "cx": 838.0,
+        "cy": 723.0,
+        "text": "Term",
+        "conf": 0.95408653,
+        "block": 1.0,
         "par": 1.0,
         "line": 2.0,
         "word": 1.0,
-        "_tid": 9
+        "_tid": 5
       },
       {
-        "x0": 2766.0,
-        "y0": 485.0,
-        "x1": 2971.0,
-        "y1": 543.0,
-        "cx": 2868.5,
-        "cy": 514.0,
-        "text": "Quality",
-        "conf": 0.96742043,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 677.0,
+        "x1": 2147.0,
+        "y1": 769.0,
+        "cx": 1890.0,
+        "cy": 723.0,
+        "text": "Description",
+        "conf": 0.9143602,
+        "block": 1.0,
         "par": 1.0,
         "line": 2.0,
         "word": 2.0,
+        "_tid": 6
+      },
+      {
+        "x0": 2264.0,
+        "y0": 677.0,
+        "x1": 2843.0,
+        "y1": 769.0,
+        "cx": 2553.5,
+        "cy": 723.0,
+        "text": "Requirement",
+        "conf": 0.9562057500000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 3.0,
+        "_tid": 7
+      },
+      {
+        "x0": 3504.0,
+        "y0": 677.0,
+        "x1": 3732.0,
+        "y1": 748.0,
+        "cx": 3618.0,
+        "cy": 712.5,
+        "text": "Units",
+        "conf": 0.96448586,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 4.0,
+        "_tid": 8
+      },
+      {
+        "x0": 3971.0,
+        "y0": 677.0,
+        "x1": 4190.0,
+        "y1": 769.0,
+        "cx": 4080.5,
+        "cy": 723.0,
+        "text": "Page",
+        "conf": 0.9583496100000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 5.0,
+        "_tid": 9
+      },
+      {
+        "x0": 4871.0,
+        "y0": 677.0,
+        "x1": 5125.0,
+        "y1": 748.0,
+        "cx": 4998.0,
+        "cy": 712.5,
+        "text": "Notes",
+        "conf": 0.96543892,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 2.0,
+        "word": 6.0,
         "_tid": 10
       },
       {
-        "x0": 1047.0,
-        "y0": 618.0,
-        "x1": 1256.0,
-        "y1": 685.0,
-        "cx": 1151.5,
-        "cy": 651.5,
-        "text": "Steady-",
-        "conf": 0.92322914,
-        "block": 8.0,
+        "x0": 2945.0,
+        "y0": 753.0,
+        "x1": 3193.0,
+        "y1": 824.0,
+        "cx": 3069.0,
+        "cy": 788.5,
+        "text": "Value",
+        "conf": 0.96111412,
+        "block": 1.0,
         "par": 1.0,
         "line": 3.0,
         "word": 1.0,
         "_tid": 11
       },
       {
-        "x0": 3125.0,
-        "y0": 622.0,
-        "x1": 3328.0,
-        "y1": 681.0,
-        "cx": 3226.5,
-        "cy": 651.5,
-        "text": "flagged",
-        "conf": 0.9386687499999999,
-        "block": 8.0,
+        "x0": 4301.0,
+        "y0": 753.0,
+        "x1": 4622.0,
+        "y1": 845.0,
+        "cx": 4461.5,
+        "cy": 799.0,
+        "text": "Quality",
+        "conf": 0.9610361500000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 3.0,
         "word": 2.0,
         "_tid": 12
       },
       {
-        "x0": 3347.0,
-        "y0": 622.0,
-        "x1": 3439.0,
-        "y1": 668.0,
-        "cx": 3393.0,
-        "cy": 645.0,
-        "text": "low",
-        "conf": 0.96832001,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 963.0,
+        "x1": 1954.0,
+        "y1": 1062.0,
+        "cx": 1791.0,
+        "cy": 1012.5,
+        "text": "Steady-",
+        "conf": 0.74138565,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 3.0,
+        "line": 4.0,
+        "word": 1.0,
         "_tid": 13
       },
       {
-        "x0": 1047.0,
-        "y0": 713.0,
-        "x1": 1177.0,
-        "y1": 779.0,
-        "cx": 1112.0,
-        "cy": 746.0,
-        "text": "state",
-        "conf": 0.96363045,
-        "block": 8.0,
+        "x0": 4860.0,
+        "y0": 967.0,
+        "x1": 5176.0,
+        "y1": 1058.0,
+        "cx": 5018.0,
+        "cy": 1012.5,
+        "text": "flagged",
+        "conf": 0.96729767,
+        "block": 1.0,
         "par": 1.0,
         "line": 4.0,
-        "word": 1.0,
+        "word": 2.0,
         "_tid": 14
       },
       {
-        "x0": 1452.0,
-        "y0": 769.0,
-        "x1": 1619.0,
-        "y1": 815.0,
-        "cx": 1535.5,
-        "cy": 792.0,
-        "text": "43",
-        "conf": 0.95464142,
-        "block": 8.0,
+        "x0": 5206.0,
+        "y0": 967.0,
+        "x1": 5348.0,
+        "y1": 1038.0,
+        "cx": 5277.0,
+        "cy": 1002.5,
+        "text": "low",
+        "conf": 0.96539146,
+        "block": 1.0,
         "par": 1.0,
         "line": 4.0,
-        "word": 2.0,
-        "rehocr_text": "43",
-        "rehocr_conf": 0.95464142,
-        "rehocr_tag": "thr160:psm7",
+        "word": 3.0,
         "_tid": 15
       },
       {
-        "x0": 1896.0,
-        "y0": 769.0,
-        "x1": 2011.0,
-        "y1": 815.0,
-        "cx": 1953.5,
-        "cy": 792.0,
-        "text": "39.4",
-        "conf": 0.8684450499999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 4.0,
-        "word": 3.0,
-        "_tid": 16
-      },
-      {
-        "x0": 2550.0,
-        "y0": 769.0,
-        "x1": 2582.0,
-        "y1": 815.0,
-        "cx": 2566.0,
-        "cy": 792.0,
-        "text": "6",
-        "conf": 0.9282650800000001,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 4.0,
-        "word": 4.0,
-        "rehocr_text": "6",
-        "rehocr_conf": 0.9282650800000001,
-        "rehocr_tag": "raw:psm8",
-        "_tid": 17
-      },
-      {
-        "x0": 2766.0,
-        "y0": 769.0,
-        "x1": 2903.0,
-        "y1": 815.0,
-        "cx": 2834.5,
-        "cy": 792.0,
-        "text": "Low",
-        "conf": 0.95109375,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 4.0,
-        "word": 5.0,
-        "_tid": 18
-      },
-      {
-        "x0": 3128.0,
-        "y0": 717.0,
-        "x1": 3213.0,
-        "y1": 762.0,
-        "cx": 3170.5,
-        "cy": 739.5,
-        "text": "but",
-        "conf": 0.96948509,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 4.0,
-        "word": 6.0,
-        "_tid": 19
-      },
-      {
-        "x0": 3233.0,
-        "y0": 717.0,
-        "x1": 3390.0,
-        "y1": 762.0,
-        "cx": 3311.5,
-        "cy": 739.5,
-        "text": "inside",
-        "conf": 0.95318031,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 4.0,
-        "word": 7.0,
-        "_tid": 20
-      },
-      {
-        "x0": 1537.0,
-        "y0": 779.0,
-        "x1": 1570.0,
-        "y1": 815.0,
-        "cx": 1553.5,
-        "cy": 797.0,
-        "text": "\u00b1 3",
-        "conf": 0.93832504,
-        "block": 8.0,
+        "x0": 734.0,
+        "y0": 1195.0,
+        "x1": 744.0,
+        "y1": 1206.0,
+        "cx": 739.0,
+        "cy": 1200.5,
+        "text": "",
+        "conf": 0.7587145200000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 5.0,
         "word": 1.0,
-        "rehocr_rhs_text": "3",
-        "rehocr_rhs_conf": 0.90809601,
-        "rehocr_rhs_tag": "range_rhs:thr160:psm10",
+        "rehocr_text": "I",
+        "rehocr_conf": 0.7587145200000001,
+        "rehocr_tag": "scaled:psm7",
+        "_tid": 16
+      },
+      {
+        "x0": 1628.0,
+        "y0": 1110.0,
+        "x1": 1832.0,
+        "y1": 1210.0,
+        "cx": 1730.0,
+        "cy": 1160.0,
+        "text": "state",
+        "conf": 0.9665375500000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 2.0,
+        "_tid": 17
+      },
+      {
+        "x0": 2259.0,
+        "y0": 1195.0,
+        "x1": 2518.0,
+        "y1": 1267.0,
+        "cx": 2388.5,
+        "cy": 1231.0,
+        "text": "1344",
+        "conf": 0.6047052399999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 3.0,
+        "_tid": 18
+      },
+      {
+        "x0": 2950.0,
+        "y0": 1195.0,
+        "x1": 3128.0,
+        "y1": 1267.0,
+        "cx": 3039.0,
+        "cy": 1231.0,
+        "text": "30.4",
+        "conf": 0.62970005,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 4.0,
+        "_tid": 19
+      },
+      {
+        "x0": 3966.0,
+        "y0": 1195.0,
+        "x1": 4016.0,
+        "y1": 1267.0,
+        "cx": 3991.0,
+        "cy": 1231.0,
+        "text": "6",
+        "conf": 0.8447311399999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 5.0,
+        "rehocr_text": "6",
+        "rehocr_conf": 0.8447311399999999,
+        "rehocr_tag": "raw:psm8",
+        "_tid": 20
+      },
+      {
+        "x0": 4301.0,
+        "y0": 1195.0,
+        "x1": 4512.0,
+        "y1": 1267.0,
+        "cx": 4406.5,
+        "cy": 1231.0,
+        "text": "Low",
+        "conf": 0.7243344899999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 5.0,
+        "word": 6.0,
         "_tid": 21
       },
       {
-        "x0": 472.0,
-        "y0": 782.0,
-        "x1": 543.0,
-        "y1": 828.0,
-        "cx": 507.5,
-        "cy": 805.0,
-        "text": "isp",
-        "conf": 0.96314774,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 1114.0,
+        "x1": 4998.0,
+        "y1": 1185.0,
+        "cx": 4932.0,
+        "cy": 1149.5,
+        "text": "but",
+        "conf": 0.9682171599999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 6.0,
-        "word": 1.0,
-        "rehocr_text": "isp",
-        "rehocr_conf": 0.96314774,
-        "rehocr_tag": "raw:psm7",
-        "rehocr_cell_text": "isp",
-        "rehocr_cell_conf": 0.96314774,
-        "rehocr_cell_tag": "raw:psm7",
-        "rehocr_scope": "cell",
-        "rehocr_cell_key": "432.0,579.5,985.4,1010.5",
+        "line": 5.0,
+        "word": 7.0,
         "_tid": 22
       },
       {
-        "x0": 1047.0,
-        "y0": 811.0,
-        "x1": 1253.0,
-        "y1": 877.0,
-        "cx": 1150.0,
-        "cy": 844.0,
-        "text": "specific",
-        "conf": 0.96831551,
-        "block": 8.0,
+        "x0": 5028.0,
+        "y0": 1114.0,
+        "x1": 5272.0,
+        "y1": 1185.0,
+        "cx": 5150.0,
+        "cy": 1149.5,
+        "text": "inside",
+        "conf": 0.9492021900000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 6.0,
-        "word": 2.0,
+        "line": 5.0,
+        "word": 8.0,
         "_tid": 23
       },
       {
-        "x0": 2249.0,
-        "y0": 778.0,
-        "x1": 2344.0,
-        "y1": 877.0,
-        "cx": 2296.5,
-        "cy": 827.5,
-        "text": "sec",
-        "conf": 0.79529762,
-        "block": 8.0,
+        "x0": 2391.0,
+        "y0": 1211.0,
+        "x1": 2441.0,
+        "y1": 1267.0,
+        "cx": 2416.0,
+        "cy": 1239.0,
+        "text": "\u00b1 3",
+        "conf": 0.96963448,
+        "block": 1.0,
         "par": 1.0,
         "line": 6.0,
-        "word": 3.0,
-        "rehocr_text": "sec",
-        "rehocr_conf": 0.79529762,
-        "rehocr_tag": "auto:psm8",
+        "word": 1.0,
+        "rehocr_rhs_text": "3",
+        "rehocr_rhs_conf": 0.86304054,
+        "rehocr_rhs_tag": "range_rhs:auto:psm10",
         "_tid": 24
       },
       {
-        "x0": 3128.0,
-        "y0": 811.0,
-        "x1": 3380.0,
-        "y1": 877.0,
-        "cx": 3254.0,
-        "cy": 844.0,
-        "text": "tolerance",
-        "conf": 0.96107651,
-        "block": 8.0,
+        "x0": 3061.0,
+        "y0": 1256.0,
+        "x1": 3072.0,
+        "y1": 1267.0,
+        "cx": 3066.5,
+        "cy": 1261.5,
+        "text": ",",
+        "conf": 0.0,
+        "block": 1.0,
         "par": 1.0,
         "line": 6.0,
-        "word": 4.0,
+        "word": 2.0,
         "_tid": 25
       },
       {
-        "x0": 1050.0,
-        "y0": 912.0,
-        "x1": 1256.0,
-        "y1": 979.0,
-        "cx": 1153.0,
-        "cy": 945.5,
-        "text": "impulse",
-        "conf": 0.9640263400000001,
-        "block": 8.0,
+        "x0": 734.0,
+        "y0": 1216.0,
+        "x1": 843.0,
+        "y1": 1287.0,
+        "cx": 788.5,
+        "cy": 1251.5,
+        "text": "SP",
+        "conf": 0.77242813,
+        "block": 1.0,
         "par": 1.0,
         "line": 7.0,
         "word": 1.0,
         "_tid": 26
       },
       {
-        "x0": 3125.0,
-        "y0": 916.0,
-        "x1": 3334.0,
-        "y1": 962.0,
-        "cx": 3229.5,
-        "cy": 939.0,
-        "text": "window",
-        "conf": 0.95527161,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 1263.0,
+        "x1": 1949.0,
+        "y1": 1362.0,
+        "cx": 1788.5,
+        "cy": 1312.5,
+        "text": "specific",
+        "conf": 0.9634738199999999,
+        "block": 1.0,
         "par": 1.0,
         "line": 7.0,
         "word": 2.0,
         "_tid": 27
       },
       {
-        "x0": 3128.0,
-        "y0": 1050.0,
-        "x1": 3275.0,
-        "y1": 1096.0,
-        "cx": 3201.5,
-        "cy": 1073.0,
-        "text": "value",
-        "conf": 0.9624281299999999,
-        "block": 8.0,
+        "x0": 3498.0,
+        "y0": 1212.0,
+        "x1": 3644.0,
+        "y1": 1362.0,
+        "cx": 3571.0,
+        "cy": 1287.0,
+        "text": "Sec",
+        "conf": 0.5487379099999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 8.0,
-        "word": 1.0,
+        "line": 7.0,
+        "word": 3.0,
+        "rehocr_text": "Sec",
+        "rehocr_conf": 0.5487379099999999,
+        "rehocr_tag": "auto:psm7",
         "_tid": 28
       },
       {
-        "x0": 3292.0,
-        "y0": 1050.0,
-        "x1": 3458.0,
-        "y1": 1096.0,
-        "cx": 3375.0,
-        "cy": 1073.0,
-        "text": "above",
-        "conf": 0.9643441799999999,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 1263.0,
+        "x1": 5257.0,
+        "y1": 1362.0,
+        "cx": 5061.5,
+        "cy": 1312.5,
+        "text": "tolerance",
+        "conf": 0.96646355,
+        "block": 1.0,
         "par": 1.0,
-        "line": 8.0,
-        "word": 2.0,
+        "line": 7.0,
+        "word": 4.0,
         "_tid": 29
       },
       {
-        "x0": 3128.0,
-        "y0": 1148.0,
-        "x1": 3468.0,
-        "y1": 1207.0,
-        "cx": 3298.0,
-        "cy": 1177.5,
-        "text": "requirement,",
-        "conf": 0.9638878599999999,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 1420.0,
+        "x1": 1954.0,
+        "y1": 1520.0,
+        "cx": 1793.5,
+        "cy": 1470.0,
+        "text": "impulse",
+        "conf": 0.96322197,
+        "block": 1.0,
         "par": 1.0,
-        "line": 9.0,
+        "line": 8.0,
         "word": 1.0,
         "_tid": 30
       },
       {
-        "x0": 468.0,
-        "y0": 1197.0,
-        "x1": 978.0,
-        "y1": 1256.0,
-        "cx": 723.0,
-        "cy": 1226.5,
-        "text": "chamber_pressure",
-        "conf": 0.9212726600000001,
-        "block": 8.0,
+        "x0": 4860.0,
+        "y0": 1424.0,
+        "x1": 5186.0,
+        "y1": 1495.0,
+        "cx": 5023.0,
+        "cy": 1459.5,
+        "text": "window",
+        "conf": 0.96084778,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 1.0,
+        "line": 8.0,
+        "word": 2.0,
         "_tid": 31
       },
       {
-        "x0": 1050.0,
-        "y0": 1194.0,
-        "x1": 1197.0,
-        "y1": 1239.0,
-        "cx": 1123.5,
-        "cy": 1216.5,
-        "text": "Mean",
-        "conf": 0.8994402300000001,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 1632.0,
+        "x1": 5094.0,
+        "y1": 1704.0,
+        "cx": 4980.0,
+        "cy": 1668.0,
+        "text": "value",
+        "conf": 0.96224266,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 2.0,
+        "line": 9.0,
+        "word": 1.0,
         "_tid": 32
       },
       {
-        "x0": 1220.0,
-        "y0": 1194.0,
-        "x1": 1308.0,
-        "y1": 1256.0,
-        "cx": 1264.0,
-        "cy": 1225.0,
-        "text": "P,,",
-        "conf": 0.7130062100000001,
-        "block": 8.0,
+        "x0": 5120.0,
+        "y0": 1632.0,
+        "x1": 5379.0,
+        "y1": 1704.0,
+        "cx": 5249.5,
+        "cy": 1668.0,
+        "text": "above",
+        "conf": 0.9671217300000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 3.0,
+        "line": 9.0,
+        "word": 2.0,
         "_tid": 33
       },
       {
-        "x0": 1458.0,
-        "y0": 1197.0,
-        "x1": 1553.0,
-        "y1": 1243.0,
-        "cx": 1505.5,
-        "cy": 1220.0,
-        "text": "185",
-        "conf": 0.9354173299999999,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 1785.0,
+        "x1": 5394.0,
+        "y1": 1876.0,
+        "cx": 5130.0,
+        "cy": 1830.5,
+        "text": "requirement,",
+        "conf": 0.9625767500000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 10.0,
-        "word": 4.0,
+        "word": 1.0,
         "_tid": 34
       },
       {
-        "x0": 1573.0,
-        "y0": 1207.0,
-        "x1": 1602.0,
-        "y1": 1243.0,
-        "cx": 1587.5,
-        "cy": 1225.0,
-        "text": "+",
-        "conf": 0.89505157,
-        "block": 8.0,
+        "x0": 729.0,
+        "y0": 1861.0,
+        "x1": 1522.0,
+        "y1": 1953.0,
+        "cx": 1125.5,
+        "cy": 1907.0,
+        "text": "chamber_pressure",
+        "conf": 0.91953751,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 5.0,
+        "line": 11.0,
+        "word": 1.0,
         "_tid": 35
       },
       {
-        "x0": 1628.0,
-        "y0": 1197.0,
-        "x1": 1687.0,
-        "y1": 1243.0,
-        "cx": 1657.5,
-        "cy": 1220.0,
-        "text": "10",
-        "conf": 0.89505157,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 1856.0,
+        "x1": 1862.0,
+        "y1": 1927.0,
+        "cx": 1747.5,
+        "cy": 1891.5,
+        "text": "Mean",
+        "conf": 0.6616033899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 6.0,
+        "line": 11.0,
+        "word": 2.0,
         "_tid": 36
       },
       {
-        "x0": 1896.0,
-        "y0": 1197.0,
-        "x1": 1988.0,
-        "y1": 1243.0,
-        "cx": 1942.0,
-        "cy": 1220.0,
-        "text": "201",
-        "conf": 0.9655393999999999,
-        "block": 8.0,
+        "x0": 1898.0,
+        "y0": 1856.0,
+        "x1": 2035.0,
+        "y1": 1953.0,
+        "cx": 1966.5,
+        "cy": 1904.5,
+        "text": "P,,",
+        "conf": 0.6616033899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 7.0,
+        "line": 11.0,
+        "word": 3.0,
         "_tid": 37
       },
       {
-        "x0": 2249.0,
-        "y0": 1193.0,
-        "x1": 2360.0,
-        "y1": 1260.0,
-        "cx": 2304.5,
-        "cy": 1226.5,
-        "text": "psia",
-        "conf": 0.92382332,
-        "block": 8.0,
+        "x0": 2269.0,
+        "y0": 1861.0,
+        "x1": 2416.0,
+        "y1": 1932.0,
+        "cx": 2342.5,
+        "cy": 1896.5,
+        "text": "185",
+        "conf": 0.9517763499999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 8.0,
+        "line": 11.0,
+        "word": 4.0,
         "_tid": 38
       },
       {
-        "x0": 2550.0,
-        "y0": 1197.0,
-        "x1": 2583.0,
-        "y1": 1243.0,
-        "cx": 2566.5,
-        "cy": 1220.0,
-        "text": "6",
-        "conf": 0.96900612,
-        "block": 8.0,
+        "x0": 2447.0,
+        "y0": 1876.0,
+        "x1": 2492.0,
+        "y1": 1932.0,
+        "cx": 2469.5,
+        "cy": 1904.0,
+        "text": "+",
+        "conf": 0.94788086,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 9.0,
+        "line": 11.0,
+        "word": 5.0,
         "_tid": 39
       },
       {
-        "x0": 2762.0,
-        "y0": 1197.0,
-        "x1": 2945.0,
-        "y1": 1243.0,
-        "cx": 2853.5,
-        "cy": 1220.0,
-        "text": "WARN",
-        "conf": 0.96662552,
-        "block": 8.0,
+        "x0": 2533.0,
+        "y0": 1861.0,
+        "x1": 2624.0,
+        "y1": 1932.0,
+        "cx": 2578.5,
+        "cy": 1896.5,
+        "text": "10",
+        "conf": 0.9513884699999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 10.0,
-        "word": 10.0,
+        "line": 11.0,
+        "word": 6.0,
         "_tid": 40
       },
       {
-        "x0": 3125.0,
-        "y0": 1246.0,
-        "x1": 3285.0,
-        "y1": 1292.0,
-        "cx": 3205.0,
-        "cy": 1269.0,
-        "text": "watch",
-        "conf": 0.9669371,
-        "block": 8.0,
+        "x0": 2950.0,
+        "y0": 1861.0,
+        "x1": 3092.0,
+        "y1": 1932.0,
+        "cx": 3021.0,
+        "cy": 1896.5,
+        "text": "201",
+        "conf": 0.96620163,
+        "block": 1.0,
         "par": 1.0,
         "line": 11.0,
-        "word": 1.0,
+        "word": 7.0,
         "_tid": 41
       },
       {
-        "x0": 3305.0,
-        "y0": 1246.0,
-        "x1": 3377.0,
-        "y1": 1292.0,
-        "cx": 3341.0,
-        "cy": 1269.0,
-        "text": "for",
-        "conf": 0.9611557000000001,
-        "block": 8.0,
+        "x0": 3498.0,
+        "y0": 1857.0,
+        "x1": 3669.0,
+        "y1": 1957.0,
+        "cx": 3583.5,
+        "cy": 1907.0,
+        "text": "psia",
+        "conf": 0.9255931900000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 11.0,
-        "word": 2.0,
+        "word": 8.0,
         "_tid": 42
       },
       {
-        "x0": 3128.0,
-        "y0": 1344.0,
-        "x1": 3230.0,
-        "y1": 1390.0,
-        "cx": 3179.0,
-        "cy": 1367.0,
-        "text": "drift",
-        "conf": 0.96220856,
-        "block": 8.0,
+        "x0": 3966.0,
+        "y0": 1861.0,
+        "x1": 4017.0,
+        "y1": 1932.0,
+        "cx": 3991.5,
+        "cy": 1896.5,
+        "text": "6",
+        "conf": 0.96830139,
+        "block": 1.0,
         "par": 1.0,
-        "line": 12.0,
-        "word": 1.0,
+        "line": 11.0,
+        "word": 9.0,
         "_tid": 43
       },
       {
-        "x0": 3239.0,
-        "y0": 1477.0,
-        "x1": 3285.0,
-        "y1": 1545.0,
-        "cx": 3262.0,
-        "cy": 1511.0,
-        "text": "to",
-        "conf": 0.9675772899999999,
-        "block": 8.0,
+        "x0": 4296.0,
+        "y0": 1861.0,
+        "x1": 4581.0,
+        "y1": 1932.0,
+        "cx": 4438.5,
+        "cy": 1896.5,
+        "text": "WARN",
+        "conf": 0.9648333,
+        "block": 1.0,
         "par": 1.0,
-        "line": 13.0,
-        "word": 1.0,
+        "line": 11.0,
+        "word": 10.0,
         "_tid": 44
       },
       {
-        "x0": 3393.0,
-        "y0": 1484.0,
-        "x1": 3409.0,
-        "y1": 1527.0,
-        "cx": 3401.0,
-        "cy": 1505.5,
-        "text": "test",
-        "conf": 0.9675772899999999,
-        "block": 8.0,
+        "x0": 4860.0,
+        "y0": 1937.0,
+        "x1": 5109.0,
+        "y1": 2009.0,
+        "cx": 4984.5,
+        "cy": 1973.0,
+        "text": "watch",
+        "conf": 0.9675677500000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 13.0,
-        "word": 2.0,
+        "line": 12.0,
+        "word": 1.0,
         "_tid": 45
       },
       {
-        "x0": 766.0,
-        "y0": 1579.0,
-        "x1": 776.0,
-        "y1": 1586.0,
-        "cx": 771.0,
-        "cy": 1582.5,
-        "text": "",
-        "conf": 0.49445152,
-        "block": 8.0,
+        "x0": 5140.0,
+        "y0": 1937.0,
+        "x1": 5252.0,
+        "y1": 2009.0,
+        "cx": 5196.0,
+        "cy": 1973.0,
+        "text": "for",
+        "conf": 0.9675677500000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 14.0,
-        "word": 1.0,
-        "rehocr_text": "on",
-        "rehocr_conf": 0.49445152,
-        "rehocr_tag": "scaled:psm7",
+        "line": 12.0,
+        "word": 2.0,
         "_tid": 46
       },
       {
-        "x0": 1050.0,
-        "y0": 1523.0,
-        "x1": 1246.0,
-        "y1": 1590.0,
-        "cx": 1148.0,
-        "cy": 1556.5,
-        "text": "Hot-fire",
-        "conf": 0.92588898,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2090.0,
+        "x1": 5023.0,
+        "y1": 2161.0,
+        "cx": 4944.5,
+        "cy": 2125.5,
+        "text": "drift",
+        "conf": 0.9623931899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 14.0,
-        "word": 2.0,
+        "line": 13.0,
+        "word": 1.0,
         "_tid": 47
       },
       {
-        "x0": 1896.0,
-        "y0": 1527.0,
-        "x1": 1926.0,
-        "y1": 1573.0,
-        "cx": 1911.0,
-        "cy": 1550.0,
-        "text": "0",
-        "conf": 0.7478651399999999,
-        "block": 8.0,
+        "x0": 5043.0,
+        "y0": 2308.0,
+        "x1": 5125.0,
+        "y1": 2374.0,
+        "cx": 5084.0,
+        "cy": 2341.0,
+        "text": "to",
+        "conf": 0.9652520800000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 14.0,
-        "word": 3.0,
+        "word": 1.0,
         "_tid": 48
       },
       {
-        "x0": 1949.0,
-        "y0": 1527.0,
-        "x1": 2050.0,
-        "y1": 1586.0,
-        "cx": 1999.5,
-        "cy": 1556.5,
-        "text": "(not",
-        "conf": 0.9649751999999999,
-        "block": 8.0,
+        "x0": 5150.0,
+        "y0": 2308.0,
+        "x1": 5303.0,
+        "y1": 2374.0,
+        "cx": 5226.5,
+        "cy": 2341.0,
+        "text": "test",
+        "conf": 0.95684547,
+        "block": 1.0,
         "par": 1.0,
         "line": 14.0,
-        "word": 4.0,
+        "word": 2.0,
         "_tid": 49
       },
       {
-        "x0": 3128.0,
-        "y0": 1494.0,
-        "x1": 3226.0,
-        "y1": 1527.0,
-        "cx": 3177.0,
-        "cy": 1510.5,
-        "text": "use",
-        "conf": 0.63364922,
-        "block": 8.0,
+        "x0": 1191.0,
+        "y0": 2456.0,
+        "x1": 1207.0,
+        "y1": 2466.0,
+        "cx": 1199.0,
+        "cy": 2461.0,
+        "text": "",
+        "conf": 0.70387428,
+        "block": 1.0,
         "par": 1.0,
-        "line": 14.0,
-        "word": 5.0,
+        "line": 15.0,
+        "word": 1.0,
+        "rehocr_text": "nm",
+        "rehocr_conf": 0.70387428,
+        "rehocr_tag": "scaled:psm8",
         "_tid": 50
       },
       {
-        "x0": 3331.0,
-        "y0": 1494.0,
-        "x1": 3393.0,
-        "y1": 1527.0,
-        "cx": 3362.0,
-        "cy": 1510.5,
-        "text": "rors",
-        "conf": 0.12637969999999998,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 2370.0,
+        "x1": 1938.0,
+        "y1": 2470.0,
+        "cx": 1785.5,
+        "cy": 2420.0,
+        "text": "Hot-fire",
+        "conf": 0.90483795,
+        "block": 1.0,
         "par": 1.0,
-        "line": 14.0,
-        "word": 6.0,
+        "line": 15.0,
+        "word": 2.0,
         "_tid": 51
       },
       {
-        "x0": 468.0,
-        "y0": 1579.0,
-        "x1": 844.0,
-        "y1": 1625.0,
-        "cx": 656.0,
-        "cy": 1602.0,
-        "text": "burn_duration",
-        "conf": 0.91500244,
-        "block": 8.0,
+        "x0": 2950.0,
+        "y0": 2374.0,
+        "x1": 2995.0,
+        "y1": 2446.0,
+        "cx": 2972.5,
+        "cy": 2410.0,
+        "text": "0",
+        "conf": 0.88572807,
+        "block": 1.0,
         "par": 1.0,
         "line": 15.0,
-        "word": 1.0,
+        "word": 3.0,
         "_tid": 52
       },
       {
-        "x0": 1452.0,
-        "y0": 1575.0,
-        "x1": 1622.0,
-        "y1": 1642.0,
-        "cx": 1537.0,
-        "cy": 1608.5,
-        "text": "42-48",
-        "conf": 0.95543602,
-        "block": 8.0,
+        "x0": 3031.0,
+        "y0": 2374.0,
+        "x1": 3188.0,
+        "y1": 2466.0,
+        "cx": 3109.5,
+        "cy": 2420.0,
+        "text": "(not",
+        "conf": 0.9666628300000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 15.0,
-        "word": 2.0,
-        "rehocr_text": "42-48",
-        "rehocr_conf": 0.95543602,
-        "rehocr_tag": "thr160:psm8",
+        "word": 4.0,
         "_tid": 53
       },
       {
-        "x0": 2249.0,
-        "y0": 1592.0,
-        "x1": 2279.0,
-        "y1": 1625.0,
-        "cx": 2264.0,
-        "cy": 1608.5,
-        "text": "s",
-        "conf": 0.73182388,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 15.0,
-        "word": 3.0,
-        "rehocr_text": "a",
-        "rehocr_conf": 0.1060347,
-        "rehocr_tag": "scaled:psm7",
-        "rehocr_cell_text": "a",
-        "rehocr_cell_conf": 0.1060347,
-        "rehocr_cell_tag": "scaled:psm7",
-        "rehocr_scope": "cell",
-        "rehocr_cell_key": "2215.0,1438.5,2476.5,1768.5",
-        "_tid": 54
-      },
-      {
-        "x0": 2550.0,
-        "y0": 1579.0,
-        "x1": 2583.0,
-        "y1": 1625.0,
-        "cx": 2566.5,
-        "cy": 1602.0,
-        "text": "6",
-        "conf": 0.9685538499999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 15.0,
-        "word": 4.0,
-        "_tid": 55
-      },
-      {
-        "x0": 2766.0,
-        "y0": 1579.0,
-        "x1": 3056.0,
-        "y1": 1625.0,
-        "cx": 2911.0,
-        "cy": 1602.0,
-        "text": "NOT_RUN",
-        "conf": 0.9167231800000001,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2324.0,
+        "x1": 5277.0,
+        "y1": 2374.0,
+        "cx": 5071.5,
+        "cy": 2349.0,
+        "text": "usewoess",
+        "conf": 0.0,
+        "block": 1.0,
         "par": 1.0,
         "line": 15.0,
         "word": 5.0,
-        "_tid": 56
+        "_tid": 54
       },
       {
-        "x0": 3057.0,
-        "y0": 1575.0,
-        "x1": 3086.0,
-        "y1": 1642.0,
-        "cx": 3071.5,
-        "cy": 1608.5,
-        "text": "_",
-        "conf": 0.61253391,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 15.0,
-        "word": 6.0,
-        "_tid": 57
-      },
-      {
-        "x0": 3128.0,
-        "y0": 1579.0,
-        "x1": 3305.0,
-        "y1": 1625.0,
-        "cx": 3216.5,
-        "cy": 1602.0,
-        "text": "textual",
-        "conf": 0.93859886,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 15.0,
-        "word": 7.0,
-        "_tid": 58
-      },
-      {
-        "x0": 586.0,
-        "y0": 1631.0,
-        "x1": 625.0,
-        "y1": 1638.0,
-        "cx": 605.5,
-        "cy": 1634.5,
-        "text": "~",
-        "conf": 0.51085403,
-        "block": 8.0,
+        "x0": 729.0,
+        "y0": 2452.0,
+        "x1": 948.0,
+        "y1": 2551.0,
+        "cx": 838.5,
+        "cy": 2501.5,
+        "text": "burn_",
+        "conf": 0.9263443800000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 16.0,
         "word": 1.0,
-        "rehocr_text": "a",
-        "rehocr_conf": 0.24929146,
-        "rehocr_tag": "scaled:psm7",
-        "_tid": 59
+        "rehocr_text": "burn_",
+        "rehocr_conf": 0.9263443800000001,
+        "rehocr_tag": "scaled:psm8",
+        "_tid": 55
       },
       {
-        "x0": 1047.0,
-        "y0": 1621.0,
-        "x1": 1266.0,
-        "y1": 1688.0,
-        "cx": 1156.5,
-        "cy": 1654.5,
+        "x0": 973.0,
+        "y0": 2452.0,
+        "x1": 1311.0,
+        "y1": 2551.0,
+        "cx": 1142.0,
+        "cy": 2501.5,
         "text": "duration",
-        "conf": 0.95561485,
-        "block": 8.0,
+        "conf": 0.96722656,
+        "block": 1.0,
         "par": 1.0,
         "line": 16.0,
         "word": 2.0,
-        "_tid": 60
+        "rehocr_text": "duration",
+        "rehocr_conf": 0.96722656,
+        "rehocr_tag": "raw:psm7",
+        "_tid": 56
       },
       {
-        "x0": 1889.0,
-        "y0": 1621.0,
-        "x1": 2128.0,
-        "y1": 1688.0,
-        "cx": 2008.5,
-        "cy": 1654.5,
-        "text": "testable)",
-        "conf": 0.96495758,
-        "block": 8.0,
+        "x0": 2259.0,
+        "y0": 2452.0,
+        "x1": 2523.0,
+        "y1": 2551.0,
+        "cx": 2391.0,
+        "cy": 2501.5,
+        "text": "42-48",
+        "conf": 0.28169296,
+        "block": 1.0,
         "par": 1.0,
         "line": 16.0,
         "word": 3.0,
-        "_tid": 61
+        "_tid": 57
       },
       {
-        "x0": 2890.0,
-        "y0": 1631.0,
-        "x1": 2929.0,
-        "y1": 1638.0,
-        "cx": 2909.5,
-        "cy": 1634.5,
-        "text": "",
-        "conf": 0.2613974,
-        "block": 8.0,
+        "x0": 3498.0,
+        "y0": 2476.0,
+        "x1": 3544.0,
+        "y1": 2527.0,
+        "cx": 3521.0,
+        "cy": 2501.5,
+        "text": "s",
+        "conf": 0.47678864,
+        "block": 1.0,
         "par": 1.0,
         "line": 16.0,
         "word": 4.0,
         "rehocr_text": "a",
-        "rehocr_conf": 0.2613974,
+        "rehocr_conf": 0.21781464,
         "rehocr_tag": "scaled:psm7",
+        "rehocr_cell_text": "a",
+        "rehocr_cell_conf": 0.21781464,
+        "rehocr_cell_tag": "scaled:psm7",
+        "rehocr_scope": "cell",
+        "rehocr_cell_key": "3445.5,2237.0,3851.5,2750.5",
+        "_tid": 58
+      },
+      {
+        "x0": 3966.0,
+        "y0": 2456.0,
+        "x1": 4017.0,
+        "y1": 2527.0,
+        "cx": 3991.5,
+        "cy": 2491.5,
+        "text": "6",
+        "conf": 0.9688026399999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 16.0,
+        "word": 5.0,
+        "_tid": 59
+      },
+      {
+        "x0": 4301.0,
+        "y0": 2456.0,
+        "x1": 4495.0,
+        "y1": 2527.0,
+        "cx": 4398.0,
+        "cy": 2491.5,
+        "text": "NOT",
+        "conf": 0.9623934900000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 16.0,
+        "word": 6.0,
+        "rehocr_text": "NOT",
+        "rehocr_conf": 0.9623934900000001,
+        "rehocr_tag": "auto:psm8",
+        "_tid": 60
+      },
+      {
+        "x0": 4544.0,
+        "y0": 2456.0,
+        "x1": 4726.0,
+        "y1": 2547.0,
+        "cx": 4635.0,
+        "cy": 2501.5,
+        "text": "RUb",
+        "conf": 0.45255585000000004,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 16.0,
+        "word": 7.0,
+        "rehocr_text": "RUb",
+        "rehocr_conf": 0.45255585000000004,
+        "rehocr_tag": "auto:psm7",
+        "_tid": 61
+      },
+      {
+        "x0": 4759.0,
+        "y0": 2452.0,
+        "x1": 4792.0,
+        "y1": 2551.0,
+        "cx": 4775.5,
+        "cy": 2501.5,
+        "text": "_",
+        "conf": 0.0,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 16.0,
+        "word": 8.0,
         "_tid": 62
       },
       {
-        "x0": 3128.0,
-        "y0": 1680.0,
-        "x1": 3357.0,
-        "y1": 1723.0,
-        "cx": 3242.5,
-        "cy": 1701.5,
-        "text": "statuses",
-        "conf": 0.96404747,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2456.0,
+        "x1": 5140.0,
+        "y1": 2527.0,
+        "cx": 5003.0,
+        "cy": 2491.5,
+        "text": "textual",
+        "conf": 0.86425705,
+        "block": 1.0,
         "par": 1.0,
-        "line": 17.0,
-        "word": 1.0,
+        "line": 16.0,
+        "word": 9.0,
         "_tid": 63
       },
       {
-        "x0": 3128.0,
-        "y0": 1811.0,
-        "x1": 3331.0,
-        "y1": 1857.0,
-        "cx": 3229.5,
-        "cy": 1834.0,
-        "text": "triggers",
-        "conf": 0.93283478,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 2523.0,
+        "x1": 1969.0,
+        "y1": 2622.0,
+        "cx": 1798.5,
+        "cy": 2572.5,
+        "text": "duration",
+        "conf": 0.96781715,
+        "block": 1.0,
         "par": 1.0,
-        "line": 18.0,
+        "line": 17.0,
         "word": 1.0,
         "_tid": 64
       },
       {
-        "x0": 3350.0,
-        "y0": 1814.0,
-        "x1": 3455.0,
-        "y1": 1857.0,
-        "cx": 3402.5,
-        "cy": 1835.5,
-        "text": "out-",
-        "conf": 0.92285294,
-        "block": 8.0,
+        "x0": 2945.0,
+        "y0": 2527.0,
+        "x1": 3310.0,
+        "y1": 2618.0,
+        "cx": 3127.5,
+        "cy": 2572.5,
+        "text": "testable)",
+        "conf": 0.96478409,
+        "block": 1.0,
         "par": 1.0,
-        "line": 18.0,
+        "line": 17.0,
         "word": 2.0,
         "_tid": 65
       },
       {
-        "x0": 1050.0,
-        "y0": 1856.0,
-        "x1": 1249.0,
-        "y1": 1923.0,
-        "cx": 1149.5,
-        "cy": 1889.5,
-        "text": "Injector",
-        "conf": 0.95265106,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2613.0,
+        "x1": 5221.0,
+        "y1": 2679.0,
+        "cx": 5043.5,
+        "cy": 2646.0,
+        "text": "statuses",
+        "conf": 0.9588924400000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 19.0,
+        "line": 18.0,
         "word": 1.0,
         "_tid": 66
       },
       {
-        "x0": 3181.0,
-        "y0": 1824.0,
-        "x1": 3243.0,
-        "y1": 1870.0,
-        "cx": 3212.0,
-        "cy": 1847.0,
-        "text": "gg",
-        "conf": 0.46546470999999995,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2817.0,
+        "x1": 5181.0,
+        "y1": 2888.0,
+        "cx": 5023.5,
+        "cy": 2852.5,
+        "text": "triggers",
+        "conf": 0.93195549,
+        "block": 1.0,
         "par": 1.0,
         "line": 19.0,
-        "word": 2.0,
+        "word": 1.0,
         "_tid": 67
       },
       {
-        "x0": 3128.0,
-        "y0": 1909.0,
-        "x1": 3357.0,
-        "y1": 1968.0,
-        "cx": 3242.5,
-        "cy": 1938.5,
-        "text": "of-range",
-        "conf": 0.91226562,
-        "block": 8.0,
+        "x0": 5211.0,
+        "y0": 2822.0,
+        "x1": 5374.0,
+        "y1": 2888.0,
+        "cx": 5292.5,
+        "cy": 2855.0,
+        "text": "out-",
+        "conf": 0.9224243900000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 20.0,
-        "word": 1.0,
+        "line": 19.0,
+        "word": 2.0,
         "_tid": 68
       },
       {
-        "x0": 468.0,
-        "y0": 1957.0,
-        "x1": 746.0,
-        "y1": 2024.0,
-        "cx": 607.0,
-        "cy": 1990.5,
-        "text": "resistance",
-        "conf": 0.96606056,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 2889.0,
+        "x1": 1943.0,
+        "y1": 2988.0,
+        "cx": 1788.0,
+        "cy": 2938.5,
+        "text": "Injector",
+        "conf": 0.9442377500000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 21.0,
+        "line": 20.0,
         "word": 1.0,
         "_tid": 69
       },
       {
-        "x0": 1047.0,
-        "y0": 1957.0,
-        "x1": 1262.0,
-        "y1": 2024.0,
-        "cx": 1154.5,
-        "cy": 1990.5,
-        "text": "harness",
-        "conf": 0.96369545,
-        "block": 8.0,
+        "x0": 4947.0,
+        "y0": 2837.0,
+        "x1": 5043.0,
+        "y1": 2908.0,
+        "cx": 4995.0,
+        "cy": 2872.5,
+        "text": "Ig",
+        "conf": 0.31797394,
+        "block": 1.0,
         "par": 1.0,
-        "line": 21.0,
+        "line": 20.0,
         "word": 2.0,
         "_tid": 70
       },
       {
-        "x0": 1452.0,
-        "y0": 1957.0,
-        "x1": 1655.0,
-        "y1": 2024.0,
-        "cx": 1553.5,
-        "cy": 1990.5,
-        "text": "4.8-5.3",
-        "conf": 0.83220901,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 2969.0,
+        "x1": 5221.0,
+        "y1": 3060.0,
+        "cx": 5043.5,
+        "cy": 3014.5,
+        "text": "of-range",
+        "conf": 0.91979179,
+        "block": 1.0,
         "par": 1.0,
         "line": 21.0,
-        "word": 3.0,
+        "word": 1.0,
         "_tid": 71
       },
       {
-        "x0": 1896.0,
-        "y0": 1961.0,
-        "x1": 1971.0,
-        "y1": 2007.0,
-        "cx": 1933.5,
-        "cy": 1984.0,
-        "text": "6.1",
-        "conf": 0.96477127,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 21.0,
-        "word": 4.0,
-        "_tid": 72
-      },
-      {
-        "x0": 2249.0,
-        "y0": 1961.0,
-        "x1": 2292.0,
-        "y1": 2007.0,
-        "cx": 2270.5,
-        "cy": 1984.0,
-        "text": "Q",
-        "conf": 0.91886742,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 21.0,
-        "word": 5.0,
-        "rehocr_conf": 0.0,
-        "rehocr_tag": "auto:psm7",
-        "_tid": 73
-      },
-      {
-        "x0": 2550.0,
-        "y0": 1961.0,
-        "x1": 2583.0,
-        "y1": 2007.0,
-        "cx": 2566.5,
-        "cy": 1984.0,
-        "text": "8",
-        "conf": 0.89678146,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 21.0,
-        "word": 6.0,
-        "_tid": 74
-      },
-      {
-        "x0": 2769.0,
-        "y0": 1957.0,
-        "x1": 2890.0,
-        "y1": 2024.0,
-        "cx": 2829.5,
-        "cy": 1990.5,
-        "text": "FAIL",
-        "conf": 0.96940842,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 21.0,
-        "word": 7.0,
-        "_tid": 75
-      },
-      {
-        "x0": 3128.0,
-        "y0": 2020.0,
-        "x1": 3347.0,
-        "y1": 2053.0,
-        "cx": 3237.5,
-        "cy": 2036.5,
-        "text": "numeric",
-        "conf": 0.96444473,
-        "block": 8.0,
+        "x0": 729.0,
+        "y0": 3046.0,
+        "x1": 1161.0,
+        "y1": 3145.0,
+        "cx": 945.0,
+        "cy": 3095.5,
+        "text": "resistance",
+        "conf": 0.95921326,
+        "block": 1.0,
         "par": 1.0,
         "line": 22.0,
         "word": 1.0,
+        "_tid": 72
+      },
+      {
+        "x0": 1628.0,
+        "y0": 3046.0,
+        "x1": 1963.0,
+        "y1": 3145.0,
+        "cx": 1795.5,
+        "cy": 3095.5,
+        "text": "harness",
+        "conf": 0.96583107,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 22.0,
+        "word": 2.0,
+        "_tid": 73
+      },
+      {
+        "x0": 2259.0,
+        "y0": 3046.0,
+        "x1": 2574.0,
+        "y1": 3145.0,
+        "cx": 2416.5,
+        "cy": 3095.5,
+        "text": "4.8-5.3",
+        "conf": 0.85304955,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 22.0,
+        "word": 3.0,
+        "_tid": 74
+      },
+      {
+        "x0": 2950.0,
+        "y0": 3050.0,
+        "x1": 3067.0,
+        "y1": 3121.0,
+        "cx": 3008.5,
+        "cy": 3085.5,
+        "text": "6.1",
+        "conf": 0.94224243,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 22.0,
+        "word": 4.0,
+        "_tid": 75
+      },
+      {
+        "x0": 3498.0,
+        "y0": 3050.0,
+        "x1": 3565.0,
+        "y1": 3121.0,
+        "cx": 3531.5,
+        "cy": 3085.5,
+        "text": "Q",
+        "conf": 0.7493794300000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 22.0,
+        "word": 5.0,
         "_tid": 76
       },
       {
-        "x0": 1047.0,
-        "y0": 2055.0,
-        "x1": 1324.0,
-        "y1": 2116.0,
-        "cx": 1185.5,
-        "cy": 2085.5,
-        "text": "resistance",
-        "conf": 0.9555557299999999,
-        "block": 8.0,
+        "x0": 3966.0,
+        "y0": 3050.0,
+        "x1": 4017.0,
+        "y1": 3121.0,
+        "cx": 3991.5,
+        "cy": 3085.5,
+        "text": "8",
+        "conf": 0.94687523,
+        "block": 1.0,
         "par": 1.0,
-        "line": 23.0,
-        "word": 1.0,
+        "line": 22.0,
+        "word": 6.0,
         "_tid": 77
       },
       {
-        "x0": 3181.0,
-        "y0": 2105.0,
-        "x1": 3190.0,
-        "y1": 2112.0,
-        "cx": 3185.5,
-        "cy": 2108.5,
-        "text": ".",
-        "conf": 0.0,
-        "block": 8.0,
+        "x0": 4307.0,
+        "y0": 3046.0,
+        "x1": 4493.0,
+        "y1": 3145.0,
+        "cx": 4400.0,
+        "cy": 3095.5,
+        "text": "FAIL",
+        "conf": 0.96835068,
+        "block": 1.0,
         "par": 1.0,
-        "line": 23.0,
-        "word": 2.0,
+        "line": 22.0,
+        "word": 7.0,
         "_tid": 78
       },
       {
-        "x0": 3125.0,
-        "y0": 2105.0,
-        "x1": 3295.0,
-        "y1": 2151.0,
-        "cx": 3210.0,
-        "cy": 2128.0,
-        "text": "failure",
-        "conf": 0.95431374,
-        "block": 8.0,
+        "x0": 5140.0,
+        "y0": 3121.0,
+        "x1": 5150.0,
+        "y1": 3132.0,
+        "cx": 5145.0,
+        "cy": 3126.5,
+        "text": ".",
+        "conf": 0.11695129,
+        "block": 1.0,
         "par": 1.0,
-        "line": 24.0,
-        "word": 1.0,
+        "line": 22.0,
+        "word": 8.0,
         "_tid": 79
       },
       {
-        "x0": 1043.0,
-        "y0": 2242.0,
-        "x1": 1194.0,
-        "y1": 2288.0,
-        "cx": 1118.5,
-        "cy": 2265.0,
-        "text": "Valve",
-        "conf": 0.95437737,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 3142.0,
+        "x1": 5206.0,
+        "y1": 3193.0,
+        "cx": 5036.0,
+        "cy": 3167.5,
+        "text": "numeric",
+        "conf": 0.9662058299999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 25.0,
+        "line": 23.0,
         "word": 1.0,
         "_tid": 80
       },
       {
-        "x0": 3128.0,
-        "y0": 2242.0,
-        "x1": 3468.0,
-        "y1": 2288.0,
-        "cx": 3298.0,
-        "cy": 2265.0,
-        "text": "non-numeric",
-        "conf": 0.96410843,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 3199.0,
+        "x1": 2060.0,
+        "y1": 3288.0,
+        "cx": 1844.0,
+        "cy": 3243.5,
+        "text": "resistance",
+        "conf": 0.96133682,
+        "block": 1.0,
         "par": 1.0,
-        "line": 25.0,
-        "word": 2.0,
+        "line": 24.0,
+        "word": 1.0,
         "_tid": 81
       },
       {
-        "x0": 694.0,
-        "y0": 2337.0,
-        "x1": 704.0,
-        "y1": 2344.0,
-        "cx": 699.0,
-        "cy": 2340.5,
-        "text": ".",
-        "conf": 0.7398674,
-        "block": 8.0,
+        "x0": 4947.0,
+        "y0": 3274.0,
+        "x1": 4962.0,
+        "y1": 3284.0,
+        "cx": 4954.5,
+        "cy": 3279.0,
+        "text": ";",
+        "conf": 0.37113533,
+        "block": 1.0,
         "par": 1.0,
-        "line": 26.0,
-        "word": 1.0,
-        "rehocr_text": "-",
-        "rehocr_conf": 0.48884895,
-        "rehocr_tag": "scaled:psm8",
+        "line": 24.0,
+        "word": 2.0,
         "_tid": 82
       },
       {
-        "x0": 1096.0,
-        "y0": 2337.0,
-        "x1": 1106.0,
-        "y1": 2344.0,
-        "cx": 1101.0,
-        "cy": 2340.5,
-        "text": ".",
-        "conf": 0.69854744,
-        "block": 8.0,
+        "x0": 4860.0,
+        "y0": 3274.0,
+        "x1": 5125.0,
+        "y1": 3345.0,
+        "cx": 4992.5,
+        "cy": 3309.5,
+        "text": "failure",
+        "conf": 0.9600575299999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 26.0,
-        "word": 2.0,
+        "line": 25.0,
+        "word": 1.0,
         "_tid": 83
       },
       {
-        "x0": 1900.0,
-        "y0": 2291.0,
-        "x1": 2063.0,
-        "y1": 2350.0,
-        "cx": 1981.5,
-        "cy": 2320.5,
-        "text": "Image",
-        "conf": 0.81273361,
-        "block": 8.0,
+        "x0": 1623.0,
+        "y0": 3487.0,
+        "x1": 1857.0,
+        "y1": 3558.0,
+        "cx": 1740.0,
+        "cy": 3522.5,
+        "text": "Valve",
+        "conf": 0.9631538399999999,
+        "block": 1.0,
         "par": 1.0,
         "line": 26.0,
-        "word": 3.0,
+        "word": 1.0,
         "_tid": 84
       },
       {
-        "x0": 468.0,
-        "y0": 2337.0,
-        "x1": 910.0,
-        "y1": 2396.0,
-        "cx": 689.0,
-        "cy": 2366.5,
-        "text": "valve_alignment",
-        "conf": 0.9178589599999999,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 3487.0,
+        "x1": 5394.0,
+        "y1": 3558.0,
+        "cx": 5130.0,
+        "cy": 3522.5,
+        "text": "non-numeric",
+        "conf": 0.9590831,
+        "block": 1.0,
         "par": 1.0,
-        "line": 27.0,
-        "word": 1.0,
+        "line": 26.0,
+        "word": 2.0,
         "_tid": 85
       },
       {
-        "x0": 1047.0,
-        "y0": 2337.0,
-        "x1": 1311.0,
-        "y1": 2396.0,
-        "cx": 1179.0,
-        "cy": 2366.5,
-        "text": "alignment",
-        "conf": 0.9663459,
-        "block": 8.0,
+        "x0": 1080.0,
+        "y0": 3635.0,
+        "x1": 1093.0,
+        "y1": 3645.0,
+        "cx": 1086.5,
+        "cy": 3640.0,
+        "text": "",
+        "conf": 0.46841042,
+        "block": 1.0,
         "par": 1.0,
         "line": 27.0,
-        "word": 2.0,
+        "word": 1.0,
+        "rehocr_text": "nm",
+        "rehocr_conf": 0.46841042,
+        "rehocr_tag": "scaled:psm8",
         "_tid": 86
       },
       {
-        "x0": 1452.0,
-        "y0": 2337.0,
-        "x1": 1615.0,
-        "y1": 2383.0,
-        "cx": 1533.5,
-        "cy": 2360.0,
-        "text": "Visual",
-        "conf": 0.9611145799999999,
-        "block": 8.0,
+        "x0": 2955.0,
+        "y0": 3564.0,
+        "x1": 3209.0,
+        "y1": 3655.0,
+        "cx": 3082.0,
+        "cy": 3609.5,
+        "text": "Image",
+        "conf": 0.8412145200000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 27.0,
-        "word": 3.0,
+        "word": 2.0,
         "_tid": 87
       },
       {
-        "x0": 1635.0,
-        "y0": 2337.0,
-        "x1": 1798.0,
-        "y1": 2383.0,
-        "cx": 1716.5,
-        "cy": 2360.0,
-        "text": "match",
-        "conf": 0.9681395,
-        "block": 8.0,
+        "x0": 729.0,
+        "y0": 3635.0,
+        "x1": 1415.0,
+        "y1": 3726.0,
+        "cx": 1072.0,
+        "cy": 3680.5,
+        "text": "valve_alignment",
+        "conf": 0.9198393199999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 27.0,
-        "word": 4.0,
+        "line": 28.0,
+        "word": 1.0,
         "_tid": 88
       },
       {
-        "x0": 1893.0,
-        "y0": 2389.0,
-        "x1": 1994.0,
-        "y1": 2435.0,
-        "cx": 1943.5,
-        "cy": 2412.0,
-        "text": "#49",
-        "conf": 0.82196182,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 27.0,
-        "word": 5.0,
-        "_tid": 89
-      },
-      {
-        "x0": 2249.0,
-        "y0": 2337.0,
-        "x1": 2331.0,
-        "y1": 2383.0,
-        "cx": 2290.0,
-        "cy": 2360.0,
-        "text": "n/a",
-        "conf": 0.7497794299999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 27.0,
-        "word": 6.0,
-        "rehocr_text": "a",
-        "rehocr_conf": 0.9161103799999999,
-        "rehocr_tag": "auto:psm7",
-        "rehocr_cell_text": "a",
-        "rehocr_cell_conf": 0.9161103799999999,
-        "rehocr_cell_tag": "auto:psm7",
-        "rehocr_scope": "cell",
-        "rehocr_cell_key": "2215.0,2200.0,2476.5,2533.0",
-        "_tid": 90
-      },
-      {
-        "x0": 2550.0,
-        "y0": 2337.0,
-        "x1": 2583.0,
-        "y1": 2383.0,
-        "cx": 2566.5,
-        "cy": 2360.0,
-        "text": "9",
-        "conf": 0.8784480299999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 27.0,
-        "word": 7.0,
-        "_tid": 91
-      },
-      {
-        "x0": 2766.0,
-        "y0": 2337.0,
-        "x1": 2919.0,
-        "y1": 2383.0,
-        "cx": 2842.5,
-        "cy": 2360.0,
-        "text": "PASS",
-        "conf": 0.96456604,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 27.0,
-        "word": 8.0,
-        "_tid": 92
-      },
-      {
-        "x0": 3128.0,
-        "y0": 2340.0,
-        "x1": 3226.0,
-        "y1": 2383.0,
-        "cx": 3177.0,
-        "cy": 2361.5,
-        "text": "text",
-        "conf": 0.96554596,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 27.0,
-        "word": 9.0,
-        "_tid": 93
-      },
-      {
-        "x0": 1047.0,
-        "y0": 2435.0,
-        "x1": 1200.0,
-        "y1": 2494.0,
-        "cx": 1123.5,
-        "cy": 2464.5,
-        "text": "photo",
-        "conf": 0.9626313799999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 28.0,
-        "word": 1.0,
-        "_tid": 94
-      },
-      {
-        "x0": 3128.0,
-        "y0": 2435.0,
-        "x1": 3390.0,
-        "y1": 2481.0,
-        "cx": 3259.0,
-        "cy": 2458.0,
-        "text": "extraction",
-        "conf": 0.9651346599999999,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 3635.0,
+        "x1": 2040.0,
+        "y1": 3726.0,
+        "cx": 1834.0,
+        "cy": 3680.5,
+        "text": "alignment",
+        "conf": 0.96059128,
+        "block": 1.0,
         "par": 1.0,
         "line": 28.0,
         "word": 2.0,
+        "_tid": 89
+      },
+      {
+        "x0": 2259.0,
+        "y0": 3635.0,
+        "x1": 2513.0,
+        "y1": 3706.0,
+        "cx": 2386.0,
+        "cy": 3670.5,
+        "text": "Visual",
+        "conf": 0.9593087800000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 3.0,
+        "_tid": 90
+      },
+      {
+        "x0": 2543.0,
+        "y0": 3635.0,
+        "x1": 2797.0,
+        "y1": 3706.0,
+        "cx": 2670.0,
+        "cy": 3670.5,
+        "text": "match",
+        "conf": 0.95405609,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 4.0,
+        "_tid": 91
+      },
+      {
+        "x0": 2945.0,
+        "y0": 3716.0,
+        "x1": 3102.0,
+        "y1": 3787.0,
+        "cx": 3023.5,
+        "cy": 3751.5,
+        "text": "#49",
+        "conf": 0.90661285,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 5.0,
+        "_tid": 92
+      },
+      {
+        "x0": 3498.0,
+        "y0": 3635.0,
+        "x1": 3626.0,
+        "y1": 3706.0,
+        "cx": 3562.0,
+        "cy": 3670.5,
+        "text": "n/a",
+        "conf": 0.6305088400000001,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 6.0,
+        "_tid": 93
+      },
+      {
+        "x0": 3966.0,
+        "y0": 3635.0,
+        "x1": 4017.0,
+        "y1": 3706.0,
+        "cx": 3991.5,
+        "cy": 3670.5,
+        "text": "9",
+        "conf": 0.54426266,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 7.0,
+        "rehocr_conf": 0.0,
+        "rehocr_tag": "raw:psm10",
+        "_tid": 94
+      },
+      {
+        "x0": 4301.0,
+        "y0": 3635.0,
+        "x1": 4540.0,
+        "y1": 3706.0,
+        "cx": 4420.5,
+        "cy": 3670.5,
+        "text": "PASS",
+        "conf": 0.9641767099999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 28.0,
+        "word": 8.0,
         "_tid": 95
       },
       {
-        "x0": 3128.0,
-        "y0": 2585.0,
-        "x1": 3344.0,
-        "y1": 2618.0,
-        "cx": 3236.0,
-        "cy": 2601.5,
-        "text": "ensures",
-        "conf": 0.96387299,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 3640.0,
+        "x1": 5018.0,
+        "y1": 3706.0,
+        "cx": 4942.0,
+        "cy": 3673.0,
+        "text": "text",
+        "conf": 0.96522217,
+        "block": 1.0,
         "par": 1.0,
-        "line": 29.0,
-        "word": 1.0,
+        "line": 28.0,
+        "word": 9.0,
         "_tid": 96
       },
       {
-        "x0": 1050.0,
-        "y0": 2670.0,
-        "x1": 1236.0,
-        "y1": 2716.0,
-        "cx": 1143.0,
-        "cy": 2693.0,
-        "text": "Helium",
-        "conf": 0.95279251,
-        "block": 8.0,
+        "x0": 1628.0,
+        "y0": 3787.0,
+        "x1": 1866.0,
+        "y1": 3879.0,
+        "cx": 1747.0,
+        "cy": 3833.0,
+        "text": "photo",
+        "conf": 0.96591621,
+        "block": 1.0,
         "par": 1.0,
-        "line": 30.0,
+        "line": 29.0,
         "word": 1.0,
         "_tid": 97
       },
       {
-        "x0": 1256.0,
-        "y0": 2670.0,
-        "x1": 1367.0,
-        "y1": 2716.0,
-        "cx": 1311.5,
-        "cy": 2693.0,
-        "text": "leak",
-        "conf": 0.96301819,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 3787.0,
+        "x1": 5272.0,
+        "y1": 3858.0,
+        "cx": 5069.0,
+        "cy": 3822.5,
+        "text": "extraction",
+        "conf": 0.96907578,
+        "block": 1.0,
         "par": 1.0,
-        "line": 30.0,
+        "line": 29.0,
         "word": 2.0,
         "_tid": 98
       },
       {
-        "x0": 1896.0,
-        "y0": 2666.0,
-        "x1": 1998.0,
-        "y1": 2733.0,
-        "cx": 1947.0,
-        "cy": 2699.5,
-        "text": "Not",
-        "conf": 0.95912262,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 4021.0,
+        "x1": 5201.0,
+        "y1": 4072.0,
+        "cx": 5033.5,
+        "cy": 4046.5,
+        "text": "ensures",
+        "conf": 0.96485703,
+        "block": 1.0,
         "par": 1.0,
         "line": 30.0,
-        "word": 3.0,
+        "word": 1.0,
         "_tid": 99
       },
       {
-        "x0": 3128.0,
-        "y0": 2670.0,
-        "x1": 3334.0,
-        "y1": 2729.0,
-        "cx": 3231.0,
-        "cy": 2699.5,
-        "text": "missing",
-        "conf": 0.96873482,
-        "block": 8.0,
+        "x0": 1633.0,
+        "y0": 4153.0,
+        "x1": 1923.0,
+        "y1": 4224.0,
+        "cx": 1778.0,
+        "cy": 4188.5,
+        "text": "Helium",
+        "conf": 0.9612670099999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 30.0,
-        "word": 4.0,
+        "line": 31.0,
+        "word": 1.0,
         "_tid": 100
       },
       {
-        "x0": 468.0,
-        "y0": 2715.0,
-        "x1": 772.0,
-        "y1": 2783.0,
-        "cx": 620.0,
-        "cy": 2749.0,
-        "text": "leak_check",
-        "conf": 0.93083786,
-        "block": 8.0,
+        "x0": 1954.0,
+        "y0": 4153.0,
+        "x1": 2126.0,
+        "y1": 4224.0,
+        "cx": 2040.0,
+        "cy": 4188.5,
+        "text": "leak",
+        "conf": 0.95753998,
+        "block": 1.0,
         "par": 1.0,
         "line": 31.0,
-        "word": 1.0,
+        "word": 2.0,
         "_tid": 101
       },
       {
-        "x0": 1452.0,
-        "y0": 2719.0,
-        "x1": 1674.0,
-        "y1": 2765.0,
-        "cx": 1563.0,
-        "cy": 2742.0,
-        "text": "=1.0e-5",
-        "conf": 0.8794637299999999,
-        "block": 8.0,
+        "x0": 2950.0,
+        "y0": 4149.0,
+        "x1": 3105.0,
+        "y1": 4249.0,
+        "cx": 3027.5,
+        "cy": 4199.0,
+        "text": "Not",
+        "conf": 0.9664218099999999,
+        "block": 1.0,
         "par": 1.0,
         "line": 31.0,
-        "word": 2.0,
+        "word": 3.0,
         "_tid": 102
       },
       {
-        "x0": 2249.0,
-        "y0": 2719.0,
-        "x1": 2481.0,
-        "y1": 2765.0,
-        "cx": 2365.0,
-        "cy": 2742.0,
-        "text": "atm-cc/s",
-        "conf": 0.8832763699999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 31.0,
-        "word": 3.0,
-        "_tid": 103
-      },
-      {
-        "x0": 2553.0,
-        "y0": 2719.0,
-        "x1": 2615.0,
-        "y1": 2765.0,
-        "cx": 2584.0,
-        "cy": 2742.0,
-        "text": "10",
-        "conf": 0.92218224,
-        "block": 8.0,
+        "x0": 4866.0,
+        "y0": 4153.0,
+        "x1": 5186.0,
+        "y1": 4245.0,
+        "cx": 5026.0,
+        "cy": 4199.0,
+        "text": "missing",
+        "conf": 0.96378838,
+        "block": 1.0,
         "par": 1.0,
         "line": 31.0,
         "word": 4.0,
+        "_tid": 103
+      },
+      {
+        "x0": 729.0,
+        "y0": 4224.0,
+        "x1": 1201.0,
+        "y1": 4325.0,
+        "cx": 965.0,
+        "cy": 4274.5,
+        "text": "leak_check",
+        "conf": 0.91716301,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 32.0,
+        "word": 1.0,
         "_tid": 104
       },
       {
-        "x0": 2766.0,
-        "y0": 2719.0,
-        "x1": 3020.0,
-        "y1": 2765.0,
-        "cx": 2893.0,
-        "cy": 2742.0,
-        "text": "MISSING",
-        "conf": 0.9633721900000001,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 31.0,
-        "word": 5.0,
-        "_tid": 105
-      },
-      {
-        "x0": 1047.0,
-        "y0": 2768.0,
-        "x1": 1153.0,
-        "y1": 2834.0,
-        "cx": 1100.0,
-        "cy": 2801.0,
-        "text": "rate",
-        "conf": 0.9620822099999999,
-        "block": 8.0,
-        "par": 1.0,
-        "line": 32.0,
-        "word": 1.0,
-        "_tid": 106
-      },
-      {
-        "x0": 1896.0,
-        "y0": 2772.0,
-        "x1": 2079.0,
-        "y1": 2817.0,
-        "cx": 1987.5,
-        "cy": 2794.5,
-        "text": "Found",
-        "conf": 0.96336487,
-        "block": 8.0,
+        "x0": 2259.0,
+        "y0": 4239.0,
+        "x1": 2309.0,
+        "y1": 4300.0,
+        "cx": 2284.0,
+        "cy": 4269.5,
+        "text": "=",
+        "conf": 0.6930877700000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 32.0,
         "word": 2.0,
-        "_tid": 107
+        "rehocr_text": "=",
+        "rehocr_conf": 0.7218622600000001,
+        "rehocr_tag": "auto:psm10",
+        "_tid": 105
       },
       {
-        "x0": 3128.0,
-        "y0": 2775.0,
-        "x1": 3249.0,
-        "y1": 2817.0,
-        "cx": 3188.5,
-        "cy": 2796.0,
-        "text": "term",
-        "conf": 0.96033669,
-        "block": 8.0,
+        "x0": 2345.0,
+        "y0": 4229.0,
+        "x1": 2604.0,
+        "y1": 4300.0,
+        "cx": 2474.5,
+        "cy": 4264.5,
+        "text": "1.0e-5",
+        "conf": 0.6930877700000001,
+        "block": 1.0,
         "par": 1.0,
         "line": 32.0,
         "word": 3.0,
+        "_tid": 106
+      },
+      {
+        "x0": 3498.0,
+        "y0": 4229.0,
+        "x1": 3859.0,
+        "y1": 4300.0,
+        "cx": 3678.5,
+        "cy": 4264.5,
+        "text": "atm-ce/s",
+        "conf": 0.63571716,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 32.0,
+        "word": 4.0,
+        "_tid": 107
+      },
+      {
+        "x0": 3971.0,
+        "y0": 4229.0,
+        "x1": 4068.0,
+        "y1": 4300.0,
+        "cx": 4019.5,
+        "cy": 4264.5,
+        "text": "10",
+        "conf": 0.96591774,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 32.0,
+        "word": 5.0,
         "_tid": 108
       },
       {
-        "x0": 3128.0,
-        "y0": 2866.0,
-        "x1": 3357.0,
-        "y1": 2925.0,
-        "cx": 3242.5,
-        "cy": 2895.5,
-        "text": "handling",
-        "conf": 0.96229668,
-        "block": 8.0,
+        "x0": 4301.0,
+        "y0": 4229.0,
+        "x1": 4698.0,
+        "y1": 4300.0,
+        "cx": 4499.5,
+        "cy": 4264.5,
+        "text": "MISSING",
+        "conf": 0.96401985,
+        "block": 1.0,
         "par": 1.0,
-        "line": 33.0,
-        "word": 1.0,
+        "line": 32.0,
+        "word": 6.0,
         "_tid": 109
       },
       {
-        "x0": 436.0,
-        "y0": 3134.0,
-        "x1": 527.0,
-        "y1": 3222.0,
-        "cx": 481.5,
-        "cy": 3178.0,
-        "text": "2.",
-        "conf": 0.95898956,
-        "block": 10.0,
+        "x0": 1628.0,
+        "y0": 4307.0,
+        "x1": 1791.0,
+        "y1": 4407.0,
+        "cx": 1709.5,
+        "cy": 4357.0,
+        "text": "rate",
+        "conf": 0.96627579,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 33.0,
         "word": 1.0,
         "_tid": 110
       },
       {
-        "x0": 576.0,
-        "y0": 3134.0,
-        "x1": 1315.0,
-        "y1": 3222.0,
-        "cx": 945.5,
-        "cy": 3178.0,
-        "text": "Performance",
-        "conf": 0.96039734,
-        "block": 10.0,
+        "x0": 2950.0,
+        "y0": 4311.0,
+        "x1": 3234.0,
+        "y1": 4382.0,
+        "cx": 3092.0,
+        "cy": 4346.5,
+        "text": "Found",
+        "conf": 0.9661055000000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 33.0,
         "word": 2.0,
         "_tid": 111
       },
       {
-        "x0": 1364.0,
-        "y0": 3134.0,
-        "x1": 1550.0,
-        "y1": 3222.0,
-        "cx": 1457.0,
-        "cy": 3178.0,
-        "text": "KPI",
-        "conf": 0.9585701799999999,
-        "block": 10.0,
+        "x0": 4866.0,
+        "y0": 4316.0,
+        "x1": 5054.0,
+        "y1": 4382.0,
+        "cx": 4960.0,
+        "cy": 4349.0,
+        "text": "term",
+        "conf": 0.96375748,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 33.0,
         "word": 3.0,
         "_tid": 112
       },
       {
-        "x0": 1592.0,
-        "y0": 3134.0,
-        "x1": 1900.0,
-        "y1": 3222.0,
-        "cx": 1746.0,
-        "cy": 3178.0,
-        "text": "Table",
-        "conf": 0.96614441,
-        "block": 10.0,
+        "x0": 4866.0,
+        "y0": 4458.0,
+        "x1": 5221.0,
+        "y1": 4549.0,
+        "cx": 5043.5,
+        "cy": 4503.5,
+        "text": "handling",
+        "conf": 0.95712036,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 4.0,
+        "line": 34.0,
+        "word": 1.0,
         "_tid": 113
       },
       {
-        "x0": 472.0,
-        "y0": 3438.0,
-        "x1": 566.0,
-        "y1": 3484.0,
-        "cx": 519.0,
-        "cy": 3461.0,
-        "text": "KPI",
-        "conf": 0.91279343,
-        "block": 11.0,
+        "x0": 678.0,
+        "y0": 4875.0,
+        "x1": 820.0,
+        "y1": 5012.0,
+        "cx": 749.0,
+        "cy": 4943.5,
+        "text": "2.",
+        "conf": 0.9586054199999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 35.0,
         "word": 1.0,
         "_tid": 114
       },
       {
-        "x0": 1037.0,
-        "y0": 3438.0,
-        "x1": 1138.0,
-        "y1": 3484.0,
-        "cx": 1087.5,
-        "cy": 3461.0,
-        "text": "Min",
-        "conf": 0.95938232,
-        "block": 11.0,
+        "x0": 897.0,
+        "y0": 4875.0,
+        "x1": 2045.0,
+        "y1": 5012.0,
+        "cx": 1471.0,
+        "cy": 4943.5,
+        "text": "Performance",
+        "conf": 0.9554805000000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 35.0,
         "word": 2.0,
         "_tid": 115
       },
       {
-        "x0": 1210.0,
-        "y0": 3438.0,
-        "x1": 1393.0,
-        "y1": 3497.0,
-        "cx": 1301.5,
-        "cy": 3467.5,
-        "text": "Target",
-        "conf": 0.94359177,
-        "block": 11.0,
+        "x0": 2121.0,
+        "y0": 4875.0,
+        "x1": 2411.0,
+        "y1": 5012.0,
+        "cx": 2266.0,
+        "cy": 4943.5,
+        "text": "KPI",
+        "conf": 0.96167046,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 35.0,
         "word": 3.0,
         "_tid": 116
       },
       {
-        "x0": 1462.0,
-        "y0": 3438.0,
-        "x1": 1579.0,
-        "y1": 3484.0,
-        "cx": 1520.5,
-        "cy": 3461.0,
-        "text": "Max",
-        "conf": 0.96383125,
-        "block": 11.0,
+        "x0": 2477.0,
+        "y0": 4875.0,
+        "x1": 2955.0,
+        "y1": 5012.0,
+        "cx": 2716.0,
+        "cy": 4943.5,
+        "text": "Table",
+        "conf": 0.96428131,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
+        "line": 35.0,
         "word": 4.0,
         "_tid": 117
       },
       {
-        "x0": 1648.0,
-        "y0": 3438.0,
-        "x1": 1808.0,
-        "y1": 3484.0,
-        "cx": 1728.0,
-        "cy": 3461.0,
-        "text": "Value",
-        "conf": 0.95635391,
-        "block": 11.0,
+        "x0": 734.0,
+        "y0": 5347.0,
+        "x1": 880.0,
+        "y1": 5418.0,
+        "cx": 807.0,
+        "cy": 5382.5,
+        "text": "KPI",
+        "conf": 0.76750618,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 5.0,
+        "line": 36.0,
+        "word": 1.0,
         "_tid": 118
       },
       {
-        "x0": 1877.0,
-        "y0": 3438.0,
-        "x1": 2083.0,
-        "y1": 3484.0,
-        "cx": 1980.0,
-        "cy": 3461.0,
-        "text": "Source",
-        "conf": 0.95341324,
-        "block": 11.0,
+        "x0": 1613.0,
+        "y0": 5347.0,
+        "x1": 1771.0,
+        "y1": 5418.0,
+        "cx": 1692.0,
+        "cy": 5382.5,
+        "text": "Min",
+        "conf": 0.91665604,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 6.0,
+        "line": 36.0,
+        "word": 2.0,
         "_tid": 119
       },
       {
-        "x0": 2154.0,
-        "y0": 3438.0,
-        "x1": 2485.0,
-        "y1": 3484.0,
-        "cx": 2319.5,
-        "cy": 3461.0,
-        "text": "Confidence",
-        "conf": 0.91572426,
-        "block": 11.0,
+        "x0": 1882.0,
+        "y0": 5347.0,
+        "x1": 2167.0,
+        "y1": 5439.0,
+        "cx": 2024.5,
+        "cy": 5393.0,
+        "text": "Target",
+        "conf": 0.91665604,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 7.0,
+        "line": 36.0,
+        "word": 3.0,
         "_tid": 120
       },
       {
-        "x0": 468.0,
-        "y0": 3571.0,
-        "x1": 867.0,
-        "y1": 3641.0,
-        "cx": 667.5,
-        "cy": 3606.0,
-        "text": "thrust_nominal",
-        "conf": 0.91495163,
-        "block": 13.0,
+        "x0": 2274.0,
+        "y0": 5347.0,
+        "x1": 2457.0,
+        "y1": 5418.0,
+        "cx": 2365.5,
+        "cy": 5382.5,
+        "text": "Max",
+        "conf": 0.95884415,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 1.0,
+        "line": 36.0,
+        "word": 4.0,
         "_tid": 121
       },
       {
-        "x0": 1034.0,
-        "y0": 3575.0,
-        "x1": 1119.0,
-        "y1": 3621.0,
-        "cx": 1076.5,
-        "cy": 3598.0,
-        "text": "48",
-        "conf": 0.95538193,
-        "block": 13.0,
+        "x0": 2563.0,
+        "y0": 5347.0,
+        "x1": 2812.0,
+        "y1": 5418.0,
+        "cx": 2687.5,
+        "cy": 5382.5,
+        "text": "Value",
+        "conf": 0.96546036,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 2.0,
+        "line": 36.0,
+        "word": 5.0,
         "_tid": 122
       },
       {
-        "x0": 1210.0,
-        "y0": 3575.0,
-        "x1": 1285.0,
-        "y1": 3621.0,
-        "cx": 1247.5,
-        "cy": 3598.0,
-        "text": "5.1",
-        "conf": 0.92579048,
-        "block": 13.0,
+        "x0": 2919.0,
+        "y0": 5347.0,
+        "x1": 3239.0,
+        "y1": 5418.0,
+        "cx": 3079.0,
+        "cy": 5382.5,
+        "text": "Source",
+        "conf": 0.95234482,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 3.0,
+        "line": 36.0,
+        "word": 6.0,
         "_tid": 123
       },
       {
-        "x0": 1462.0,
-        "y0": 3575.0,
-        "x1": 1543.0,
-        "y1": 3621.0,
-        "cx": 1502.5,
-        "cy": 3598.0,
-        "text": "5.5",
-        "conf": 0.9353614,
-        "block": 13.0,
+        "x0": 3351.0,
+        "y0": 5347.0,
+        "x1": 3864.0,
+        "y1": 5418.0,
+        "cx": 3607.5,
+        "cy": 5382.5,
+        "text": "Confidence",
+        "conf": 0.95234482,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 4.0,
+        "line": 36.0,
+        "word": 7.0,
         "_tid": 124
       },
       {
-        "x0": 1648.0,
-        "y0": 3575.0,
-        "x1": 1766.0,
-        "y1": 3621.0,
-        "cx": 1707.0,
-        "cy": 3598.0,
-        "text": "5.32",
-        "conf": 0.7513380399999999,
-        "block": 13.0,
+        "x0": 729.0,
+        "y0": 5556.0,
+        "x1": 1348.0,
+        "y1": 5657.0,
+        "cx": 1038.5,
+        "cy": 5606.5,
+        "text": "thrust_nominal",
+        "conf": 0.9090307599999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 5.0,
+        "line": 37.0,
+        "word": 1.0,
         "_tid": 125
       },
       {
-        "x0": 1877.0,
-        "y0": 3575.0,
-        "x1": 2073.0,
-        "y1": 3621.0,
-        "cx": 1975.0,
-        "cy": 3598.0,
-        "text": "Table3",
-        "conf": 0.80850845,
-        "block": 13.0,
+        "x0": 1608.0,
+        "y0": 5561.0,
+        "x1": 1740.0,
+        "y1": 5632.0,
+        "cx": 1674.0,
+        "cy": 5596.5,
+        "text": "438",
+        "conf": 0.6847367900000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 6.0,
+        "line": 37.0,
+        "word": 2.0,
         "_tid": 126
       },
       {
-        "x0": 2154.0,
-        "y0": 3575.0,
-        "x1": 2269.0,
-        "y1": 3621.0,
-        "cx": 2211.5,
-        "cy": 3598.0,
-        "text": "0.97",
-        "conf": 0.9502797700000001,
-        "block": 13.0,
+        "x0": 1882.0,
+        "y0": 5561.0,
+        "x1": 1999.0,
+        "y1": 5632.0,
+        "cx": 1940.5,
+        "cy": 5596.5,
+        "text": "5.1",
+        "conf": 0.8876110799999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 7.0,
+        "line": 37.0,
+        "word": 3.0,
         "_tid": 127
       },
       {
-        "x0": 468.0,
-        "y0": 3706.0,
-        "x1": 789.0,
-        "y1": 3765.0,
-        "cx": 628.5,
-        "cy": 3735.5,
-        "text": "thrust_peak",
-        "conf": 0.9204478500000001,
-        "block": 18.0,
+        "x0": 2274.0,
+        "y0": 5561.0,
+        "x1": 2401.0,
+        "y1": 5632.0,
+        "cx": 2337.5,
+        "cy": 5596.5,
+        "text": "5.5",
+        "conf": 0.7961636400000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 1.0,
+        "line": 37.0,
+        "word": 4.0,
         "_tid": 128
       },
       {
-        "x0": 1034.0,
-        "y0": 3732.0,
-        "x1": 1073.0,
-        "y1": 3739.0,
-        "cx": 1053.5,
-        "cy": 3735.5,
-        "text": "-",
-        "conf": 0.76373978,
-        "block": 18.0,
+        "x0": 2563.0,
+        "y0": 5561.0,
+        "x1": 2746.0,
+        "y1": 5632.0,
+        "cx": 2654.5,
+        "cy": 5596.5,
+        "text": "5.32",
+        "conf": 0.88109329,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 2.0,
+        "line": 37.0,
+        "word": 5.0,
         "_tid": 129
       },
       {
-        "x0": 1210.0,
-        "y0": 3706.0,
-        "x1": 1292.0,
-        "y1": 3752.0,
-        "cx": 1251.0,
-        "cy": 3729.0,
-        "text": "6.2",
-        "conf": 0.96701508,
-        "block": 18.0,
+        "x0": 2919.0,
+        "y0": 5561.0,
+        "x1": 3224.0,
+        "y1": 5632.0,
+        "cx": 3071.5,
+        "cy": 5596.5,
+        "text": "Table3",
+        "conf": 0.8930065899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 3.0,
+        "line": 37.0,
+        "word": 6.0,
         "_tid": 130
       },
       {
-        "x0": 1462.0,
-        "y0": 3706.0,
-        "x1": 1543.0,
-        "y1": 3752.0,
-        "cx": 1502.5,
-        "cy": 3729.0,
-        "text": "6.8",
-        "conf": 0.9573877000000001,
-        "block": 18.0,
+        "x0": 3351.0,
+        "y0": 5561.0,
+        "x1": 3529.0,
+        "y1": 5632.0,
+        "cx": 3440.0,
+        "cy": 5596.5,
+        "text": "0.97",
+        "conf": 0.91550385,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 4.0,
+        "line": 37.0,
+        "word": 7.0,
         "_tid": 131
       },
       {
-        "x0": 1648.0,
-        "y0": 3706.0,
-        "x1": 1766.0,
-        "y1": 3752.0,
-        "cx": 1707.0,
-        "cy": 3729.0,
-        "text": "6.95",
-        "conf": 0.7747135900000001,
-        "block": 18.0,
+        "x0": 729.0,
+        "y0": 5759.0,
+        "x1": 1227.0,
+        "y1": 5860.0,
+        "cx": 978.0,
+        "cy": 5809.5,
+        "text": "thrust_peak",
+        "conf": 0.9168695800000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 5.0,
-        "rehocr_text": "6.95",
-        "rehocr_conf": 0.7747135900000001,
-        "rehocr_tag": "thr160:psm7",
+        "line": 38.0,
+        "word": 1.0,
         "_tid": 132
       },
       {
-        "x0": 1877.0,
-        "y0": 3706.0,
-        "x1": 2073.0,
-        "y1": 3752.0,
-        "cx": 1975.0,
-        "cy": 3729.0,
-        "text": "Table3",
-        "conf": 0.68619385,
-        "block": 18.0,
+        "x0": 1608.0,
+        "y0": 5805.0,
+        "x1": 1669.0,
+        "y1": 5815.0,
+        "cx": 1638.5,
+        "cy": 5810.0,
+        "text": "\u2014",
+        "conf": 0.31737991,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 6.0,
+        "line": 38.0,
+        "word": 2.0,
         "_tid": 133
       },
       {
-        "x0": 2154.0,
-        "y0": 3706.0,
-        "x1": 2262.0,
-        "y1": 3752.0,
-        "cx": 2208.0,
-        "cy": 3729.0,
-        "text": "0.91",
-        "conf": 0.95428459,
-        "block": 18.0,
+        "x0": 1882.0,
+        "y0": 5764.0,
+        "x1": 2010.0,
+        "y1": 5835.0,
+        "cx": 1946.0,
+        "cy": 5799.5,
+        "text": "6.2",
+        "conf": 0.94086288,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 7.0,
+        "line": 38.0,
+        "word": 3.0,
         "_tid": 134
       },
       {
-        "x0": 468.0,
-        "y0": 3843.0,
-        "x1": 929.0,
-        "y1": 3902.0,
-        "cx": 698.5,
-        "cy": 3872.5,
-        "text": "power_draw_idle",
-        "conf": 0.88979797,
-        "block": 18.0,
+        "x0": 2274.0,
+        "y0": 5764.0,
+        "x1": 2401.0,
+        "y1": 5835.0,
+        "cx": 2337.5,
+        "cy": 5799.5,
+        "text": "6.8",
+        "conf": 0.8816145299999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 1.0,
+        "line": 38.0,
+        "word": 4.0,
         "_tid": 135
       },
       {
-        "x0": 1037.0,
-        "y0": 3843.0,
-        "x1": 1102.0,
-        "y1": 3889.0,
-        "cx": 1069.5,
-        "cy": 3866.0,
-        "text": "75",
-        "conf": 0.89566521,
-        "block": 18.0,
+        "x0": 2563.0,
+        "y0": 5764.0,
+        "x1": 2746.0,
+        "y1": 5835.0,
+        "cx": 2654.5,
+        "cy": 5799.5,
+        "text": "695",
+        "conf": 0.78630157,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 2.0,
+        "line": 38.0,
+        "word": 5.0,
         "_tid": 136
       },
       {
-        "x0": 1210.0,
-        "y0": 3843.0,
-        "x1": 1275.0,
-        "y1": 3889.0,
-        "cx": 1242.5,
-        "cy": 3866.0,
-        "text": "80",
-        "conf": 0.89566521,
-        "block": 18.0,
+        "x0": 2919.0,
+        "y0": 5764.0,
+        "x1": 3224.0,
+        "y1": 5835.0,
+        "cx": 3071.5,
+        "cy": 5799.5,
+        "text": "Table3",
+        "conf": 0.6916348999999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 3.0,
+        "line": 38.0,
+        "word": 6.0,
         "_tid": 137
       },
       {
-        "x0": 1462.0,
-        "y0": 3843.0,
-        "x1": 1527.0,
-        "y1": 3889.0,
-        "cx": 1494.5,
-        "cy": 3866.0,
-        "text": "95",
-        "conf": 0.96638313,
-        "block": 18.0,
+        "x0": 3351.0,
+        "y0": 5764.0,
+        "x1": 3519.0,
+        "y1": 5835.0,
+        "cx": 3435.0,
+        "cy": 5799.5,
+        "text": "0.91",
+        "conf": 0.91331154,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 4.0,
+        "line": 38.0,
+        "word": 7.0,
         "_tid": 138
       },
       {
-        "x0": 1655.0,
-        "y0": 3837.0,
-        "x1": 1749.0,
-        "y1": 3908.0,
-        "cx": 1702.0,
-        "cy": 3872.5,
-        "text": "104",
-        "conf": 0.96912666,
-        "block": 18.0,
+        "x0": 729.0,
+        "y0": 5977.0,
+        "x1": 1445.0,
+        "y1": 6069.0,
+        "cx": 1087.0,
+        "cy": 6023.0,
+        "text": "power_draw_idle",
+        "conf": 0.48878307,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 5.0,
+        "line": 39.0,
+        "word": 1.0,
         "_tid": 139
       },
       {
-        "x0": 1877.0,
-        "y0": 3843.0,
-        "x1": 2024.0,
-        "y1": 3889.0,
-        "cx": 1950.5,
-        "cy": 3866.0,
-        "text": "Table",
-        "conf": 0.62279587,
-        "block": 18.0,
+        "x0": 1613.0,
+        "y0": 5977.0,
+        "x1": 1715.0,
+        "y1": 6049.0,
+        "cx": 1664.0,
+        "cy": 6013.0,
+        "text": "75",
+        "conf": 0.73894806,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 6.0,
+        "line": 39.0,
+        "word": 2.0,
         "_tid": 140
       },
       {
-        "x0": 2040.0,
-        "y0": 3843.0,
-        "x1": 2073.0,
-        "y1": 3889.0,
-        "cx": 2056.5,
-        "cy": 3866.0,
-        "text": "4",
-        "conf": 0.9693787399999999,
-        "block": 18.0,
+        "x0": 1882.0,
+        "y0": 5977.0,
+        "x1": 1984.0,
+        "y1": 6049.0,
+        "cx": 1933.0,
+        "cy": 6013.0,
+        "text": "#80",
+        "conf": 0.5267810399999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 7.0,
-        "rehocr_text": "4",
-        "rehocr_conf": 0.9693787399999999,
-        "rehocr_tag": "thr160:psm7",
+        "line": 39.0,
+        "word": 3.0,
         "_tid": 141
       },
       {
-        "x0": 2154.0,
-        "y0": 3843.0,
-        "x1": 2269.0,
-        "y1": 3889.0,
-        "cx": 2211.5,
-        "cy": 3866.0,
-        "text": "0.77",
-        "conf": 0.8581536900000001,
-        "block": 18.0,
+        "x0": 2274.0,
+        "y0": 5977.0,
+        "x1": 2375.0,
+        "y1": 6049.0,
+        "cx": 2324.5,
+        "cy": 6013.0,
+        "text": "95",
+        "conf": 0.94220528,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 8.0,
+        "line": 39.0,
+        "word": 4.0,
         "_tid": 142
       },
       {
-        "x0": 468.0,
-        "y0": 3980.0,
-        "x1": 968.0,
-        "y1": 4039.0,
-        "cx": 718.0,
-        "cy": 4009.5,
-        "text": "power_draw_peak",
-        "conf": 0.89462921,
-        "block": 18.0,
+        "x0": 2574.0,
+        "y0": 5973.0,
+        "x1": 2720.0,
+        "y1": 6073.0,
+        "cx": 2647.0,
+        "cy": 6023.0,
+        "text": "104",
+        "conf": 0.96460724,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 1.0,
+        "line": 39.0,
+        "word": 5.0,
         "_tid": 143
       },
       {
-        "x0": 1034.0,
-        "y0": 4007.0,
-        "x1": 1073.0,
-        "y1": 4013.0,
-        "cx": 1053.5,
-        "cy": 4010.0,
-        "text": "\u2014",
-        "conf": 0.69685226,
-        "block": 18.0,
+        "x0": 2919.0,
+        "y0": 5977.0,
+        "x1": 3224.0,
+        "y1": 6049.0,
+        "cx": 3071.5,
+        "cy": 6013.0,
+        "text": "Table4",
+        "conf": 0.8937809,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 2.0,
+        "line": 39.0,
+        "word": 6.0,
         "_tid": 144
       },
       {
-        "x0": 1213.0,
-        "y0": 3980.0,
-        "x1": 1311.0,
-        "y1": 4026.0,
-        "cx": 1262.0,
-        "cy": 4003.0,
-        "text": "140",
-        "conf": 0.9678016700000001,
-        "block": 18.0,
+        "x0": 3351.0,
+        "y0": 5977.0,
+        "x1": 3529.0,
+        "y1": 6049.0,
+        "cx": 3440.0,
+        "cy": 6013.0,
+        "text": "0.77",
+        "conf": 0.9171623200000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 3.0,
+        "line": 39.0,
+        "word": 7.0,
         "_tid": 145
       },
       {
-        "x0": 1465.0,
-        "y0": 3980.0,
-        "x1": 1560.0,
-        "y1": 4026.0,
-        "cx": 1512.5,
-        "cy": 4003.0,
-        "text": "155",
-        "conf": 0.75850594,
-        "block": 18.0,
+        "x0": 729.0,
+        "y0": 6191.0,
+        "x1": 1506.0,
+        "y1": 6282.0,
+        "cx": 1117.5,
+        "cy": 6236.5,
+        "text": "power_draw_peak",
+        "conf": 0.86431053,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 4.0,
+        "line": 40.0,
+        "word": 1.0,
         "_tid": 146
       },
       {
-        "x0": 1655.0,
-        "y0": 3980.0,
-        "x1": 1739.0,
-        "y1": 4026.0,
-        "cx": 1697.0,
-        "cy": 4003.0,
-        "text": "131",
-        "conf": 0.75850594,
-        "block": 18.0,
+        "x0": 1608.0,
+        "y0": 6232.0,
+        "x1": 1669.0,
+        "y1": 6242.0,
+        "cx": 1638.5,
+        "cy": 6237.0,
+        "text": "\u2014",
+        "conf": 0.83143486,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 5.0,
+        "line": 40.0,
+        "word": 2.0,
         "_tid": 147
       },
       {
-        "x0": 1877.0,
-        "y0": 3980.0,
-        "x1": 2073.0,
-        "y1": 4026.0,
-        "cx": 1975.0,
-        "cy": 4003.0,
-        "text": "Table4",
-        "conf": 0.8937236799999999,
-        "block": 18.0,
+        "x0": 1888.0,
+        "y0": 6191.0,
+        "x1": 2040.0,
+        "y1": 6262.0,
+        "cx": 1964.0,
+        "cy": 6226.5,
+        "text": "140",
+        "conf": 0.9647612,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 6.0,
+        "line": 40.0,
+        "word": 3.0,
         "_tid": 148
       },
       {
-        "x0": 2154.0,
-        "y0": 3980.0,
-        "x1": 2269.0,
-        "y1": 4026.0,
-        "cx": 2211.5,
-        "cy": 4003.0,
-        "text": "0.85",
-        "conf": 0.96463188,
-        "block": 18.0,
+        "x0": 2279.0,
+        "y0": 6191.0,
+        "x1": 2426.0,
+        "y1": 6262.0,
+        "cx": 2352.5,
+        "cy": 6226.5,
+        "text": "155",
+        "conf": 0.6415779899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 3.0,
-        "word": 7.0,
+        "line": 40.0,
+        "word": 4.0,
         "_tid": 149
       },
       {
-        "x0": 468.0,
-        "y0": 4110.0,
-        "x1": 890.0,
-        "y1": 4177.0,
-        "cx": 679.0,
-        "cy": 4143.5,
-        "text": "thermal_margin",
-        "conf": 0.8878859699999999,
-        "block": 18.0,
+        "x0": 2574.0,
+        "y0": 6191.0,
+        "x1": 2706.0,
+        "y1": 6262.0,
+        "cx": 2640.0,
+        "cy": 6226.5,
+        "text": "131",
+        "conf": 0.79418266,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 1.0,
+        "line": 40.0,
+        "word": 5.0,
         "_tid": 150
       },
       {
-        "x0": 1037.0,
-        "y0": 4114.0,
-        "x1": 1070.0,
-        "y1": 4160.0,
-        "cx": 1053.5,
-        "cy": 4137.0,
-        "text": "8",
-        "conf": 0.9103337899999999,
-        "block": 18.0,
+        "x0": 2919.0,
+        "y0": 6191.0,
+        "x1": 3224.0,
+        "y1": 6262.0,
+        "cx": 3071.5,
+        "cy": 6226.5,
+        "text": "Table4",
+        "conf": 0.8930181899999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 2.0,
+        "line": 40.0,
+        "word": 6.0,
         "_tid": 151
       },
       {
-        "x0": 1213.0,
-        "y0": 4114.0,
-        "x1": 1275.0,
-        "y1": 4160.0,
-        "cx": 1244.0,
-        "cy": 4137.0,
-        "text": "12",
-        "conf": 0.9685367599999999,
-        "block": 18.0,
+        "x0": 3351.0,
+        "y0": 6191.0,
+        "x1": 3529.0,
+        "y1": 6262.0,
+        "cx": 3440.0,
+        "cy": 6226.5,
+        "text": "0.85",
+        "conf": 0.96296822,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 3.0,
+        "line": 40.0,
+        "word": 7.0,
         "_tid": 152
       },
       {
-        "x0": 1458.0,
-        "y0": 4140.0,
-        "x1": 1498.0,
-        "y1": 4147.0,
-        "cx": 1478.0,
-        "cy": 4143.5,
-        "text": "-",
-        "conf": 0.77517174,
-        "block": 18.0,
+        "x0": 729.0,
+        "y0": 6395.0,
+        "x1": 1384.0,
+        "y1": 6495.0,
+        "cx": 1056.5,
+        "cy": 6445.0,
+        "text": "thermal_margin",
+        "conf": 0.91732391,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 4.0,
+        "line": 41.0,
+        "word": 1.0,
         "_tid": 153
       },
       {
-        "x0": 1648.0,
-        "y0": 4114.0,
-        "x1": 1681.0,
-        "y1": 4160.0,
-        "cx": 1664.5,
-        "cy": 4137.0,
-        "text": "6",
-        "conf": 0.9687817400000001,
-        "block": 18.0,
+        "x0": 1613.0,
+        "y0": 6399.0,
+        "x1": 1664.0,
+        "y1": 6470.0,
+        "cx": 1638.5,
+        "cy": 6434.5,
+        "text": "8",
+        "conf": 0.92277199,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 5.0,
+        "line": 41.0,
+        "word": 2.0,
         "_tid": 154
       },
       {
-        "x0": 1880.0,
-        "y0": 4114.0,
-        "x1": 1975.0,
-        "y1": 4173.0,
-        "cx": 1927.5,
-        "cy": 4143.5,
-        "text": "Fig.",
-        "conf": 0.9337188000000001,
-        "block": 18.0,
+        "x0": 1888.0,
+        "y0": 6399.0,
+        "x1": 1984.0,
+        "y1": 6470.0,
+        "cx": 1936.0,
+        "cy": 6434.5,
+        "text": "12",
+        "conf": 0.96698624,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 6.0,
+        "line": 41.0,
+        "word": 3.0,
         "_tid": 155
       },
       {
-        "x0": 1998.0,
-        "y0": 4114.0,
-        "x1": 2027.0,
-        "y1": 4160.0,
-        "cx": 2012.5,
-        "cy": 4137.0,
-        "text": "5",
-        "conf": 0.9337188000000001,
-        "block": 18.0,
+        "x0": 2269.0,
+        "y0": 6440.0,
+        "x1": 2330.0,
+        "y1": 6450.0,
+        "cx": 2299.5,
+        "cy": 6445.0,
+        "text": "\u2014",
+        "conf": 0.12130820999999999,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 7.0,
+        "line": 41.0,
+        "word": 4.0,
         "_tid": 156
       },
       {
-        "x0": 2154.0,
-        "y0": 4114.0,
-        "x1": 2269.0,
-        "y1": 4160.0,
-        "cx": 2211.5,
-        "cy": 4137.0,
-        "text": "0.63",
-        "conf": 0.96730125,
-        "block": 18.0,
+        "x0": 2563.0,
+        "y0": 6399.0,
+        "x1": 2614.0,
+        "y1": 6470.0,
+        "cx": 2588.5,
+        "cy": 6434.5,
+        "text": "6",
+        "conf": 0.96878937,
+        "block": 1.0,
         "par": 1.0,
-        "line": 4.0,
-        "word": 8.0,
+        "line": 41.0,
+        "word": 5.0,
         "_tid": 157
       },
       {
-        "x0": 504.0,
-        "y0": 4291.0,
-        "x1": 609.0,
-        "y1": 4336.0,
-        "cx": 556.5,
-        "cy": 4313.5,
-        "text": "Use",
-        "conf": 0.96674133,
-        "block": 19.0,
+        "x0": 2924.0,
+        "y0": 6399.0,
+        "x1": 3072.0,
+        "y1": 6491.0,
+        "cx": 2998.0,
+        "cy": 6445.0,
+        "text": "Fig.",
+        "conf": 0.96048103,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 1.0,
+        "line": 41.0,
+        "word": 6.0,
         "_tid": 158
       },
       {
-        "x0": 625.0,
-        "y0": 4291.0,
-        "x1": 723.0,
-        "y1": 4336.0,
-        "cx": 674.0,
-        "cy": 4313.5,
-        "text": "this",
-        "conf": 0.96507118,
-        "block": 19.0,
+        "x0": 3107.0,
+        "y0": 6399.0,
+        "x1": 3153.0,
+        "y1": 6470.0,
+        "cx": 3130.0,
+        "cy": 6434.5,
+        "text": "5",
+        "conf": 0.96048103,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 2.0,
+        "line": 41.0,
+        "word": 7.0,
         "_tid": 159
       },
       {
-        "x0": 740.0,
-        "y0": 4291.0,
-        "x1": 874.0,
-        "y1": 4336.0,
-        "cx": 807.0,
-        "cy": 4313.5,
-        "text": "table",
-        "conf": 0.96751213,
-        "block": 19.0,
+        "x0": 3351.0,
+        "y0": 6399.0,
+        "x1": 3529.0,
+        "y1": 6470.0,
+        "cx": 3440.0,
+        "cy": 6434.5,
+        "text": "0.63",
+        "conf": 0.9669414500000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 3.0,
+        "line": 41.0,
+        "word": 8.0,
         "_tid": 160
       },
       {
-        "x0": 887.0,
-        "y0": 4294.0,
-        "x1": 939.0,
-        "y1": 4336.0,
-        "cx": 913.0,
-        "cy": 4315.0,
-        "text": "to",
-        "conf": 0.96703239,
-        "block": 19.0,
+        "x0": 785.0,
+        "y0": 6674.0,
+        "x1": 947.0,
+        "y1": 6745.0,
+        "cx": 866.0,
+        "cy": 6709.5,
+        "text": "Use",
+        "conf": 0.9577562000000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 4.0,
+        "line": 42.0,
+        "word": 1.0,
         "_tid": 161
       },
       {
-        "x0": 959.0,
-        "y0": 4291.0,
-        "x1": 1158.0,
-        "y1": 4336.0,
-        "cx": 1058.5,
-        "cy": 4313.5,
-        "text": "confirm",
-        "conf": 0.9282370799999999,
-        "block": 19.0,
+        "x0": 973.0,
+        "y0": 6674.0,
+        "x1": 1125.0,
+        "y1": 6745.0,
+        "cx": 1049.0,
+        "cy": 6709.5,
+        "text": "this",
+        "conf": 0.9577562000000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 5.0,
+        "line": 42.0,
+        "word": 2.0,
         "_tid": 162
       },
       {
-        "x0": 1177.0,
-        "y0": 4291.0,
-        "x1": 1521.0,
-        "y1": 4336.0,
-        "cx": 1349.0,
-        "cy": 4313.5,
-        "text": "multi-column",
-        "conf": 0.90334305,
-        "block": 19.0,
+        "x0": 1151.0,
+        "y0": 6674.0,
+        "x1": 1359.0,
+        "y1": 6745.0,
+        "cx": 1255.0,
+        "cy": 6709.5,
+        "text": "table",
+        "conf": 0.96375961,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 6.0,
+        "line": 42.0,
+        "word": 3.0,
         "_tid": 163
       },
       {
-        "x0": 1543.0,
-        "y0": 4291.0,
-        "x1": 1739.0,
-        "y1": 4350.0,
-        "cx": 1641.0,
-        "cy": 4320.5,
-        "text": "parsing",
-        "conf": 0.95838402,
-        "block": 19.0,
+        "x0": 1379.0,
+        "y0": 6679.0,
+        "x1": 1461.0,
+        "y1": 6745.0,
+        "cx": 1420.0,
+        "cy": 6712.0,
+        "text": "to",
+        "conf": 0.96738831,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 7.0,
+        "line": 42.0,
+        "word": 4.0,
         "_tid": 164
       },
       {
-        "x0": 1759.0,
-        "y0": 4291.0,
-        "x1": 1857.0,
-        "y1": 4336.0,
-        "cx": 1808.0,
-        "cy": 4313.5,
-        "text": "and",
-        "conf": 0.96828178,
-        "block": 19.0,
+        "x0": 1491.0,
+        "y0": 6674.0,
+        "x1": 1801.0,
+        "y1": 6745.0,
+        "cx": 1646.0,
+        "cy": 6709.5,
+        "text": "confirm",
+        "conf": 0.9328738400000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 8.0,
+        "line": 42.0,
+        "word": 5.0,
         "_tid": 165
       },
       {
-        "x0": 1880.0,
-        "y0": 4291.0,
-        "x1": 2223.0,
-        "y1": 4350.0,
-        "cx": 2051.5,
-        "cy": 4320.5,
-        "text": "comparisons",
-        "conf": 0.96188934,
-        "block": 19.0,
+        "x0": 1832.0,
+        "y0": 6674.0,
+        "x1": 2365.0,
+        "y1": 6745.0,
+        "cx": 2098.5,
+        "cy": 6709.5,
+        "text": "multi-column",
+        "conf": 0.91891212,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 9.0,
+        "line": 42.0,
+        "word": 6.0,
         "_tid": 166
       },
       {
-        "x0": 2243.0,
-        "y0": 4291.0,
-        "x1": 2439.0,
-        "y1": 4350.0,
-        "cx": 2341.0,
-        "cy": 4320.5,
-        "text": "against",
-        "conf": 0.95450333,
-        "block": 19.0,
+        "x0": 2401.0,
+        "y0": 6674.0,
+        "x1": 2706.0,
+        "y1": 6765.0,
+        "cx": 2553.5,
+        "cy": 6719.5,
+        "text": "parsing",
+        "conf": 0.9576190200000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 10.0,
+        "line": 42.0,
+        "word": 7.0,
         "_tid": 167
       },
       {
-        "x0": 2458.0,
-        "y0": 4291.0,
-        "x1": 2772.0,
-        "y1": 4350.0,
-        "cx": 2615.0,
-        "cy": 4320.5,
-        "text": "asymmetric",
-        "conf": 0.9343937699999999,
-        "block": 19.0,
+        "x0": 2736.0,
+        "y0": 6674.0,
+        "x1": 2889.0,
+        "y1": 6745.0,
+        "cx": 2812.5,
+        "cy": 6709.5,
+        "text": "and",
+        "conf": 0.9671833,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 11.0,
+        "line": 42.0,
+        "word": 8.0,
         "_tid": 168
       },
       {
-        "x0": 2788.0,
-        "y0": 4304.0,
-        "x1": 2916.0,
-        "y1": 4350.0,
-        "cx": 2852.0,
-        "cy": 4327.0,
-        "text": "spec",
-        "conf": 0.9624393499999999,
-        "block": 19.0,
+        "x0": 2924.0,
+        "y0": 6674.0,
+        "x1": 3458.0,
+        "y1": 6765.0,
+        "cx": 3191.0,
+        "cy": 6719.5,
+        "text": "comparisons",
+        "conf": 0.9583760800000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 12.0,
+        "line": 42.0,
+        "word": 9.0,
         "_tid": 169
       },
       {
-        "x0": 2935.0,
-        "y0": 4291.0,
-        "x1": 3099.0,
-        "y1": 4336.0,
-        "cx": 3017.0,
-        "cy": 4313.5,
-        "text": "bands",
-        "conf": 0.96048416,
-        "block": 19.0,
+        "x0": 3488.0,
+        "y0": 6674.0,
+        "x1": 3793.0,
+        "y1": 6765.0,
+        "cx": 3640.5,
+        "cy": 6719.5,
+        "text": "against",
+        "conf": 0.96702415,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 13.0,
+        "line": 42.0,
+        "word": 10.0,
         "_tid": 170
       },
       {
-        "x0": 3118.0,
-        "y0": 4291.0,
-        "x1": 3207.0,
-        "y1": 4350.0,
-        "cx": 3162.5,
-        "cy": 4320.5,
-        "text": "(no",
-        "conf": 0.96048416,
-        "block": 19.0,
+        "x0": 3824.0,
+        "y0": 6674.0,
+        "x1": 4312.0,
+        "y1": 6765.0,
+        "cx": 4068.0,
+        "cy": 6719.5,
+        "text": "asymmetric",
+        "conf": 0.94873756,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 14.0,
+        "line": 42.0,
+        "word": 11.0,
         "_tid": 171
       },
       {
-        "x0": 504.0,
-        "y0": 4389.0,
-        "x1": 596.0,
-        "y1": 4434.0,
-        "cx": 550.0,
-        "cy": 4411.5,
-        "text": "min",
-        "conf": 0.95702263,
-        "block": 19.0,
+        "x0": 4337.0,
+        "y0": 6694.0,
+        "x1": 4535.0,
+        "y1": 6765.0,
+        "cx": 4436.0,
+        "cy": 6729.5,
+        "text": "spec",
+        "conf": 0.96152969,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 1.0,
+        "line": 42.0,
+        "word": 12.0,
         "_tid": 172
       },
       {
-        "x0": 615.0,
-        "y0": 4402.0,
-        "x1": 671.0,
-        "y1": 4434.0,
-        "cx": 643.0,
-        "cy": 4418.0,
-        "text": "or",
-        "conf": 0.96748047,
-        "block": 19.0,
+        "x0": 4566.0,
+        "y0": 6674.0,
+        "x1": 4820.0,
+        "y1": 6745.0,
+        "cx": 4693.0,
+        "cy": 6709.5,
+        "text": "bands",
+        "conf": 0.96321877,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 2.0,
+        "line": 42.0,
+        "word": 13.0,
         "_tid": 173
       },
       {
-        "x0": 691.0,
-        "y0": 4402.0,
-        "x1": 805.0,
-        "y1": 4434.0,
-        "cx": 748.0,
-        "cy": 4418.0,
-        "text": "max",
-        "conf": 0.96530785,
-        "block": 19.0,
+        "x0": 4850.0,
+        "y0": 6674.0,
+        "x1": 4987.0,
+        "y1": 6765.0,
+        "cx": 4918.5,
+        "cy": 6719.5,
+        "text": "(no",
+        "conf": 0.9661911000000001,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 3.0,
+        "line": 42.0,
+        "word": 14.0,
         "_tid": 174
       },
       {
-        "x0": 821.0,
-        "y0": 4389.0,
-        "x1": 1057.0,
-        "y1": 4448.0,
-        "cx": 939.0,
-        "cy": 4418.5,
-        "text": "defined).",
-        "conf": 0.96581429,
-        "block": 19.0,
+        "x0": 785.0,
+        "y0": 6826.0,
+        "x1": 927.0,
+        "y1": 6897.0,
+        "cx": 856.0,
+        "cy": 6861.5,
+        "text": "min",
+        "conf": 0.96755966,
+        "block": 1.0,
         "par": 1.0,
-        "line": 2.0,
-        "word": 4.0,
+        "line": 43.0,
+        "word": 1.0,
         "_tid": 175
       },
       {
-        "x0": 436.0,
-        "y0": 4670.0,
-        "x1": 527.0,
-        "y1": 4758.0,
-        "cx": 481.5,
-        "cy": 4714.0,
-        "text": "3.",
-        "conf": 0.8781765,
-        "block": 21.0,
+        "x0": 958.0,
+        "y0": 6846.0,
+        "x1": 1044.0,
+        "y1": 6897.0,
+        "cx": 1001.0,
+        "cy": 6871.5,
+        "text": "or",
+        "conf": 0.95559845,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 1.0,
+        "line": 43.0,
+        "word": 2.0,
         "_tid": 176
       },
       {
-        "x0": 576.0,
-        "y0": 4670.0,
-        "x1": 1413.0,
-        "y1": 4758.0,
-        "cx": 994.5,
-        "cy": 4714.0,
-        "text": "Environmental",
-        "conf": 0.95299683,
-        "block": 21.0,
+        "x0": 1074.0,
+        "y0": 6846.0,
+        "x1": 1252.0,
+        "y1": 6897.0,
+        "cx": 1163.0,
+        "cy": 6871.5,
+        "text": "max",
+        "conf": 0.95559845,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 2.0,
+        "line": 43.0,
+        "word": 3.0,
         "_tid": 177
       },
       {
-        "x0": 1462.0,
-        "y0": 4670.0,
-        "x1": 2086.0,
-        "y1": 4758.0,
-        "cx": 1774.0,
-        "cy": 4714.0,
-        "text": "Endurance",
-        "conf": 0.96331284,
-        "block": 21.0,
+        "x0": 1278.0,
+        "y0": 6826.0,
+        "x1": 1644.0,
+        "y1": 6918.0,
+        "cx": 1461.0,
+        "cy": 6872.0,
+        "text": "defined).",
+        "conf": 0.96263229,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 3.0,
+        "line": 43.0,
+        "word": 4.0,
         "_tid": 178
       },
       {
-        "x0": 2128.0,
-        "y0": 4670.0,
-        "x1": 2485.0,
-        "y1": 4758.0,
-        "cx": 2306.5,
-        "cy": 4714.0,
-        "text": "Matrix",
-        "conf": 0.96128838,
-        "block": 21.0,
+        "x0": 678.0,
+        "y0": 7263.0,
+        "x1": 820.0,
+        "y1": 7400.0,
+        "cx": 749.0,
+        "cy": 7331.5,
+        "text": "3.",
+        "conf": 0.96768806,
+        "block": 1.0,
         "par": 1.0,
-        "line": 1.0,
-        "word": 4.0,
+        "line": 44.0,
+        "word": 1.0,
         "_tid": 179
+      },
+      {
+        "x0": 897.0,
+        "y0": 7263.0,
+        "x1": 2198.0,
+        "y1": 7400.0,
+        "cx": 1547.5,
+        "cy": 7331.5,
+        "text": "Environmental",
+        "conf": 0.9612011699999999,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 44.0,
+        "word": 2.0,
+        "_tid": 180
+      },
+      {
+        "x0": 2274.0,
+        "y0": 7263.0,
+        "x1": 3244.0,
+        "y1": 7400.0,
+        "cx": 2759.0,
+        "cy": 7331.5,
+        "text": "Endurance",
+        "conf": 0.95590904,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 44.0,
+        "word": 3.0,
+        "_tid": 181
+      },
+      {
+        "x0": 3310.0,
+        "y0": 7263.0,
+        "x1": 3864.0,
+        "y1": 7400.0,
+        "cx": 3587.0,
+        "cy": 7331.5,
+        "text": "Matrix",
+        "conf": 0.95948563,
+        "block": 1.0,
+        "par": 1.0,
+        "line": 44.0,
+        "word": 4.0,
+        "_tid": 182
       }
     ],
     "tables": [
       {
         "bbox_px": [
-          432.0,
-          579.5,
-          3471.0,
-          2999.0
+          674.0,
+          901.0,
+          5400.0,
+          4663.5
         ],
         "y_lines_px": [
-          579.5,
-          1010.5,
-          1438.5,
-          1768.5,
-          2200.0,
-          2533.0,
-          2999.0
+          901.0,
+          1571.5,
+          2237.0,
+          2750.5,
+          3421.0,
+          3940.0,
+          4663.5
         ],
         "row_bands_px": [
           [
-            579.5,
-            1010.5
+            901.0,
+            1571.5
           ],
           [
-            1010.5,
-            1438.5
+            1571.5,
+            2237.0
           ],
           [
-            1438.5,
-            1768.5
+            2237.0,
+            2750.5
           ],
           [
-            1768.5,
-            2200.0
+            2750.5,
+            3421.0
           ],
           [
-            2200.0,
-            2533.0
+            3421.0,
+            3940.0
           ],
           [
-            2533.0,
-            2999.0
+            3940.0,
+            4663.5
           ]
         ],
         "col_bounds_px": [
-          432.0,
-          985.3571428571429,
-          1417.5,
-          1860.5,
-          2215.0,
-          2476.5,
-          2730.0,
-          3051.5,
-          3471.0
+          674.0,
+          1521.5,
+          2205.5,
+          2894.0,
+          3445.5,
+          3851.5,
+          4245.5,
+          4746.5,
+          5400.0
         ],
         "header_virtual_tokens": [
           {
-            "x0": 468.0,
-            "y0": 431.0,
-            "x1": 609.0,
-            "y1": 499.0,
-            "cx": 538.5,
-            "cy": 465.0,
+            "x0": 729.0,
+            "y0": 673.0,
+            "x1": 947.0,
+            "y1": 773.0,
+            "cx": 838.0,
+            "cy": 723.0,
             "text": "Term",
             "conf": 1.0,
             "block": 0.0,
@@ -5675,13 +5734,13 @@
             "virtual": 1.0
           },
           {
-            "x0": 1050.0,
-            "y0": 436.0,
-            "x1": 1380.0,
-            "y1": 494.0,
-            "cx": 1215.0,
-            "cy": 465.0,
-            "text": "Description",
+            "x0": 1633.0,
+            "y0": 677.0,
+            "x1": 2147.0,
+            "y1": 769.0,
+            "cx": 1890.0,
+            "cy": 723.0,
+            "text": "_\u2014 Description",
             "conf": 1.0,
             "block": 0.0,
             "par": 0.0,
@@ -5690,13 +5749,13 @@
             "virtual": 1.0
           },
           {
-            "x0": 1455.0,
-            "y0": 436.0,
-            "x1": 1828.0,
-            "y1": 494.0,
-            "cx": 1641.5,
-            "cy": 465.0,
-            "text": "Requirement",
+            "x0": 2264.0,
+            "y0": 677.0,
+            "x1": 2843.0,
+            "y1": 769.0,
+            "cx": 2553.5,
+            "cy": 723.0,
+            "text": "; Requirement",
             "conf": 1.0,
             "block": 0.0,
             "par": 0.0,
@@ -5705,12 +5764,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1893.0,
-            "y0": 387.0,
-            "x1": 2177.0,
-            "y1": 530.0,
-            "cx": 2035.0,
-            "cy": 458.5,
+            "x0": 2945.0,
+            "y0": 601.0,
+            "x1": 3387.0,
+            "y1": 824.0,
+            "cx": 3166.0,
+            "cy": 712.5,
             "text": "Measured Value",
             "conf": 1.0,
             "block": 0.0,
@@ -5720,13 +5779,13 @@
             "virtual": 1.0
           },
           {
-            "x0": 2253.0,
-            "y0": 431.0,
-            "x1": 2400.0,
-            "y1": 499.0,
-            "cx": 2326.5,
-            "cy": 465.0,
-            "text": "Units",
+            "x0": 3504.0,
+            "y0": 677.0,
+            "x1": 3732.0,
+            "y1": 748.0,
+            "cx": 3618.0,
+            "cy": 712.5,
+            "text": "; Units",
             "conf": 1.0,
             "block": 0.0,
             "par": 0.0,
@@ -5735,12 +5794,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 2553.0,
-            "y0": 436.0,
-            "x1": 2694.0,
-            "y1": 494.0,
-            "cx": 2623.5,
-            "cy": 465.0,
+            "x0": 3971.0,
+            "y0": 677.0,
+            "x1": 4190.0,
+            "y1": 769.0,
+            "cx": 4080.5,
+            "cy": 723.0,
             "text": "Page",
             "conf": 1.0,
             "block": 0.0,
@@ -5750,13 +5809,13 @@
             "virtual": 1.0
           },
           {
-            "x0": 2766.0,
-            "y0": 387.0,
-            "x1": 2971.0,
-            "y1": 543.0,
-            "cx": 2868.5,
-            "cy": 465.0,
-            "text": "Data ; Quality",
+            "x0": 4301.0,
+            "y0": 601.0,
+            "x1": 4622.0,
+            "y1": 845.0,
+            "cx": 4461.5,
+            "cy": 723.0,
+            "text": "Data Quality",
             "conf": 1.0,
             "block": 0.0,
             "par": 0.0,
@@ -5765,12 +5824,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 3132.0,
-            "y0": 436.0,
-            "x1": 3295.0,
-            "y1": 481.0,
-            "cx": 3213.5,
-            "cy": 458.5,
+            "x0": 4871.0,
+            "y0": 677.0,
+            "x1": 5125.0,
+            "y1": 748.0,
+            "cx": 4998.0,
+            "cy": 712.5,
             "text": "Notes",
             "conf": 1.0,
             "block": 0.0,
@@ -5783,59 +5842,59 @@
       },
       {
         "bbox_px": [
-          432.0,
-          3533.0,
-          2520.0,
-          4534.0
+          674.0,
+          5495.0,
+          3921.0,
+          7052.5
         ],
         "y_lines_px": [
-          3533.0,
-          3666.5,
-          3800.5,
-          3938.0,
-          4075.0,
-          4534.0
+          5495.0,
+          5703.0,
+          5911.0,
+          6125.0,
+          6338.0,
+          7052.5
         ],
         "row_bands_px": [
           [
-            3533.0,
-            3666.5
+            5495.0,
+            5703.0
           ],
           [
-            3666.5,
-            3800.5
+            5703.0,
+            5911.0
           ],
           [
-            3800.5,
-            3938.0
+            5911.0,
+            6125.0
           ],
           [
-            3938.0,
-            4075.0
+            6125.0,
+            6338.0
           ],
           [
-            4075.0,
-            4534.0
+            6338.0,
+            7052.5
           ]
         ],
         "col_bounds_px": [
-          432.0,
-          950.5,
-          1174.0,
-          1427.5,
-          1613.5,
-          1842.5,
-          2118.5,
-          2520.0
+          674.0,
+          1478.0,
+          1826.5,
+          2220.5,
+          2510.0,
+          2865.5,
+          3295.0,
+          3921.0
         ],
         "header_virtual_tokens": [
           {
-            "x0": 472.0,
-            "y0": 3438.0,
-            "x1": 566.0,
-            "y1": 3484.0,
-            "cx": 519.0,
-            "cy": 3461.0,
+            "x0": 734.0,
+            "y0": 5347.0,
+            "x1": 880.0,
+            "y1": 5418.0,
+            "cx": 807.0,
+            "cy": 5382.5,
             "text": "KPI",
             "conf": 1.0,
             "block": 0.0,
@@ -5845,12 +5904,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1037.0,
-            "y0": 3438.0,
-            "x1": 1138.0,
-            "y1": 3484.0,
-            "cx": 1087.5,
-            "cy": 3461.0,
+            "x0": 1613.0,
+            "y0": 5347.0,
+            "x1": 1771.0,
+            "y1": 5418.0,
+            "cx": 1692.0,
+            "cy": 5382.5,
             "text": "Min",
             "conf": 1.0,
             "block": 0.0,
@@ -5860,12 +5919,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1210.0,
-            "y0": 3438.0,
-            "x1": 1393.0,
-            "y1": 3497.0,
-            "cx": 1301.5,
-            "cy": 3467.5,
+            "x0": 1882.0,
+            "y0": 5347.0,
+            "x1": 2167.0,
+            "y1": 5439.0,
+            "cx": 2024.5,
+            "cy": 5393.0,
             "text": "Target",
             "conf": 1.0,
             "block": 0.0,
@@ -5875,12 +5934,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1462.0,
-            "y0": 3438.0,
-            "x1": 1579.0,
-            "y1": 3484.0,
-            "cx": 1520.5,
-            "cy": 3461.0,
+            "x0": 2274.0,
+            "y0": 5347.0,
+            "x1": 2457.0,
+            "y1": 5418.0,
+            "cx": 2365.5,
+            "cy": 5382.5,
             "text": "Max",
             "conf": 1.0,
             "block": 0.0,
@@ -5890,12 +5949,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1648.0,
-            "y0": 3438.0,
-            "x1": 1808.0,
-            "y1": 3484.0,
-            "cx": 1728.0,
-            "cy": 3461.0,
+            "x0": 2563.0,
+            "y0": 5347.0,
+            "x1": 2812.0,
+            "y1": 5418.0,
+            "cx": 2687.5,
+            "cy": 5382.5,
             "text": "Value",
             "conf": 1.0,
             "block": 0.0,
@@ -5905,12 +5964,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 1877.0,
-            "y0": 3438.0,
-            "x1": 2083.0,
-            "y1": 3484.0,
-            "cx": 1980.0,
-            "cy": 3461.0,
+            "x0": 2919.0,
+            "y0": 5347.0,
+            "x1": 3239.0,
+            "y1": 5418.0,
+            "cx": 3079.0,
+            "cy": 5382.5,
             "text": "Source",
             "conf": 1.0,
             "block": 0.0,
@@ -5920,12 +5979,12 @@
             "virtual": 1.0
           },
           {
-            "x0": 2154.0,
-            "y0": 3438.0,
-            "x1": 2485.0,
-            "y1": 3484.0,
-            "cx": 2319.5,
-            "cy": 3461.0,
+            "x0": 3351.0,
+            "y0": 5347.0,
+            "x1": 3864.0,
+            "y1": 5418.0,
+            "cx": 3607.5,
+            "cy": 5382.5,
             "text": "Confidence",
             "conf": 1.0,
             "block": 0.0,
@@ -5939,540 +5998,534 @@
     ],
     "lines": [
       {
-        "text": "Measured                    Data",
+        "text": "_\u2014             ;            Measured       ;                 Data",
         "bbox": [
-          1896.0,
-          387.0,
-          2896.0,
-          432.0
+          1898.0,
+          601.0,
+          4505.0,
+          687.0
         ],
-        "cy": 409.5
+        "cy": 663.8
       },
       {
-        "text": "Term                Description   Requirement               Units      Page        ;        Notes",
+        "text": "Term                  Description    Requirement                  Units       Page                  Notes",
         "bbox": [
-          468.0,
-          431.0,
-          3295.0,
-          499.0
+          729.0,
+          673.0,
+          5125.0,
+          773.0
         ],
-        "cy": 467.35714285714283
+        "cy": 719.5
       },
       {
-        "text": "Value                         Quality",
+        "text": "Value                             Quality",
         "bbox": [
-          1893.0,
-          485.0,
-          2971.0,
-          543.0
+          2945.0,
+          753.0,
+          4622.0,
+          845.0
         ],
-        "cy": 510.75
+        "cy": 793.75
       },
       {
         "text": "Steady-                                         flagged  low",
         "bbox": [
-          1047.0,
-          618.0,
-          3439.0,
-          685.0
+          1628.0,
+          963.0,
+          5348.0,
+          1062.0
         ],
-        "cy": 649.3333333333334
+        "cy": 1009.1666666666666
       },
       {
-        "text": "state          43          39.4                   6       Low        but  inside",
+        "text": "state            1344            30.4                      6        Low          but  inside",
         "bbox": [
-          1047.0,
-          713.0,
-          3390.0,
-          815.0
+          734.0,
+          1110.0,
+          5272.0,
+          1267.0
         ],
-        "cy": 770.4285714285714
+        "cy": 1197.9375
       },
       {
-        "text": "\u00b1 3",
+        "text": "\u00b1 3                 ,",
         "bbox": [
-          1537.0,
-          779.0,
-          1570.0,
-          815.0
+          2391.0,
+          1211.0,
+          3072.0,
+          1267.0
         ],
-        "cy": 797.0
+        "cy": 1250.25
       },
       {
-        "text": "isp                  specific                                  sec                           tolerance",
+        "text": "SP                     specific                                        Sec                                tolerance",
         "bbox": [
-          472.0,
-          778.0,
-          3380.0,
-          877.0
+          734.0,
+          1212.0,
+          5257.0,
+          1362.0
         ],
-        "cy": 830.125
+        "cy": 1290.875
       },
       {
         "text": "impulse                                         window",
         "bbox": [
-          1050.0,
-          912.0,
-          3334.0,
-          979.0
+          1633.0,
+          1420.0,
+          5186.0,
+          1520.0
         ],
-        "cy": 942.25
+        "cy": 1464.75
       },
       {
         "text": "value  above",
         "bbox": [
-          3128.0,
-          1050.0,
-          3458.0,
-          1096.0
+          4866.0,
+          1632.0,
+          5379.0,
+          1704.0
         ],
-        "cy": 1073.0
+        "cy": 1668.0
       },
       {
         "text": "requirement,",
         "bbox": [
-          3128.0,
-          1148.0,
-          3468.0,
-          1207.0
+          4866.0,
+          1785.0,
+          5394.0,
+          1876.0
         ],
-        "cy": 1177.5
+        "cy": 1830.5
       },
       {
-        "text": "chamber_pressure   Mean  P,,      185+10        201          psia       6       WARN",
+        "text": "chamber_pressure    Mean  P,,       185+10         201           psia        6        WARN",
         "bbox": [
-          468.0,
-          1193.0,
-          2945.0,
-          1260.0
+          729.0,
+          1856.0,
+          4581.0,
+          1957.0
         ],
-        "cy": 1221.95
+        "cy": 1899.65
       },
       {
         "text": "watch  for",
         "bbox": [
-          3125.0,
-          1246.0,
-          3377.0,
-          1292.0
+          4860.0,
+          1937.0,
+          5252.0,
+          2009.0
         ],
-        "cy": 1269.0
+        "cy": 1973.0
       },
       {
         "text": "drift",
         "bbox": [
-          3128.0,
-          1344.0,
-          3230.0,
-          1390.0
+          4866.0,
+          2090.0,
+          5023.0,
+          2161.0
         ],
-        "cy": 1367.0
+        "cy": 2125.5
       },
       {
-        "text": "to     test",
+        "text": "to  test",
         "bbox": [
-          3239.0,
-          1477.0,
-          3409.0,
-          1545.0
+          5043.0,
+          2308.0,
+          5303.0,
+          2374.0
         ],
-        "cy": 1508.25
+        "cy": 2341.0
       },
       {
-        "text": "Hot-fire                      0  (not                                     use    rors",
+        "text": "Hot-fire                          0  (not                                         usewoess",
         "bbox": [
-          766.0,
-          1494.0,
-          3393.0,
-          1590.0
+          1191.0,
+          2324.0,
+          5277.0,
+          2470.0
         ],
-        "cy": 1544.4166666666667
+        "cy": 2412.0
       },
       {
-        "text": "burn_duration                     42-48                      s          6       NOT_RUN _  textual",
+        "text": "burn_  duration                         42-48                         s            6        NOT  RUb  _   textual",
         "bbox": [
-          468.0,
-          1575.0,
-          3305.0,
-          1642.0
+          729.0,
+          2452.0,
+          5140.0,
+          2551.0
         ],
-        "cy": 1604.7857142857142
+        "cy": 2498.1666666666665
       },
       {
-        "text": "~               duration                      testable)",
+        "text": "duration                         testable)",
         "bbox": [
-          586.0,
-          1621.0,
-          2929.0,
-          1688.0
+          1628.0,
+          2523.0,
+          3310.0,
+          2622.0
         ],
-        "cy": 1644.5
+        "cy": 2572.5
       },
       {
         "text": "statuses",
         "bbox": [
-          3128.0,
-          1680.0,
-          3357.0,
-          1723.0
+          4866.0,
+          2613.0,
+          5221.0,
+          2679.0
         ],
-        "cy": 1701.5
+        "cy": 2646.0
       },
       {
         "text": "triggers  out-",
         "bbox": [
-          3128.0,
-          1811.0,
-          3455.0,
-          1857.0
+          4866.0,
+          2817.0,
+          5374.0,
+          2888.0
         ],
-        "cy": 1834.75
+        "cy": 2853.75
       },
       {
-        "text": "Injector                                         gg",
+        "text": "Injector                                         Ig",
         "bbox": [
-          1050.0,
-          1824.0,
-          3243.0,
-          1923.0
+          1633.0,
+          2837.0,
+          5043.0,
+          2988.0
         ],
-        "cy": 1868.25
+        "cy": 2905.5
       },
       {
         "text": "of-range",
         "bbox": [
-          3128.0,
-          1909.0,
-          3357.0,
-          1968.0
+          4866.0,
+          2969.0,
+          5221.0,
+          3060.0
         ],
-        "cy": 1938.5
+        "cy": 3014.5
       },
       {
-        "text": "resistance           harness       4.8-5.3         6.1          Q          8       FAIL",
+        "text": "resistance             harness        4.8-5.3          6.1            Q           8        FAIL                 .",
         "bbox": [
-          468.0,
-          1957.0,
-          2890.0,
-          2024.0
+          729.0,
+          3046.0,
+          5150.0,
+          3145.0
         ],
-        "cy": 1987.7142857142858
+        "cy": 3095.625
       },
       {
         "text": "numeric",
         "bbox": [
-          3128.0,
-          2020.0,
-          3347.0,
-          2053.0
+          4866.0,
+          3142.0,
+          5206.0,
+          3193.0
         ],
-        "cy": 2036.5
+        "cy": 3167.5
       },
       {
-        "text": "resistance                                         .",
+        "text": "resistance                                         ;",
         "bbox": [
-          1047.0,
-          2055.0,
-          3190.0,
-          2116.0
+          1628.0,
+          3199.0,
+          4962.0,
+          3288.0
         ],
-        "cy": 2097.0
+        "cy": 3261.25
       },
       {
         "text": "failure",
         "bbox": [
-          3125.0,
-          2105.0,
-          3295.0,
-          2151.0
+          4860.0,
+          3274.0,
+          5125.0,
+          3345.0
         ],
-        "cy": 2128.0
+        "cy": 3309.5
       },
       {
         "text": "Valve                                         non-numeric",
         "bbox": [
-          1043.0,
-          2242.0,
-          3468.0,
-          2288.0
+          1623.0,
+          3487.0,
+          5394.0,
+          3558.0
         ],
-        "cy": 2265.0
+        "cy": 3522.5
       },
       {
-        "text": ".              .                           Image",
+        "text": "Image",
         "bbox": [
-          694.0,
-          2291.0,
-          2063.0,
-          2350.0
+          1080.0,
+          3564.0,
+          3209.0,
+          3655.0
         ],
-        "cy": 2333.8333333333335
+        "cy": 3624.75
       },
       {
-        "text": "valve_alignment      alignment      Visual  match    #49         n/a        9       PASS        text",
+        "text": "valve_alignment      alignment      Visual  match     #49           n/a         9        PASS         text",
         "bbox": [
-          468.0,
-          2337.0,
-          3226.0,
-          2435.0
+          729.0,
+          3635.0,
+          5018.0,
+          3787.0
         ],
-        "cy": 2367.3888888888887
+        "cy": 3682.0
       },
       {
         "text": "photo                                         extraction",
         "bbox": [
-          1047.0,
-          2435.0,
-          3390.0,
-          2494.0
+          1628.0,
+          3787.0,
+          5272.0,
+          3879.0
         ],
-        "cy": 2461.25
+        "cy": 3827.75
       },
       {
         "text": "ensures",
         "bbox": [
-          3128.0,
-          2585.0,
-          3344.0,
-          2618.0
+          4866.0,
+          4021.0,
+          5201.0,
+          4072.0
         ],
-        "cy": 2601.5
+        "cy": 4046.5
       },
       {
-        "text": "Helium  leak                  Not                                      missing",
+        "text": "Helium  leak                      Not                                         missing",
         "bbox": [
-          1050.0,
-          2666.0,
-          3334.0,
-          2733.0
+          1633.0,
+          4149.0,
+          5186.0,
+          4249.0
         ],
-        "cy": 2696.25
+        "cy": 4193.75
       },
       {
-        "text": "leak_check                       =1.0e-5                    atm-cc/s   10      MISSING",
+        "text": "leak_check                           =  1.0e-5                       atm-ce/s    10       MISSING",
         "bbox": [
-          468.0,
-          2715.0,
-          3020.0,
-          2783.0
+          729.0,
+          4224.0,
+          4698.0,
+          4325.0
         ],
-        "cy": 2743.4
+        "cy": 4267.0
       },
       {
-        "text": "rate                          Found                                    term",
+        "text": "rate                              Found                                         term",
         "bbox": [
-          1047.0,
-          2768.0,
-          3249.0,
-          2834.0
+          1628.0,
+          4307.0,
+          5054.0,
+          4407.0
         ],
-        "cy": 2797.1666666666665
+        "cy": 4350.833333333333
       },
       {
         "text": "handling",
         "bbox": [
-          3128.0,
-          2866.0,
-          3357.0,
-          2925.0
+          4866.0,
+          4458.0,
+          5221.0,
+          4549.0
         ],
-        "cy": 2895.5
+        "cy": 4503.5
       },
       {
-        "text": "2.   Performance   KPI  Table",
+        "text": "2.   Performance   KPI   Table",
         "bbox": [
-          436.0,
-          3134.0,
-          1900.0,
-          3222.0
+          678.0,
+          4875.0,
+          2955.0,
+          5012.0
         ],
-        "cy": 3178.0
+        "cy": 4943.5
       },
       {
-        "text": "KPI                 Min   Target   Max   Value   Source   Confidence",
+        "text": "KPI                   Min    Target    Max    Value    Source    Confidence",
         "bbox": [
-          472.0,
-          3438.0,
-          2485.0,
-          3497.0
+          734.0,
+          5347.0,
+          3864.0,
+          5439.0
         ],
-        "cy": 3461.9285714285716
+        "cy": 5384.0
       },
       {
-        "text": "thrust_nominal       48    5.1       5.5    5.32     Table3    0.97",
+        "text": "thrust_nominal       438     5.1        5.5     5.32     Table3    0.97",
         "bbox": [
-          468.0,
-          3571.0,
-          2269.0,
-          3641.0
+          729.0,
+          5556.0,
+          3529.0,
+          5657.0
         ],
-        "cy": 3599.1428571428573
+        "cy": 5597.928571428572
       },
       {
-        "text": "thrust_peak         -      6.2       6.8    6.95     Table3    0.91",
+        "text": "thrust_peak           \u2014      6.2        6.8     695     Table3    0.91",
         "bbox": [
-          468.0,
-          3706.0,
-          2262.0,
-          3765.0
+          729.0,
+          5759.0,
+          3519.0,
+          5860.0
         ],
-        "cy": 3730.8571428571427
+        "cy": 5802.428571428572
       },
       {
-        "text": "power_draw_idle     75     80       95     104     Table  4    0.77",
+        "text": "power_draw_idle     75     #80        95      104      Table4    0.77",
         "bbox": [
-          468.0,
-          3837.0,
-          2269.0,
-          3908.0
+          729.0,
+          5973.0,
+          3529.0,
+          6073.0
         ],
-        "cy": 3867.625
+        "cy": 6015.857142857143
       },
       {
-        "text": "power_draw_peak   \u2014      140      155    131      Table4    0.85",
+        "text": "power_draw_peak    \u2014      140       155     131      Table4    0.85",
         "bbox": [
-          468.0,
-          3980.0,
-          2269.0,
-          4039.0
+          729.0,
+          6191.0,
+          3529.0,
+          6282.0
         ],
-        "cy": 4004.9285714285716
+        "cy": 6229.428571428572
       },
       {
-        "text": "thermal_margin      8      12       -      6        Fig.  5     0.63",
+        "text": "thermal_margin       8       12        \u2014       6         Fig.  5      0.63",
         "bbox": [
-          468.0,
-          4110.0,
-          2269.0,
-          4177.0
+          729.0,
+          6395.0,
+          3529.0,
+          6495.0
         ],
-        "cy": 4139.4375
+        "cy": 6438.4375
       },
       {
         "text": "Use  this  table to  confirm  multi-column  parsing  and  comparisons  against  asymmetric  spec  bands  (no",
         "bbox": [
-          504.0,
-          4291.0,
-          3207.0,
-          4350.0
+          785.0,
+          6674.0,
+          4987.0,
+          6765.0
         ],
-        "cy": 4317.071428571428
+        "cy": 6714.678571428572
       },
       {
         "text": "min  or  max  defined).",
         "bbox": [
-          504.0,
-          4389.0,
-          1057.0,
-          4448.0
+          785.0,
+          6826.0,
+          1644.0,
+          6918.0
         ],
-        "cy": 4416.5
+        "cy": 6869.125
       },
       {
-        "text": "3.   Environmental   Endurance  Matrix",
+        "text": "3.   Environmental   Endurance   Matrix",
         "bbox": [
-          436.0,
-          4670.0,
-          2485.0,
-          4758.0
+          678.0,
+          7263.0,
+          3864.0,
+          7400.0
         ],
-        "cy": 4714.0
+        "cy": 7331.5
       }
     ],
     "grid": {
       "h": [
         [
-          0.11294117647058824,
-          0.914949494949495,
-          0.8724183006535948,
-          0.916969696969697
+          0.11327731092436975,
+          0.9149350649350649,
+          0.8726050420168068,
+          0.9168831168831169
         ],
         [
-          0.11294117647058824,
-          0.6048484848484849,
-          0.8724183006535948,
-          0.6068686868686869
+          0.11327731092436975,
+          0.6046753246753247,
+          0.8726050420168068,
+          0.6066233766233766
         ],
         [
-          0.11294117647058824,
-          0.2898989898989899,
-          0.9074509803921569,
-          0.2913131313131313
+          0.11327731092436975,
+          0.3564935064935065,
+          0.907563025210084,
+          0.3579220779220779
         ],
         [
-          0.11294117647058824,
+          0.11327731092436975,
+          0.20337662337662338,
+          0.907563025210084,
+          0.2048051948051948
+        ],
+        [
+          0.11327731092436975,
+          0.44363636363636366,
+          0.907563025210084,
+          0.44493506493506496
+        ],
+        [
+          0.11327731092436975,
+          0.2898701298701299,
+          0.907563025210084,
+          0.2911688311688312
+        ],
+        [
+          0.11327731092436975,
           0.11636363636363636,
-          0.9074509803921569,
-          0.11777777777777777
+          0.907563025210084,
+          0.11766233766233766
         ],
         [
-          0.11294117647058824,
-          0.20343434343434344,
-          0.9074509803921569,
-          0.20484848484848484
+          0.11327731092436975,
+          0.5110389610389611,
+          0.907563025210084,
+          0.5123376623376623
         ],
         [
-          0.11294117647058824,
-          0.3565656565656566,
-          0.9074509803921569,
-          0.35797979797979795
+          0.11327731092436975,
+          0.8224675324675325,
+          0.6589915966386555,
+          0.8237662337662338
         ],
         [
-          0.11294117647058824,
-          0.5111111111111111,
-          0.9074509803921569,
-          0.5123232323232323
-        ],
-        [
-          0.11294117647058824,
-          0.44383838383838387,
-          0.9074509803921569,
-          0.44505050505050503
-        ],
-        [
-          0.11294117647058824,
+          0.11327731092436975,
           0.74,
-          0.6588235294117647,
-          0.7414141414141414
+          0.6589915966386555,
+          0.7412987012987013
         ],
         [
-          0.11294117647058824,
-          0.7670707070707071,
-          0.6588235294117647,
-          0.7684848484848484
+          0.11327731092436975,
+          0.712987012987013,
+          0.6589915966386555,
+          0.7142857142857143
         ],
         [
-          0.11294117647058824,
-          0.8226262626262626,
-          0.6588235294117647,
-          0.8238383838383838
+          0.11327731092436975,
+          0.7948051948051948,
+          0.6589915966386555,
+          0.7961038961038961
         ],
         [
-          0.11294117647058824,
-          0.794949494949495,
-          0.6588235294117647,
-          0.7961616161616162
-        ],
-        [
-          0.11294117647058824,
-          0.7131313131313132,
-          0.6588235294117647,
-          0.7143434343434344
-        ],
-        [
-          0.11294117647058824,
-          0.9751515151515151,
-          0.8724183006535948,
-          0.9755555555555555
+          0.11327731092436975,
+          0.767012987012987,
+          0.6589915966386555,
+          0.7683116883116883
         ]
       ],
       "v": []
     },
-    "img_w": 3825,
-    "img_h": 4950,
-    "lang": "eng+equ",
-    "psm": 4,
-    "pipeline": "tess_tsv:ocr(lang=eng+equ,psm=4)+rehocr(9/48)",
+    "img_w": 5950,
+    "img_h": 7700,
+    "lang": "eng",
+    "psm": 6,
+    "pipeline": "tess_tsv:ocr(lang=eng,psm=6)+rehocr(9/48)",
     "source": "merged"
   }
 }

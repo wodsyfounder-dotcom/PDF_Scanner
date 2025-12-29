@@ -1,5 +1,5 @@
 PDF: Data Packages\FakeProgram_SV1_SN1111.pdf
-Page: 2  DPI: 700  Source: merged  Lang: eng  PSM: 6
+Page: 2  DPI: 700  Source: ocr  Lang: eng  PSM: 6
 Pipeline: tess_tsv:ocr(lang=eng,psm=6)+rehocr(9/48)
 Image: 5950x7700
 

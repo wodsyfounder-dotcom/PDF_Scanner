@@ -1,7 +1,7 @@
 {
-  "source_pdf": "C:\\Users\\zachs\\Documents\\DevProjects\\EIDPs\\FakeProgram_SV1_SN1111.pdf",
+  "source_pdf": "Data Packages\\FakeProgram_SV1_SN1111.pdf",
   "page_count": 4,
-  "pipeline": "ocr_tess_tsv(lang=eng+equ,psm=4,dpi=450)",
+  "pipeline": "ocr_tess_tsv(lang=eng,psm=6,dpi=700)",
   "headers": [
     "Attachment",
     "File Name",
@@ -13,22 +13,22 @@
     {
       "page": 1,
       "start": 0,
-      "end": 2541
+      "end": 2546
     },
     {
       "page": 2,
-      "start": 2541,
-      "end": 6417
+      "start": 2546,
+      "end": 6439
     },
     {
       "page": 3,
-      "start": 6417,
-      "end": 10958
+      "start": 6439,
+      "end": 11010
     },
     {
       "page": 4,
-      "start": 10958,
-      "end": 12464
+      "start": 11010,
+      "end": 12517
     }
   ],
   "combined_path": "C:\\Users\\zachs\\Documents\\DevProjects\\PDF_Scanner\\debug\\ocr_merged\\FakeProgram_SN1111\\combined.txt",

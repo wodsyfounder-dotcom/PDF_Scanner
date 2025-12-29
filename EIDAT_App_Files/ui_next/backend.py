@@ -372,6 +372,16 @@ def pre_ocr_merge_pdfs(paths: list[Path], out_root: Optional[Path] = None, dpi: 
     return run_script("scripts/pre_ocr_merge.py", *args)
 
 
+def run_simple_extraction(paths: list[Path], terms: Optional[Path] = None) -> subprocess.Popen:
+    """Run the simple merged-text extraction pipeline on selected PDFs."""
+    terms_path = Path(terms) if terms else ROOT / "user_inputs" / "terms.schema.simple.xlsx"
+    args: list[str] = []
+    for p in paths:
+        args += ["--pdf", str(Path(p))]
+    args += ["--terms", str(terms_path)]
+    return run_script("scripts/simple_extraction.py", *args)
+
+
 def open_path(p: Path) -> None:
     if sys.platform.startswith("win"):
         os.startfile(str(p))  # type: ignore[attr-defined]
